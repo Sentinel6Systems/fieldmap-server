@@ -51,9 +51,10 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
   writes `TILESERVER_MEM_LIMIT` to `.env` in the repository root: `1g` on a Pi with under 8 GB, no cap on an 8 GB Pi.
   Edit that line to choose yourself, e.g. `TILESERVER_MEM_LIMIT=768m`. If a group of TAK clients pulls enough raster
   tiles to reach it, the kernel kills only the tile server and Docker restarts it within seconds; the rest of the
-  Pi is never starved. Vector maps drop out for those seconds too. The cap needs the kernel's memory cgroup:
-  `install-pi.sh` warns if it is missing; the fix is adding `cgroup_enable=memory` to the single line in
-  `/boot/firmware/cmdline.txt` and rebooting.
+  Pi is never starved. Vector maps drop out for those seconds too. The cap needs the kernel's memory cgroup, which
+  Raspberry Pi OS ships turned off: `install-pi.sh` turns it on (adds `cgroup_enable=memory cgroup_memory=1` to
+  `/boot/firmware/cmdline.txt`, backup next to it as `cmdline.txt.fieldmap.bak`), adds a one-time job that recreates
+  the tile server with its cap at the next boot, and offers to reboot. Until that reboot everything works, uncapped.
 - The image in `docker-compose.pi.yml` is pinned by digest so a later pull cannot change it unnoticed.
 - IIAB's nginx uses a limited MIME table: serve JavaScript as `.js`, not `.mjs` (the print tool's build already does).
 - To keep the default map view on the recipient's area, edit `center` and `zoom` in the Pi's copies of the styles;
