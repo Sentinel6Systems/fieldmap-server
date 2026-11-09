@@ -205,8 +205,9 @@ For higher resolution screens, use `.../{z}/{x}/{y}@2x.png`.
 
 ## Raspberry Pi behind Internet-in-a-Box
 
-See [pi/README.md](pi/README.md): TileServer GL light in Docker bound to localhost, IIAB's nginx proxying `/maps/` and
-serving the print tool at `/print/`, and a deploy script that builds the tool on your workstation and copies it over.
+See [pi/README.md](pi/README.md): clone onto the Pi, copy your `.mbtiles` files in, run `sudo ./scripts/install-pi.sh`.
+It starts TileServer GL light in Docker on localhost, builds the print tool on the Pi, and adds the nginx snippets so
+IIAB serves `/maps/` and `/print/`.
 
 ## Start at boot
 
