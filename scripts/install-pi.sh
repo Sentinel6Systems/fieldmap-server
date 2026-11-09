@@ -24,6 +24,10 @@ if [ ! -f /etc/docker/daemon.json ]; then
 fi
 
 echo "== Tile server"
+if docker info 2>&1 | grep -qi 'no memory limit support'; then
+  echo "WARNING: this kernel has no memory cgroup, so the tile server's memory cap will not work." >&2
+  echo "         Add cgroup_enable=memory to /boot/firmware/cmdline.txt and reboot (see pi/README.md)." >&2
+fi
 cp pi/tileserver/docker-compose.pi.yml .
 rm -f config-pi.json   # left by older versions, which ran the light image
 docker compose -f docker-compose.pi.yml pull -q

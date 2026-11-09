@@ -8,6 +8,10 @@ services:
     image: ${TILESERVER_IMAGE:-maptiler/tileserver-gl:v5.7.0}
     container_name: tileserver
     restart: unless-stopped
+    # Hard memory cap (no swap). If many TAK clients pull raster tiles at once and the server
+    # reaches it, only this container is killed and Docker restarts it in a few seconds.
+    mem_limit: ${TILESERVER_MEM_LIMIT:-1g}
+    memswap_limit: ${TILESERVER_MEM_LIMIT:-1g}
     ports:
       - "${TILESERVER_PORT:-8080}:8080"
     volumes:
