@@ -188,6 +188,9 @@ Put your own files in `data/` with these names:
 | `data/contours.mbtiles` | vector | layers `contours_major` and `contours_minor`, attribute `elev_ft` (feet) or `elev_m` (meters) |
 | `data/hillshade.mbtiles` | raster | gray hillshade PNG tiles |
 
+The hillshade source is marked `"sparse": false` in `config.json`. Outside the area it covers, the tile server
+answers with a transparent tile, so the topo styles still render there, without shading.
+
 The contour labels read `elev_ft` first, then `elev_m`.
 `ft` builds write `elev_ft`. `m` builds write `elev_m`.
 Contour files from other builders work too if they carry one of those attributes.

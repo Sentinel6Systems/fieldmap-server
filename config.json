@@ -40,7 +40,8 @@
       "mbtiles": "contours.mbtiles"
     },
     "hillshade": {
-      "mbtiles": "hillshade.mbtiles"
+      "mbtiles": "hillshade.mbtiles",
+      "sparse": false
     }
   }
 }
