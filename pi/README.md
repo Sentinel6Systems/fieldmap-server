@@ -47,8 +47,9 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
   The configs start no raster renderers and cap them at two per style (see "Use with TAK clients" in the main
   README). Memory grows with the number of styles TAK clients actually use, up to a few hundred MB if they use
   all five.
-- The tile server container has a hard 1 GB memory cap with no swap (`TILESERVER_MEM_LIMIT` in a `.env` file in
-  the repository root changes it, e.g. `TILESERVER_MEM_LIMIT=768m`). If a group of TAK clients pulls enough raster
+- The tile server container has a hard memory cap with no swap. `install-pi.sh` runs `scripts/mem-limit.sh`, which
+  writes `TILESERVER_MEM_LIMIT` to `.env` in the repository root: `1g` on a Pi with under 8 GB, no cap on an 8 GB Pi.
+  Edit that line to choose yourself, e.g. `TILESERVER_MEM_LIMIT=768m`. If a group of TAK clients pulls enough raster
   tiles to reach it, the kernel kills only the tile server and Docker restarts it within seconds; the rest of the
   Pi is never starved. Vector maps drop out for those seconds too. The cap needs the kernel's memory cgroup:
   `install-pi.sh` warns if it is missing; the fix is adding `cgroup_enable=memory` to the single line in

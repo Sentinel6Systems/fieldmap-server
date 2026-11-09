@@ -33,6 +33,7 @@ cd fieldmap-server
 
 # 2. Start the server
 cp .env.example .env          # optional: ports, config file, image
+./scripts/mem-limit.sh        # memory cap from this machine's RAM (see "Use with TAK clients")
 docker compose up -d --build
 
 # 3. Use it
@@ -214,6 +215,11 @@ one is made the first time a style is asked for, so styles nobody uses take no m
 renderers for normal tiles and one for `@2x` (`minRendererPoolSizes`, `maxRendererPoolSizes`), and `@3x` tiles are
 off (`maxScaleFactor` 2). Renderers stay in memory once made. On a large server with many TAK clients, raise the
 maximums.
+
+The tile server container also has a hard memory cap with no swap, `TILESERVER_MEM_LIMIT` in `.env`.
+`scripts/mem-limit.sh` picks it from the machine's RAM: `1g` under 8 GB, no cap (`0`) at 8 GB or more.
+If the cap is reached, only the tile server is killed and Docker restarts it within seconds.
+Without the script, the cap is `1g`.
 
 ## Raspberry Pi behind Internet-in-a-Box
 

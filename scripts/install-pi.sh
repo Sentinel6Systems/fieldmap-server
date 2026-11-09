@@ -24,6 +24,7 @@ if [ ! -f /etc/docker/daemon.json ]; then
 fi
 
 echo "== Tile server"
+sudo -u "${SUDO_USER:-$(id -un)}" ./scripts/mem-limit.sh
 if docker info 2>&1 | grep -qi 'no memory limit support'; then
   echo "WARNING: this kernel has no memory cgroup, so the tile server's memory cap will not work." >&2
   echo "         Add cgroup_enable=memory to /boot/firmware/cmdline.txt and reboot (see pi/README.md)." >&2
