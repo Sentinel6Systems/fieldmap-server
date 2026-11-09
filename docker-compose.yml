@@ -1,7 +1,7 @@
 # fieldmap-server: TileServer GL + the browser-based print tool.
 # Put your mbtiles files in ./data, then:  docker compose up -d --build
 #   http://localhost/          tile server (style list, map viewer, TAK raster tiles)
-#   http://localhost/print/    print a map or an atlas
+#   http://localhost/mapprinter/    print a map or an atlas
 # Ports and the config file are set in .env (copy .env.example).
 services:
   tileserver:

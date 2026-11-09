@@ -8,4 +8,4 @@ RUN node build.mjs
 
 FROM nginx:1.27-alpine
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /src/dist /usr/share/nginx/html/print
+COPY --from=build /src/dist /usr/share/nginx/html/mapprinter

@@ -7,7 +7,7 @@ that prints exact-scale map sheets and atlases. One `docker compose up` on any L
   (tuned for paper). Vector tiles for web maps and MapLibre clients, raster tiles for TAK clients (ATAK, WinTAK, iTAK).
 - **Build scripts** that make the data from public sources: OpenStreetMap extracts (Geofabrik) via Planetiler,
   contours and hillshade from Copernicus GLO-30 elevation data. Build once; nothing needs the internet afterwards.
-- **The print tool** at `/print/`: Letter, Legal, Tabloid, Super B or Arch C sheets at 1:12k–1:100k, with an MGRS/USNG
+- **The print tool** at `/mapprinter/`: Letter, Legal, Tabloid, Super B or Arch C sheets at 1:12k–1:100k, with an MGRS/USNG
   1 km grid, a true-angle declination diagram (WMM2025, computed offline), scale bars, markers and arrows with range and
   true/grid/magnetic bearing, an optional list page, and **atlas mode**: 2×2 to 8×8 overlapping pages with a cover,
   an index page and neighbour tabs, ready for a binder. Everything renders in the browser; the server only serves files.
@@ -38,11 +38,11 @@ docker compose up -d --build
 
 # 3. Use it
 #    http://localhost/            style list and map viewer
-#    http://localhost/print/      print a map or an atlas
+#    http://localhost/mapprinter/ print a map or an atlas
 #    http://localhost:8080/       TileServer GL directly (TAK raster tiles)
 ```
 
-The web front (nginx) serves the print tool at `/print/` and proxies everything else to TileServer GL, so the print
+The web front (nginx) serves the print tool at `/mapprinter/` and proxies everything else to TileServer GL, so the print
 tool finds its tiles on the same host automatically. It also looks under `/maps/` (the Internet-in-a-Box layout) and on
 port 8080, or you can point it anywhere with `?tiles=http://host:8080`.
 
@@ -228,7 +228,8 @@ Without the script, the cap is `1g`.
 
 See [pi/README.md](pi/README.md): clone onto the Pi, copy your `.mbtiles` files in, run `sudo ./scripts/install-pi.sh`.
 It starts TileServer GL in Docker on localhost, builds the print tool on the Pi, and adds the nginx snippets so
-IIAB serves `/maps/` and `/print/`.
+IIAB serves `/maps/` and `/mapprinter/`.
+`/print/` is left free, for example for CUPS.
 
 ## Start at boot
 

@@ -77,7 +77,11 @@ OWNER="${SUDO_USER:-$(id -un)}"
 ( cd print && sudo -u "$OWNER" npm ci --no-audit --no-fund --silent && sudo -u "$OWNER" node build.mjs )
 
 echo "== nginx"
-sed "s#/opt/fieldmap-server/print/dist/#$REPO/print/dist/#" pi/nginx/print-nginx.conf > /etc/nginx/conf.d/print-nginx.conf
+# Older versions served the map printer at /print/; drop that file (only if it is ours) so /print/ is free for CUPS.
+if [ -f /etc/nginx/conf.d/print-nginx.conf ] && grep -q 'fieldmap-server' /etc/nginx/conf.d/print-nginx.conf; then
+  rm /etc/nginx/conf.d/print-nginx.conf
+fi
+sed "s#/opt/fieldmap-server/print/dist/#$REPO/print/dist/#" pi/nginx/mapprinter-nginx.conf > /etc/nginx/conf.d/mapprinter-nginx.conf
 install -m 644 pi/nginx/maps-nginx.conf /etc/nginx/conf.d/maps-nginx.conf
 nginx -t && systemctl reload nginx
 
@@ -85,7 +89,7 @@ sleep 5
 echo "== Styles served:"
 curl -s http://127.0.0.1/maps/styles.json | grep -o '"id":"[^"]*"' || echo "(tile server not answering yet; try again in a minute)"
 echo
-echo "Done. Maps: http://<this-pi>/maps/   Print: http://<this-pi>/print/"
+echo "Done. Maps: http://<this-pi>/maps/   Map printer: http://<this-pi>/mapprinter/"
 echo "TAK clients: http://<this-pi>/maps/styles/topo-light/{z}/{x}/{y}.png"
 
 if [ "$NEED_REBOOT" = 1 ]; then

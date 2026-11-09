@@ -16,7 +16,7 @@ sudo ./scripts/install-pi.sh
 ```
 
 That installs Docker if needed, starts TileServer GL on localhost, builds the print tool on the Pi with the
-Node.js that IIAB installs, and adds the nginx snippets. Open `http://<pi>/print/`; TAK clients use
+Node.js that IIAB installs, and adds the nginx snippets. Open `http://<pi>/mapprinter/`; TAK clients use
 `http://<pi>/maps/styles/topo-light/{z}/{x}/{y}.png` (see the main README). To update later:
 `git pull && sudo ./scripts/install-pi.sh`.
 
@@ -32,12 +32,12 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
    to the repository root on the Pi, then
    `sudo docker compose -f docker-compose.pi.yml up -d`. The server listens on `127.0.0.1:8080` with
    `--public_url /maps/`, so URLs work under whatever hostname the client used.
-3. **nginx.** Copy `nginx/maps-nginx.conf` and `nginx/print-nginx.conf` to `/etc/nginx/conf.d/` (IIAB includes that
+3. **nginx.** Copy `nginx/maps-nginx.conf` and `nginx/mapprinter-nginx.conf` to `/etc/nginx/conf.d/` (IIAB includes that
    folder and does not overwrite files it did not create), `sudo nginx -t && sudo systemctl reload nginx`.
    Maps are now at `http://<pi>/maps/`.
 4. **Print tool.** `cd print && npm ci && node build.mjs` on the Pi; nginx serves `print/dist` from the clone.
    (`scripts/deploy-print-pi.sh user@<pi>` does the same build on a workstation and rsyncs the result, handy while
-   developing.) Open `http://<pi>/print/`.
+   developing.) Open `http://<pi>/mapprinter/`. `/print/` is left free, for example for CUPS.
 
 ## Notes
 
