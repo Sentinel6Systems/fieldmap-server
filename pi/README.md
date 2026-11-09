@@ -44,7 +44,9 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
 - The Pi runs the same full TileServer GL image and `config.json` as an x86 machine (the image is built for arm64),
   so browsers get vector tiles and TAK clients get raster tiles. Raster tiles are drawn on the Pi the first time
   they are asked for, which is slower than on a desktop; TAK clients cache them. Use 64-bit Raspberry Pi OS.
-  Once it has rendered tiles the tile server holds a few hundred MB of RAM, so a 4 GB Pi is the comfortable minimum.
+  The configs start no raster renderers and cap them at two per style (see "Use with TAK clients" in the main
+  README). Memory grows with the number of styles TAK clients actually use, up to a few hundred MB if they use
+  all five.
 - The image in `docker-compose.pi.yml` is pinned by digest so a later pull cannot change it unnoticed.
 - IIAB's nginx uses a limited MIME table: serve JavaScript as `.js`, not `.mjs` (the print tool's build already does).
 - To keep the default map view on the recipient's area, edit `center` and `zoom` in the Pi's copies of the styles;

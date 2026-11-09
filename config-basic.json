@@ -5,7 +5,10 @@
       "fonts": "fonts",
       "styles": "styles",
       "mbtiles": "data"
-    }
+    },
+    "maxScaleFactor": 2,
+    "minRendererPoolSizes": [0, 0],
+    "maxRendererPoolSizes": [2, 1]
   },
   "styles": {
     "osm": {

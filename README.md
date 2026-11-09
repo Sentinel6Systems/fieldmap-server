@@ -209,6 +209,12 @@ http://YOUR_PI/maps/styles/topo-light/{z}/{x}/{y}.png
 Replace `topo-light` with `osm`, `topo-dark`, or `overlay` for the other styles.
 For higher resolution screens, use `.../{z}/{x}/{y}@2x.png`.
 
+Both configs are set for devices with little RAM, such as a Raspberry Pi. No raster renderer starts with the server;
+one is made the first time a style is asked for, so styles nobody uses take no memory. Each style gets at most two
+renderers for normal tiles and one for `@2x` (`minRendererPoolSizes`, `maxRendererPoolSizes`), and `@3x` tiles are
+off (`maxScaleFactor` 2). Renderers stay in memory once made. On a large server with many TAK clients, raise the
+maximums.
+
 ## Raspberry Pi behind Internet-in-a-Box
 
 See [pi/README.md](pi/README.md): clone onto the Pi, copy your `.mbtiles` files in, run `sudo ./scripts/install-pi.sh`.
