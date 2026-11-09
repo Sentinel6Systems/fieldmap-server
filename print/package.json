@@ -1,0 +1,21 @@
+{
+  "name": "fieldmap-print",
+  "version": "0.1.0",
+  "description": "",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "python3 -m http.server 8090 -d dist"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "geomagnetism": "^0.2.0",
+    "jspdf": "^4.2.1",
+    "maplibre-gl": "^6.17.0",
+    "mgrs": "^2.2.0"
+  },
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,7 @@
+# Map data and build caches stay local.
+data/*
+!data/.gitkeep
+.env
+*.swp
+print/dist/
+print/node_modules/

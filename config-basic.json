@@ -1,0 +1,25 @@
+{
+  "options": {
+    "paths": {
+      "root": "",
+      "fonts": "fonts",
+      "styles": "styles",
+      "mbtiles": "data"
+    }
+  },
+  "styles": {
+    "osm": {
+      "style": "osm.json",
+      "serve_rendered": true
+    },
+    "overlay": {
+      "style": "overlay.json",
+      "serve_rendered": true
+    }
+  },
+  "data": {
+    "basemap": {
+      "mbtiles": "basemap.mbtiles"
+    }
+  }
+}

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Print a Map</title>
+<link rel="stylesheet" href="maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map"></div>
+
+<aside id="panel">
+  <div class="panel-head">
+    <h1>Print a map</h1>
+    <button id="panel-toggle" class="icon" title="Hide or show the panel">▾</button>
+  </div>
+  <div id="panel-body">
+
+  <label>Scale
+    <select id="scale"></select>
+  </label>
+  <div class="row2">
+    <label>Paper
+      <select id="paper"></select>
+    </label>
+    <label>Orientation
+      <select id="orientation">
+        <option value="portrait">Portrait</option>
+        <option value="landscape">Landscape</option>
+      </select>
+    </label>
+  </div>
+  <label>Pages
+    <select id="atlas"></select>
+  </label>
+  <div id="atlas-warning" class="warning"></div>
+
+  <dl class="info">
+    <dt>Footprint</dt><dd id="info-footprint">–</dd>
+    <dt>Grid</dt><dd id="info-grid">–</dd>
+    <dt>Centre</dt><dd id="info-centre">–</dd>
+  </dl>
+  <div class="hint">Drag the blue box to place the sheet, or tap outside it to jump there.</div>
+  <div class="row2">
+    <button id="bring" class="secondary">Bring sheet here</button>
+    <button id="fit" class="secondary">Fit map to sheet</button>
+  </div>
+
+  <label>Title
+    <input id="title" type="text" placeholder="Map title (optional)" maxlength="60">
+  </label>
+
+  <section class="features">
+    <div class="section-head">
+      <h2>Markers &amp; arrows</h2>
+      <button id="clear-all" class="icon danger" title="Remove all">✕</button>
+    </div>
+    <div class="hint">Colour for new items</div>
+    <div id="new-color"></div>
+    <div class="row2 add-buttons">
+      <button id="add-marker" class="secondary">Add marker</button>
+      <button id="add-arrow" class="secondary">Add arrow</button>
+    </div>
+    <div id="mode-hint" class="hint"></div>
+    <h3>Markers</h3>
+    <div id="marker-list"></div>
+    <h3>Arrows</h3>
+    <div id="arrow-list"></div>
+  </section>
+
+  <label class="check">
+    <input id="list-page" type="checkbox">
+    <span>Add a list of markers and arrows (one page: after the index in an atlas, or page 2 of a single sheet)</span>
+  </label>
+  <label class="check">
+    <input id="binder" type="checkbox">
+    <span>Atlas pages: wider left margin for a 3-ring binder</span>
+  </label>
+
+  <label>Quality
+    <select id="dpi">
+      <option value="200">Standard — 200 dpi</option>
+      <option value="300">Best — 300 dpi</option>
+    </select>
+  </label>
+
+  <div class="actions">
+    <button id="download" class="secondary">Download PDF</button>
+    <button id="print" class="primary">Print</button>
+  </div>
+  <button id="cancel" class="secondary danger" hidden>Cancel</button>
+  <div id="status" class="status"></div>
+  </div>
+</aside>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+{
+  "options": {
+    "paths": {
+      "root": "",
+      "fonts": "fonts",
+      "styles": "styles",
+      "mbtiles": "data"
+    }
+  },
+  "styles": {
+    "osm": {
+      "style": "osm.json",
+      "serve_rendered": true
+    },
+    "topo-light": {
+      "style": "topo-light.json",
+      "serve_rendered": true
+    },
+    "topo-dark": {
+      "style": "topo-dark.json",
+      "serve_rendered": true
+    },
+    "overlay": {
+      "style": "overlay.json",
+      "serve_rendered": true
+    },
+    "topo-print": {
+      "style": "topo-print.json",
+      "serve_rendered": true
+    }
+  },
+  "data": {
+    "basemap": {
+      "mbtiles": "basemap.mbtiles"
+    },
+    "contours": {
+      "mbtiles": "contours.mbtiles"
+    },
+    "hillshade": {
+      "mbtiles": "hillshade.mbtiles"
+    }
+  }
+}
