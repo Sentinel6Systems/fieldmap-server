@@ -1,12 +1,12 @@
-# Raspberry Pi (arm64): light image, browser-side rendering only.
+# Raspberry Pi (arm64): full image, so TAK clients get rendered raster tiles too.
 # Host networking, bound to localhost; IIAB's nginx proxies it at /maps.
-# Copy this file and config-pi.json to the repository root on the Pi.
+# Copy this file to the repository root on the Pi.
 services:
   tileserver:
-    image: maptiler/tileserver-gl-light@sha256:c5be4f6c297a2b231299881c7dac859355313a69e674b85276669dd7fd3910e7  # v5.7.0
+    image: maptiler/tileserver-gl@sha256:24d0364e1d40da0ae3fb3269f617c26e36a883ad4b7454e5c4064a8795bfc807  # v5.7.0
     container_name: tileserver
     restart: always
     network_mode: host
     volumes:
       - ./:/data:ro
-    command: --config /data/config-pi.json --bind 127.0.0.1 --port 8080 --public_url /maps/
+    command: --config /data/config.json --bind 127.0.0.1 --port 8080 --public_url /maps/

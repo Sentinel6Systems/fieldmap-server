@@ -68,7 +68,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `scripts/`, `regions/`, `tools/` | Data builders (Planetiler, GDAL, Tippecanoe, Osmium in a tool container) |
 | `print/` | The print tool: `src/`, `public/`, `build.mjs` (esbuild). Built inside the `web` image |
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
-| `pi/` | Raspberry Pi + Internet-in-a-Box deployment: light tileserver config, compose file, nginx snippets, notes |
+| `pi/` | Raspberry Pi + Internet-in-a-Box deployment: compose file, nginx snippets, notes |
 | `systemd/` | Start the compose stack at boot |
 | `data/` | Your mbtiles files (not in git) |
 
@@ -193,11 +193,17 @@ Contour files from other builders work too if they carry one of those attributes
 
 ## Use with TAK clients
 
-TileServer GL serves rendered raster tiles for each style.
+TileServer GL serves rendered raster tiles for each style, on x86 and ARM alike.
 Add a map source in ATAK/WinTAK/iTAK with this URL pattern:
 
 ```
 http://YOUR_SERVER:8080/styles/topo-light/{z}/{x}/{y}.png
+```
+
+On a Raspberry Pi installed with `scripts/install-pi.sh`, the tile server sits behind nginx at `/maps/` instead:
+
+```
+http://YOUR_PI/maps/styles/topo-light/{z}/{x}/{y}.png
 ```
 
 Replace `topo-light` with `osm`, `topo-dark`, or `overlay` for the other styles.
@@ -206,7 +212,7 @@ For higher resolution screens, use `.../{z}/{x}/{y}@2x.png`.
 ## Raspberry Pi behind Internet-in-a-Box
 
 See [pi/README.md](pi/README.md): clone onto the Pi, copy your `.mbtiles` files in, run `sudo ./scripts/install-pi.sh`.
-It starts TileServer GL light in Docker on localhost, builds the print tool on the Pi, and adds the nginx snippets so
+It starts TileServer GL in Docker on localhost, builds the print tool on the Pi, and adds the nginx snippets so
 IIAB serves `/maps/` and `/print/`.
 
 ## Start at boot

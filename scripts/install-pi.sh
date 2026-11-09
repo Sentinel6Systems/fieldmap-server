@@ -3,7 +3,7 @@
 # Run from the repository root on the Pi, as a user with sudo:
 #   sudo ./scripts/install-pi.sh
 # It builds the print tool here (Node is installed by IIAB), starts TileServer GL
-# light in Docker on localhost, and adds the two nginx snippets. Re-run it after
+# in Docker on localhost, and adds the two nginx snippets. Re-run it after
 # `git pull` to update; it is safe to run more than once.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,7 +24,8 @@ if [ ! -f /etc/docker/daemon.json ]; then
 fi
 
 echo "== Tile server"
-cp pi/tileserver/config-pi.json pi/tileserver/docker-compose.pi.yml .
+cp pi/tileserver/docker-compose.pi.yml .
+rm -f config-pi.json   # left by older versions, which ran the light image
 docker compose -f docker-compose.pi.yml pull -q
 docker compose -f docker-compose.pi.yml up -d
 
@@ -43,3 +44,4 @@ echo "== Styles served:"
 curl -s http://127.0.0.1/maps/styles.json | grep -o '"id":"[^"]*"' || echo "(tile server not answering yet; try again in a minute)"
 echo
 echo "Done. Maps: http://<this-pi>/maps/   Print: http://<this-pi>/print/"
+echo "TAK clients: http://<this-pi>/maps/styles/topo-light/{z}/{x}/{y}.png"

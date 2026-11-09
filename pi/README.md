@@ -1,7 +1,7 @@
 # Raspberry Pi 4 behind Internet-in-a-Box
 
 The layout used on the emergency box: Raspberry Pi OS Lite 64-bit, Internet-in-a-Box (IIAB) running the Wi-Fi
-hotspot and nginx on port 80, TileServer GL light in Docker on localhost, the print tool as static files.
+hotspot and nginx on port 80, TileServer GL in Docker on localhost, the print tool as static files.
 Nothing here contains credentials; put your own in IIAB's `local_vars.yml`.
 
 ## Quick install
@@ -15,8 +15,9 @@ cp /path/to/your/*.mbtiles data/      # basemap, contours, hillshade, built else
 sudo ./scripts/install-pi.sh
 ```
 
-That installs Docker if needed, starts TileServer GL light on localhost, builds the print tool on the Pi with the
-Node.js that IIAB installs, and adds the nginx snippets. Open `http://<pi>/print/`. To update later:
+That installs Docker if needed, starts TileServer GL on localhost, builds the print tool on the Pi with the
+Node.js that IIAB installs, and adds the nginx snippets. Open `http://<pi>/print/`; TAK clients use
+`http://<pi>/maps/styles/topo-light/{z}/{x}/{y}.png` (see the main README). To update later:
 `git pull && sudo ./scripts/install-pi.sh`.
 
 Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty of RAM and disk; do that with
@@ -27,8 +28,8 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
 1. **Docker.** `sudo apt install docker.io docker-compose`. Copy `docker/daemon.json` to `/etc/docker/daemon.json`
    first (no iptables, no bridge) so Docker never touches IIAB's firewall; the container uses host networking.
 2. **Data.** Clone this repository to `/library/maps/fieldmap-server` (IIAB's `/library` is where bulk content lives)
-   and copy your three `.mbtiles` files into its `data/`. Copy `tileserver/config-pi.json` and
-   `tileserver/docker-compose.pi.yml` to the repository root on the Pi, then
+   and copy your three `.mbtiles` files into its `data/`. Copy `tileserver/docker-compose.pi.yml`
+   to the repository root on the Pi, then
    `sudo docker compose -f docker-compose.pi.yml up -d`. The server listens on `127.0.0.1:8080` with
    `--public_url /maps/`, so URLs work under whatever hostname the client used.
 3. **nginx.** Copy `nginx/maps-nginx.conf` and `nginx/print-nginx.conf` to `/etc/nginx/conf.d/` (IIAB includes that
@@ -40,9 +41,10 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
 
 ## Notes
 
-- The light image does no server-side rendering, so `serve_rendered` is false for every style in `config-pi.json`.
-  Browsers render the vector tiles themselves; the Pi only serves files. Docker plus the tile server use about 140 MB
-  of RAM on a Pi 4.
+- The Pi runs the same full TileServer GL image and `config.json` as an x86 machine (the image is built for arm64),
+  so browsers get vector tiles and TAK clients get raster tiles. Raster tiles are drawn on the Pi the first time
+  they are asked for, which is slower than on a desktop; TAK clients cache them. Use 64-bit Raspberry Pi OS.
+  Once it has rendered tiles the tile server holds a few hundred MB of RAM, so a 4 GB Pi is the comfortable minimum.
 - The image in `docker-compose.pi.yml` is pinned by digest so a later pull cannot change it unnoticed.
 - IIAB's nginx uses a limited MIME table: serve JavaScript as `.js`, not `.mjs` (the print tool's build already does).
 - To keep the default map view on the recipient's area, edit `center` and `zoom` in the Pi's copies of the styles;

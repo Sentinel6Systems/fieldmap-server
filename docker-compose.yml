@@ -5,7 +5,7 @@
 # Ports and the config file are set in .env (copy .env.example).
 services:
   tileserver:
-    image: ${TILESERVER_IMAGE:-maptiler/tileserver-gl:latest}
+    image: ${TILESERVER_IMAGE:-maptiler/tileserver-gl:v5.7.0}
     container_name: tileserver
     restart: unless-stopped
     ports:
