@@ -655,24 +655,171 @@ function drawShapes(ctx, toPage, r, shapes, dpi, units, measure) {
   ctx.save();
   ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
   ctx.lineJoin = "round";
-  const w = dpi / 70, fontPx = Math.round(dpi * 0.09);
+  const w = dpi / 70, fontPx = Math.round(dpi * 0.09), pad = fontPx * 0.45;
+  const halo = dpi / 45;
   for (const s of shapes) {
     const pts = shapeRing(s).map(([lng, lat]) => toPage(lng, lat));
     const path = () => { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath(); };
     const [cr, cg, cb] = hexRgb(s.color || "#d7263d");
     path(); ctx.fillStyle = `rgba(${cr},${cg},${cb},0.12)`; ctx.fill();
     for (const [col, lw] of [["#fff", w * 2.4], [s.color || "#d7263d", w]]) { path(); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke(); }
-    const c = toPage(shapeCenter(s).lng, shapeCenter(s).lat);
-    const lines = [s.label, measure ? shapeSummary(s, units) : ""].filter(Boolean);
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    lines.forEach((t, i) => {
-      ctx.font = `${i === 0 && s.label ? "bold " : ""}${fontPx}px ${FAM}`;
-      const y = c.y + (i - (lines.length - 1) / 2) * fontPx * 1.25;
-      ctx.lineWidth = dpi / 45; ctx.strokeStyle = "#fff"; ctx.strokeText(t, c.x, y);
-      ctx.fillStyle = INK; ctx.fillText(t, c.x, y);
-    });
+
+    // Labels go on the part of the shape that is on the page.
+    const vis = clipPolygon(pts.slice(0, -1), { x: r.x + pad, y: r.y + pad, w: r.w - 2 * pad, h: r.h - 2 * pad });
+    if (vis.length < 3) continue;
+    const text = (t, x, y, bold) => {
+      ctx.font = `${bold ? "bold " : ""}${fontPx}px ${FAM}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = halo; ctx.strokeStyle = "#fff"; ctx.strokeText(t, x, y);
+      ctx.fillStyle = INK; ctx.fillText(t, x, y);
+    };
+    // The name in the middle, or in the middle of the visible part when the middle is off the page.
+    if (s.label) {
+      let c = toPage(shapeCenter(s).lng, shapeCenter(s).lat);
+      if (!pointInPolygon(c, vis)) c = polygonCentroid(vis);
+      text(s.label, c.x, c.y, true);
+    }
+    // The measurement once, along the inside of the lowest visible edge.
+    if (measure) placeAlongBottom(ctx, s, shapeSummary(s, units), pts, vis, r, { fontPx, pad, halo, cx: s.type === "circle" ? toPage(s.center.lng, s.center.lat) : null });
   }
   ctx.restore();
+}
+
+/** Write `t` inside the shape along its lowest visible edge: curved along the bottom arc of a circle
+ *  that is fully on the page there; otherwise along the lowest straight edge that has room; otherwise
+ *  level, at the lowest height where the visible part is wide enough. */
+function placeAlongBottom(ctx, s, t, pts, vis, r, o) {
+  const { fontPx, pad, halo } = o;
+  ctx.font = `${fontPx}px ${FAM}`;
+  const tw = ctx.measureText(t).width;
+  const inside = (p) => p.x >= r.x + pad && p.x <= r.x + r.w - pad && p.y >= r.y + pad && p.y <= r.y + r.h - pad;
+  const glyphs = (draw) => { for (const pass of ["stroke", "fill"]) draw(pass); };
+
+  if (s.type === "circle" && o.cx) {
+    const c = o.cx, R = Math.hypot(pts[0].x - c.x, pts[0].y - c.y);
+    const rt = R - pad - fontPx * 0.35;                      // text baseline radius, inside the rim
+    const span = tw / rt;
+    const ok = rt > fontPx * 2 && span < Math.PI * 0.8 &&
+      [-span / 2, 0, span / 2].every((d) => inside({ x: c.x + R * Math.cos(Math.PI / 2 + d), y: c.y + R * Math.sin(Math.PI / 2 + d) }));
+    if (ok) {
+      glyphs((pass) => {
+        let th = Math.PI / 2 + span / 2;                     // left end; reads left to right
+        for (const ch of t) {
+          const cw = ctx.measureText(ch).width, a = th - cw / 2 / rt;
+          ctx.save();
+          ctx.translate(c.x + rt * Math.cos(a), c.y + rt * Math.sin(a));
+          ctx.rotate(a - Math.PI / 2);
+          ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+          if (pass === "stroke") { ctx.lineWidth = halo; ctx.strokeStyle = "#fff"; ctx.strokeText(ch, 0, 0); }
+          else { ctx.fillStyle = INK; ctx.fillText(ch, 0, 0); }
+          ctx.restore();
+          th -= cw / rt;
+        }
+      });
+      return;
+    }
+  }
+
+  // Straight edges of the visible part whose inside faces up, lowest first.
+  const edges = [];
+  for (let i = 0; i < vis.length; i++) {
+    const p = vis[i], q = vis[(i + 1) % vis.length];
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    if (len < tw + 4 * pad) continue;
+    const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+    let n = { x: -(q.y - p.y) / len, y: (q.x - p.x) / len };
+    if (!pointInPolygon({ x: mid.x + n.x * 3, y: mid.y + n.y * 3 }, vis)) n = { x: -n.x, y: -n.y };
+    if (n.y > -0.6) continue;                                // not a lower edge
+    edges.push({ p, q, mid, n });
+  }
+  edges.sort((a, b) => b.mid.y - a.mid.y);
+  for (const e of edges) {
+    const [a, b] = e.p.x <= e.q.x ? [e.p, e.q] : [e.q, e.p];
+    const ang = Math.atan2(b.y - a.y, b.x - a.x), off = pad + fontPx * 0.55;
+    const c = { x: e.mid.x + e.n.x * off, y: e.mid.y + e.n.y * off };
+    const ux = Math.cos(ang), uy = Math.sin(ang), hw = tw / 2 + pad, hh = fontPx * 0.55;
+    const corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([dx, dy]) => ({ x: c.x + dx * ux - dy * uy, y: c.y + dx * uy + dy * ux }));
+    if (!corners.every((k) => pointInPolygon(k, vis))) continue;
+    glyphs((pass) => {
+      ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      if (pass === "stroke") { ctx.lineWidth = halo; ctx.strokeStyle = "#fff"; ctx.strokeText(t, 0, 0); }
+      else { ctx.fillStyle = INK; ctx.fillText(t, 0, 0); }
+      ctx.restore();
+    });
+    return;
+  }
+
+  // Level text at the lowest height where the visible part is wide enough (shrinking it if need be).
+  const ys = vis.map((p) => p.y), top = Math.min(...ys), bottom = Math.max(...ys);
+  const span = (y) => {
+    const xs = [];
+    for (let i = 0; i < vis.length; i++) {
+      const p = vis[i], q = vis[(i + 1) % vis.length];
+      if ((p.y <= y) !== (q.y <= y)) xs.push(p.x + ((y - p.y) / (q.y - p.y)) * (q.x - p.x));
+    }
+    xs.sort((a, b) => a - b);
+    let best = null;
+    for (let i = 0; i + 1 < xs.length; i += 2) if (!best || xs[i + 1] - xs[i] > best[1] - best[0]) best = [xs[i], xs[i + 1]];
+    return best;
+  };
+  const step = Math.max(1, fontPx / 4);
+  for (const scale of [1, 0.85, 0.7]) {
+    const fs = fontPx * scale;
+    ctx.font = `${fs}px ${FAM}`;
+    const need = ctx.measureText(t).width + 3 * pad;
+    for (let y = bottom - pad - fs * 0.5; y - fs * 0.5 > top; y -= step) {
+      const lo = span(y + fs * 0.5), hi = span(y - fs * 0.5);
+      if (!lo || !hi) continue;
+      const x0 = Math.max(lo[0], hi[0]), x1 = Math.min(lo[1], hi[1]);
+      if (x1 - x0 < need) continue;
+      glyphs((pass) => {
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        if (pass === "stroke") { ctx.lineWidth = halo; ctx.strokeStyle = "#fff"; ctx.strokeText(t, (x0 + x1) / 2, y); }
+        else { ctx.fillStyle = INK; ctx.fillText(t, (x0 + x1) / 2, y); }
+      });
+      return;
+    }
+  }
+}
+
+/** Sutherland-Hodgman: the part of polygon `pts` inside rectangle `r`. */
+function clipPolygon(pts, r) {
+  const sides = [
+    [(p) => p.x >= r.x, (p, q) => ({ x: r.x, y: p.y + ((r.x - p.x) / (q.x - p.x)) * (q.y - p.y) })],
+    [(p) => p.x <= r.x + r.w, (p, q) => ({ x: r.x + r.w, y: p.y + ((r.x + r.w - p.x) / (q.x - p.x)) * (q.y - p.y) })],
+    [(p) => p.y >= r.y, (p, q) => ({ x: p.x + ((r.y - p.y) / (q.y - p.y)) * (q.x - p.x), y: r.y })],
+    [(p) => p.y <= r.y + r.h, (p, q) => ({ x: p.x + ((r.y + r.h - p.y) / (q.y - p.y)) * (q.x - p.x), y: r.y + r.h })],
+  ];
+  let out = pts;
+  for (const [inside, cut] of sides) {
+    const src = out; out = [];
+    for (let i = 0; i < src.length; i++) {
+      const p = src[i], q = src[(i + 1) % src.length];
+      if (inside(q)) { if (!inside(p)) out.push(cut(p, q)); out.push(q); }
+      else if (inside(p)) out.push(cut(p, q));
+    }
+    if (!out.length) break;
+  }
+  return out;
+}
+
+function pointInPolygon(p, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+function polygonCentroid(poly) {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const f = poly[j].x * poly[i].y - poly[i].x * poly[j].y;
+    a += f; cx += (poly[j].x + poly[i].x) * f; cy += (poly[j].y + poly[i].y) * f;
+  }
+  if (Math.abs(a) < 1e-9) return poly[0];
+  return { x: cx / (3 * a), y: cy / (3 * a) };
 }
 
 function drawMarkers(ctx, toPage, r, markers, dpi) {

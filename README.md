@@ -127,7 +127,9 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
 - Shapes: circles (tap the centre, tap the edge, then type an exact radius), rectangles (two opposite corners) and
   polygons (tap the corners; finish on the first corner, with Enter or with Finish shape). Each shows its radius or
   sides and its area, on screen, on every printed page and on the list page (a checkbox leaves the measurements off
-  the map; the list page always has them). A Units menu switches between imperial
+  the map; the list page always has them). On paper the name sits in the middle and the measurement runs once along
+  the inside of the lowest edge (curved along a circle); when part of a shape is off the sheet, both move into the
+  part that is printed. A Units menu switches between imperial
   (ft, mi, acres) and metric (m, km, ha); the circle's radius can be typed in either unit of the chosen system.
 - Atlas mode: 2×2, 3×3, 4×4, 6×6 or 8×8 pages with 1 cm overlap, rows A… from the north and columns 1… from the west.
   A cover page built from the map data (places, peaks, lakes, rivers inside the atlas, a locator map), an index page
