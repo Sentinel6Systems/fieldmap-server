@@ -330,13 +330,15 @@ add("cliff", "line", "peaks", OMT, "mountain_peak", ["all", LINE, cls("cliff", "
 def sym(id, group, layer, flt, layout, paint, minzoom=None, maxzoom=None, source=OMT):
     add(id, "symbol", group, source, layer, flt, minzoom, maxzoom, layout, paint)
 
-# Flow arrows: rivers and canals from 1:50k, named streams from 1:24k, every stream only at 1:12k.
+# Flow arrows: rivers and canals from 1:100k, named streams from 1:50k, every stream from 1:24k,
+# about every 1 cm along the line on paper. They may overlap other symbols and never push labels
+# away, so collisions do not thin them out.
 sym("flow-arrow", "flow-arrows", "waterway",
     ["all", LINE, PERENNIAL, ["!=", BRUNNEL, "tunnel"],
-     ["any", cls("river", "canal"), ["all", ["has", "name"], [">=", ["zoom"], 13]], [">=", ["zoom"], 14]]],
-    {"symbol-placement": "line", "symbol-spacing": ["interpolate", ["linear"], ["zoom"], 12, 260, 15, 420],
-     "icon-image": "sym_flow", "icon-size": ["match", ["get", "class"], "river", 1, 0.75],
-     "icon-rotation-alignment": "map", "icon-padding": 12}, {}, minzoom=12)
+     ["any", cls("river", "canal"), ["all", ["has", "name"], [">=", ["zoom"], 12]], [">=", ["zoom"], 13]]],
+    {"symbol-placement": "line", "symbol-spacing": ["interpolate", ["linear"], ["zoom"], 11, 35, 13.25, 40, 15, 60],
+     "icon-image": "sym_flow", "icon-size": ["match", ["get", "class"], ["river", "canal"], 1.35, 1.1],
+     "icon-rotation-alignment": "map", "icon-allow-overlap": True, "icon-ignore-placement": True}, {}, minzoom=11)
 
 # US data labels come first in the symbol list, so OSM labels win any collision.
 sym("gnis-terrain", "terrain-names", "gnis", ["==", ["get", "kind"], "terrain"],

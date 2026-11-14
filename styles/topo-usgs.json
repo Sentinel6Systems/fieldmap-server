@@ -13409,7 +13409,7 @@
       },
       "source": "openmaptiles",
       "source-layer": "waterway",
-      "minzoom": 12,
+      "minzoom": 11,
       "filter": [
         "all",
         [
@@ -13465,7 +13465,7 @@
               [
                 "zoom"
               ],
-              13
+              12
             ]
           ],
           [
@@ -13473,7 +13473,7 @@
             [
               "zoom"
             ],
-            14
+            13
           ]
         ]
       ],
@@ -13487,10 +13487,12 @@
           [
             "zoom"
           ],
-          12,
-          260,
+          11,
+          35,
+          13.25,
+          40,
           15,
-          420
+          60
         ],
         "icon-image": "sym_flow",
         "icon-size": [
@@ -13499,12 +13501,16 @@
             "get",
             "class"
           ],
-          "river",
-          1,
-          0.75
+          [
+            "river",
+            "canal"
+          ],
+          1.35,
+          1.1
         ],
         "icon-rotation-alignment": "map",
-        "icon-padding": 12
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true
       }
     },
     {

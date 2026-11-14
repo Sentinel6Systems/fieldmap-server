@@ -18,7 +18,18 @@ fonts, no online services anywhere in the stack.
 
 ## Quick start
 
-Requirements: Docker with the Compose plugin; disk space for the build (see below).
+Requirements on the machine that builds the data and runs the server:
+
+- Linux (or another system with Docker and a bash shell), x86-64 or ARM64
+- Docker with the Compose plugin; every build tool (Planetiler, GDAL, Tippecanoe, Osmium) runs in a container
+- `bash`, `git`, `curl` and `python3` on the host
+- RAM: 8 GB is enough for a few US states or a small country; large regions want 16-32 GB (`PLANETILER_MEMORY`)
+- Disk: see [Disk space](#disk-space); the build needs far more than the finished files
+
+The server alone (no building) runs on much less: a Raspberry Pi 4 with 4 GB serves a large region (see `pi/`).
+Node.js and Pillow are only needed to work on the print tool or the style generators.
+
+Build a small area first to check that everything works, then your real region.
 
 ```bash
 git clone https://github.com/Sentinel6Systems/fieldmap-server.git
@@ -67,7 +78,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `docker-compose.yml`, `.env.example` | The two services: `tileserver` and `web` (print tool + proxy) |
 | `config.json`, `config-basic.json` | TileServer GL configs: all six styles and the `topo-usgs` scale bands, or `osm`+`overlay` with only a base map |
 | `styles/`, `fonts/`, `sprites/` | The styles and every asset they need, all local |
-| `planetiler/` | Custom Planetiler schema for the optional extras layers |
+| `planetiler/` | Custom Planetiler schema for the extras layers |
 | `scripts/`, `regions/`, `tools/` | Data builders (Planetiler, GDAL, Tippecanoe, Osmium in a tool container) |
 | `print/` | The print tool: `src/`, `public/`, `build.mjs` (esbuild). Built inside the `web` image |
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
@@ -84,7 +95,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `topo-dark` | Topographic, dark colours, for night use | all three |
 | `overlay` | Transparent roads and labels, for use over aerial imagery | `basemap.mbtiles` |
 | `topo-print` | `topo-light` tuned for paper: smaller labels, road names from z11/z13, dark outlined buildings, town names, lighter hillshade | all three |
-| `topo-usgs` | Second paper style in the manner of a USGS quadrangle: white paper, green woodland, brown contours with monospace elevations, red and black cased roads, railway ties, dashed seasonal water with flow arrows, banded park and military boundaries | all three |
+| `topo-usgs` | Second paper style in the manner of a USGS quadrangle: white paper, green woodland, brown contours with monospace elevations, red and black cased roads, railway ties, dashed seasonal water with flow arrows, banded park and military boundaries | all three; optional `extras`, `usdata` |
 
 `topo-print` and `topo-usgs` read the same tile sets, so the print tool can switch between them (the **Map style**
 menu; the choice is remembered). `topo-usgs` is generated, not hand-edited:
@@ -97,11 +108,10 @@ python3 tools/make-topo-usgs.py     # styles/topo-usgs.json
 Line widths in the generator are millimetres on paper at 1:24,000 and scale gently with zoom. Route shields come from
 the topo sprite, except the interstate shield (blue and red, white numbers), which `make-usgs-sprite.py` draws.
 Motorway exit numbers, runway lengths and the grey large buildings (5,000 m² and more) need `data/extras.mbtiles`.
-Not done: deciduous and conifer woodland (OpenMapTiles carries no leaf type) and spot heights chosen by prominence
-(needs a hilltop set derived from the elevation data). Every layer carries a
-`fieldmap:group` in its metadata (roads, trails, contours, parks, pois, ...), which the print tool's **Layers** panel
-switches. Its fonts
-are Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License, texts in `fonts/`).
+Every layer carries a `fieldmap:group` in its metadata (roads, trails, contours, parks, pois, ...), which the print
+tool's **Layers** panel switches. Its fonts are Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font
+License, texts in `fonts/`). Not done yet: deciduous and conifer woodland (OpenMapTiles carries no leaf type) and
+spot heights chosen by prominence (needs a hilltop set derived from the elevation data).
 
 ## The print tool
 
@@ -127,8 +137,12 @@ are Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License, text
   remembered with the other settings. Both print styles carry the groups: `topo-usgs` from its generator, `topo-print`
   from `tools/tag-print-groups.py` (run it again after editing that style by hand). In black and white, raster icons
   and area patterns keep their colours.
-- Contour interval and data date shown in the margin come from `print/public/config.json`. The credit line names OpenMapTiles and
-  OpenStreetMap plus every other data set the style reads (from each tile set's attribution; empty files add nothing).
+- The contour interval and data date in the margin come from `print/public/config.json`: set `contourMinor`,
+  `contourMajor` and `contourUnit` to match your `build-contours.sh` run (the defaults are 40 and 200 ft), and
+  `dataDate` to the date of your OpenStreetMap extract, for example `"OSM 2026-01"` (empty by default). Then rebuild
+  the print tool (`docker compose up -d --build`, or `install-pi.sh` on a Pi). The credit line names OpenMapTiles
+  and OpenStreetMap plus every other data set the style reads (from each tile set's attribution; empty files add
+  nothing).
 - Print scale bands: the generator also writes `topo-usgs-12k`, `-24k`, `-50k` and `-100k`, with every line width
   and text size fixed at its value for that scale (at 40°N). The print tool uses the band nearest the sheet's
   scale when the server has it, so a 1:24,000 sheet has the same line weights at any latitude; the screen map keeps
@@ -188,7 +202,7 @@ Downloaded elevation tiles stay in `data/cache/dem` for reuse.
 
 ### `build-extras.sh [--bounds=<min-lon>,<min-lat>,<max-lon>,<max-lat>] <osm-file>`
 
-Optional. Builds `data/extras.mbtiles` from an OSM extract already in `data/sources`: OpenStreetMap features
+Builds `data/extras.mbtiles` from an OSM extract already in `data/sources`: OpenStreetMap features
 that the OpenMapTiles base map leaves out but that matter on a paper map. The layers are defined in
 `planetiler/extras.yml` (Planetiler's custom schema format) and drawn by `topo-usgs`:
 
@@ -201,13 +215,18 @@ that the OpenMapTiles base map leaves out but that matter on a paper map. The la
 | `landmark` | springs, waterfalls, caves, sinkholes, wells, cairns, survey points, viewpoints, ruins | springs in blue, survey points as triangles with elevation |
 | `building_large`, `exit`, `runway` | buildings of 5,000 m² and more, motorway junctions, runways | grey large buildings, exit numbers, runway length in feet |
 
-Without this step `data/extras.mbtiles` is an empty placeholder (written by `scripts/data-placeholders.sh`, which
-the other build scripts and `install-pi.sh` call): the tile server needs every file `config.json` lists, and the
-layers are simply blank. Size: about 1 MB per 2,000 square miles of US countryside (roughly 70 MB for a six-state
+`build-region.sh` (its `extras` step, on by default) and `build-vector.sh` (unless `NO_EXTRAS=1`) run it for you
+after the base map. Without it `data/extras.mbtiles` is an empty placeholder (written by
+`scripts/data-placeholders.sh`, which the build scripts and `install-pi.sh` call): the tile server needs every file
+`config.json` lists, and the layers are simply blank. The OpenMapTiles base map has no power lines, pipelines,
+fences or gates, so a map built before this step was on by default shows none: run
+`./scripts/build-region.sh <region-file> extras` once and copy `data/extras.mbtiles` to the server.
+
+Size: about 1 MB per 2,000 square miles of US countryside (roughly 70 MB for a six-state
 region, 1-2 GB for the whole US), most of it z14 fences, gates and power towers.
 
 ```bash
-./scripts/build-region.sh <region-file> extras    # reuses the merged OSM file of the vector step
+./scripts/build-region.sh <region-file> extras    # only this step; reuses the merged OSM file of the vector step
 ./scripts/build-extras.sh <name>.osm.pbf          # any extract in data/sources, e.g. after build-vector.sh <name>
 ```
 
@@ -241,7 +260,7 @@ areas are far smaller.
 
 ### `build-region.sh [--world] [--language <code>] <region-file> [vector] [contours] [hillshade] [extras]`
 
-Builds all three data files for a region described in a region file.
+Builds the data files for a region described in a region file: base map, contours, hillshade and extras.
 A region can cover several Geofabrik extracts, for example several US states.
 The script downloads each extract, merges them into one file with Osmium,
 and runs Planetiler on the merged file. Then it builds contours and hillshade
@@ -251,7 +270,7 @@ for the region's bounding box.
 ./scripts/build-region.sh <region-file>
 ```
 
-The `extras` step is optional and runs only when named. Add step names to run only some steps:
+Add step names to run only some steps:
 
 ```bash
 ./scripts/build-region.sh <region-file> contours hillshade
@@ -339,7 +358,7 @@ Put your own files in `data/` with these names:
 | `data/basemap.mbtiles` | vector | OpenMapTiles schema base map |
 | `data/contours.mbtiles` | vector | layers `contours_major` and `contours_minor`, attribute `elev_ft` (feet) or `elev_m` (meters) |
 | `data/hillshade.mbtiles` | raster | gray hillshade PNG tiles |
-| `data/extras.mbtiles` | vector | optional: the layers of `planetiler/extras.yml`; run `./scripts/data-placeholders.sh` for an empty one |
+| `data/extras.mbtiles` | vector | the layers of `planetiler/extras.yml` (built by default); `./scripts/data-placeholders.sh` writes an empty one |
 | `data/usdata.mbtiles` | vector | optional: layers `obstacle`, `gnis`, `survey_mark`, `protected`, `flood` (see `tools/us-data.py`); empty from the same script |
 
 `extras.mbtiles` and `usdata.mbtiles` cover only the region they were built for (its OSM extract and `BBOX`), even
@@ -425,6 +444,18 @@ ssh <user>@<pi-host> 'cd <repo-dir> && sudo ./scripts/install-pi.sh'     # or: d
 See [systemd/README.md](systemd/README.md).
 
 ## Changelog
+
+### Since v1.0.0
+
+- Print styles: `topo-usgs` (USGS-quadrangle look, generated by `tools/make-topo-usgs.py`) with print-scale bands,
+  English-only labels in both print styles, and a Map style menu in the print tool.
+- Print tool: Layers panel (group switches, black-and-white ink, hillshade and contour controls, grid lines),
+  credit line built from the data sets in use; moved from `/print/` to `/mapprinter/`.
+- Extra data: `build-extras.sh`, part of the default build (OSM power, pipelines, barriers, towers, landmarks, large buildings, exits,
+  runways) and `build-usdata.sh` (FAA obstacles, GNIS names, NGS survey marks, PAD-US access, FEMA flood zones).
+- Builds: world layer for zoom 0-8, single-language labels, download mirrors, disk-space checks, region files.
+- Raspberry Pi: one-step `install-pi.sh` with a memory cap for the tile server, restarted when its inputs change.
+- `tools/hillshade-webp.py` to shrink hillshade files.
 
 ### v1.0.0
 

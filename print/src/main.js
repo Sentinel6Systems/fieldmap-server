@@ -19,9 +19,11 @@ const LS = {
 
 const $ = (id) => document.getElementById(id);
 const state = Object.assign(
-  { scale: 24000, paper: "letter", orientation: "landscape", dpi: 300, title: "", listPage: false, color: PALETTE[0][0], atlas: 1, binder: true, style: "topo-print" },
+  { scale: 24000, paper: "letter", orientation: "landscape", dpi: 300, title: "", listPage: false, color: PALETTE[0][0], atlas: 1, binder: false, style: "topo-print" },
   JSON.parse(localStorage.getItem(LS.settings) || "{}")
 );
+// Settings saved before version 2 always carried binder: true (the old default); start them off.
+if ((state.settingsVersion || 1) < 2) { state.binder = false; state.settingsVersion = 2; }
 state.layers = { ...LAYER_DEFAULTS, ...(state.layers || {}) };
 
 // Print styles, in menu order. Only the ones the tile server actually has are offered.
@@ -105,7 +107,7 @@ $("orientation").value = state.orientation;
 const atlasSel = $("atlas");
 for (const g of ATLAS_GRIDS) atlasSel.add(new Option(g === 1 ? "Single sheet" : `Atlas ${g} × ${g} (${g * g} pages + index)`, g));
 atlasSel.value = state.atlas || 1;
-$("binder").checked = state.binder !== false;
+$("binder").checked = !!state.binder;
 $("dpi").value = state.dpi;
 $("title").value = state.title;
 $("list-page").checked = !!state.listPage;

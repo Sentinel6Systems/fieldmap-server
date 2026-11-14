@@ -48,7 +48,7 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
   they are asked for, which is slower than on a desktop; TAK clients cache them. Use 64-bit Raspberry Pi OS.
   The configs start no raster renderers and cap them at two per style (see "Use with TAK clients" in the main
   README). Memory grows with the number of styles TAK clients actually use, up to a few hundred MB if they use
-  all five.
+  all six.
 - The tile server container has a hard memory cap with no swap. `install-pi.sh` runs `scripts/mem-limit.sh`, which
   writes `TILESERVER_MEM_LIMIT` to `.env` in the repository root: `1g` on a Pi with under 8 GB, no cap on an 8 GB Pi.
   Edit that line to choose yourself, e.g. `TILESERVER_MEM_LIMIT=768m`. If a group of TAK clients pulls enough raster

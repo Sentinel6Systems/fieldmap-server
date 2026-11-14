@@ -14,12 +14,12 @@
 #                      en zh hi es ar fr bn pt ru id (the ten most spoken).
 #                      Without it every language is kept.
 #
-# Steps (default: the first three, in this order):
+# Steps (default: all four, in this order):
 #   vector     download and merge the OSM extracts, then run Planetiler
 #              -> data/basemap.mbtiles
 #   contours   -> data/contours.mbtiles
 #   hillshade  -> data/hillshade.mbtiles
-#   extras     optional: power lines, pipelines, fences and gates, towers,
+#   extras     power lines, pipelines, fences and gates, towers,
 #              springs and other landmarks for the print styles
 #              -> data/extras.mbtiles (build-extras.sh; reuses the merged
 #              OSM file from the vector step)
@@ -78,7 +78,7 @@ BBOX_CSV="$(IFS=,; echo "${BBOX_ARGS[*]}")"
 
 STEPS=("$@")
 if [ ${#STEPS[@]} -eq 0 ]; then
-    STEPS=(vector contours hillshade)
+    STEPS=(vector contours hillshade extras)
 fi
 for step in "${STEPS[@]}"; do
     case "$step" in

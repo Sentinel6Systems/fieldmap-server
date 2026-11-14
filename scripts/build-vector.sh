@@ -80,5 +80,10 @@ fetch_shared_sources "$REPO_DIR/data/sources"
 # and Planetiler would then build the whole world.
 build_basemap "$NAME.osm.pbf" "$MEMORY" --osm_parse_node_bounds=true
 
+# The extra layers (power lines, pipelines, fences, towers, landmarks) from the same
+# extract: a few minutes and a small file. Set NO_EXTRAS=1 to skip them.
+if [ -z "${NO_EXTRAS:-}" ]; then
+    PLANETILER_MEMORY="$MEMORY" "$REPO_DIR/scripts/build-extras.sh" "$NAME.osm.pbf"
+fi
 "$REPO_DIR/scripts/data-placeholders.sh"
 echo "Done. Output: $REPO_DIR/data/basemap.mbtiles"
