@@ -9,6 +9,7 @@ import { arrowInfo as arrowInfoFor } from "./features.js";
 import { PALETTE, swatchRow } from "./palette.js";
 import { UNITS, defaultUnit, unitMetres, shapeRing, shapeCenter, shapeSummary, shapeLegs, shapeInsideText, fmtLength, SHAPE_NAMES } from "./shapes.js";
 import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groupsOf } from "./layers.js";
+import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
 
 const qs = new URLSearchParams(location.search);
 
@@ -234,6 +235,7 @@ map.on("load", () => {
   footprintCenter = visibleCenter();
   updateFootprint();
   renderLists();
+  terrainReady.then((t) => t.addLayers());
 
   map.on("mousedown", onDown); map.on("touchstart", onDown);
   map.on("mousemove", onMove); map.on("touchmove", onMove);
@@ -241,8 +243,16 @@ map.on("load", () => {
 });
 
 
+// Terrain analysis (viewshed, radio): only when the tile server has elevation tiles.
+let terrain = null;
+const terrainReady = initTerrain({
+  map, tilesBase: TILES, state, saveSettings, root: $("terrain"),
+  onLayout: () => updateFootprint(),
+}).then((t) => (terrain = t));
+
 map.on("click", (e) => {
   if (justDragged) { justDragged = false; return; }
+  if (onPin(e) || (terrain && terrain.onClick(e))) return;
   if (mode === "marker") { addMarker(e.lngLat); return; }
   if (mode === "arrow-start") { pendingArrow = { a: { lng: e.lngLat.lng, lat: e.lngLat.lat } }; setMode("arrow-end"); return; }
   if (mode === "arrow-end") { addArrow(pendingArrow.a, { lng: e.lngLat.lng, lat: e.lngLat.lat }); pendingArrow = null; setMode(null); return; }
@@ -259,8 +269,10 @@ map.on("click", (e) => {
 
 /* ---------- dragging: markers, arrow ends, the sheet ---------- */
 let dragging = null, justDragged = false;
+// Terrain points are draggable DOM markers; their presses must not also drag the sheet.
+const onPin = (e) => !!(e.originalEvent && e.originalEvent.target && e.originalEvent.target.closest && e.originalEvent.target.closest(".terrain-pin"));
 function onDown(e) {
-  if (mode) return;
+  if (mode || (terrain && terrain.picking) || onPin(e)) return;
   const pt = e.point;
   let hit = map.queryRenderedFeatures(pt, { layers: ["markers-circle"] });
   if (hit.length) { dragging = { kind: "marker", id: hit[0].properties.id }; return begin(e); }
@@ -622,10 +634,10 @@ $("clear-all").onclick = () => {
     markers = []; arrows = []; shapes = []; saveMarkers(); saveArrows(); saveShapes();
   }
 };
-$("units").onchange = (e) => { state.units = e.target.value; saveSettings(); saveShapes(); };
+$("units").onchange = (e) => { state.units = e.target.value; saveSettings(); saveShapes(); if (terrain) terrain.refresh(); };
 $("shape-measure").onchange = (e) => { state.shapeMeasure = e.target.checked; saveSettings(); saveShapes(); };
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") setMode(null);
+  if (e.key === "Escape") { setMode(null); if (terrain) terrain.cancelPick(); }
   if (e.key === "Enter" && mode === "polygon" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) finishPolygon();
 });
 
@@ -639,7 +651,7 @@ renderNewColor();
 
 scaleSel.onchange = () => { state.scale = +scaleSel.value; saveSettings(); updateFootprint(); };
 // Switch the map style in place: the sheet outline, markers and arrows are carried over.
-const OWN_SOURCES = ["footprint", "shapes", "arrows", "markers", "temp"];
+const OWN_SOURCES = ["footprint", "shapes", "arrows", "markers", "temp", ...TERRAIN_SOURCES];
 function redraw(diff = true) {
   map.setStyle(drawnStyle(), {
     diff,
@@ -659,7 +671,7 @@ styleSel.onchange = async () => {
 };
 
 /* ---------- layer switches ---------- */
-function setLayers(patch) { Object.assign(state.layers, patch); saveSettings(); redraw(); renderLayerPanel(); }
+function setLayers(patch) { Object.assign(state.layers, patch); saveSettings(); redraw(); renderLayerPanel(); if (terrain) terrain.refresh(); }
 function segmented(label, key, options) {
   const row = document.createElement("div");
   row.className = "seg-row";

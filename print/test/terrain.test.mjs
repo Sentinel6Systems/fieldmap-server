@@ -116,7 +116,7 @@ test("path classes: clear, marginal, diffraction, blocked", () => {
   const ridge = z.slice(); ridge[50] = 40;
   assert.equal(cls(ridge, 10), 3, "one ridge");
   const two = z.slice(); two[30] = 40; two[70] = 40;
-  assert.equal(cls(two, 10), 4, "two ridges");
+  assert.equal(cls(two, 10), 5, "two ridges");
   const wall = z.slice(); wall[50] = 300;
   assert.equal(cls(wall, 10), 4, "more than 20 dB");
 });

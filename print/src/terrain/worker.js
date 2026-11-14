@@ -123,7 +123,7 @@ async function run(id, job, src) {
 }
 
 function count(arr) {
-  const c = [0, 0, 0, 0, 0];
+  const c = [0, 0, 0, 0, 0, 0];
   for (const v of arr) c[v]++;
   return c;
 }

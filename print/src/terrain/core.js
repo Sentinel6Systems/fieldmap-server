@@ -139,7 +139,8 @@ export const wattsToDbm = (w) => 10 * Math.log10(w * 1000);
 
 /** Viewshed over a grid by R2 ray casting: one ray from the observer to every cell on the
  *  edge of the grid; along a ray the height between two cells is interpolated and the
- *  steepest slope so far is the horizon. A cell is visible when any ray through it sees it.
+ *  steepest slope so far is the horizon. Each cell takes the answer of the ray that passes
+ *  closest to its centre.
  *  p: { obsH, tgtH, k, radius } (metres). Returns Uint8Array n*n:
  *  0 outside the radius or no data, 1 not visible, 2 ground visible,
  *  3 ground hidden but a target tgtH above it visible. */
@@ -158,6 +159,8 @@ export async function viewshed(spec, h, p, tick = noTick) {
   }
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if ((i - c) ** 2 + (j - c) ** 2 <= r2Max && !Number.isNaN(h[j * n + i])) out[j * n + i] = 1;
   out[c * n + c] = 2;
+  const best = new Float32Array(n * n).fill(Infinity);
+  best[c * n + c] = -1;
   const ends = [];
   for (let k = 0; k < n; k++) ends.push([k, 0], [k, n - 1], [0, k], [n - 1, k]);
   let done = 0;
@@ -170,22 +173,23 @@ export async function viewshed(spec, h, p, tick = noTick) {
     for (let t = 1; t <= steps; t++) {
       const fx = c + sx * t, fy = c + sy * t;
       // Interpolate across the minor axis between the two cells the ray passes.
-      let hz, ci, cj;
+      let hz, ci, cj, off;
       if (xMajor) {
         const y0 = Math.floor(fy), w = fy - y0, x = Math.round(fx);
         const a = he[y0 * n + x], b = w > 1e-9 ? he[(y0 + 1) * n + x] : a;
-        hz = a + (b - a) * w; ci = x; cj = Math.round(fy);
+        hz = a + (b - a) * w; ci = x; cj = Math.round(fy); off = Math.abs(fy - cj);
       } else {
         const x0 = Math.floor(fx), w = fx - x0, y = Math.round(fy);
         const a = he[y * n + x0], b = w > 1e-9 ? he[y * n + x0 + 1] : a;
-        hz = a + (b - a) * w; ci = Math.round(fx); cj = y;
+        hz = a + (b - a) * w; ci = Math.round(fx); cj = y; off = Math.abs(fx - ci);
       }
       if (Number.isNaN(hz)) continue;
       const d = t * Math.hypot(sx, sy);
       const slope = hz / d, k = cj * n + ci;
-      if (out[k]) {                                         // inside the circle, with data
-        if (slope >= horizon) out[k] = 2;
-        else if (tgt > 0 && (hz + tgt) / d >= horizon && out[k] === 1) out[k] = 3;
+      // A cell takes its answer from the ray that passes closest to its centre.
+      if (out[k] && off < best[k]) {                        // inside the circle, with data
+        best[k] = off;
+        out[k] = slope >= horizon ? 2 : tgt > 0 && (hz + tgt) / d >= horizon ? 3 : 1;
       }
       if (slope > horizon) horizon = slope;
     }
@@ -220,10 +224,12 @@ export function pathAnalysis(z, step, e, txH, rxH, fMHz, k) {
 
 /** Path class from a path analysis: 1 clear (line of sight, ≥ 60 % of the first Fresnel
  *  zone clear), 2 marginal (line of sight, zone partly blocked), 3 diffraction (one
- *  obstruction, ≤ 20 dB), 4 blocked (more than 20 dB, or two or more obstructions). */
+ *  obstruction, ≤ 20 dB), 4 blocked (more than 20 dB), 5 blocked (two or more separate
+ *  obstructions cut the line of sight). */
 export function pathClass(a) {
   if (a.nu < 0) return a.clearance >= 0.6 * a.fresnel || a.index < 0 ? 1 : 2;
-  if (a.runs >= 2 || knifeEdgeLoss(a.nu) > 20) return 4;
+  if (a.runs >= 2) return 5;
+  if (knifeEdgeLoss(a.nu) > 20) return 4;
   return 3;
 }
 
