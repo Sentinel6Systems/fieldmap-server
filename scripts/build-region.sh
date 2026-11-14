@@ -14,11 +14,13 @@
 #                      en zh hi es ar fr bn pt ru id (the ten most spoken).
 #                      Without it every language is kept.
 #
-# Steps (default: all four, in this order):
+# Steps (default: all five, in this order):
 #   vector     download and merge the OSM extracts, then run Planetiler
 #              -> data/basemap.mbtiles
 #   contours   -> data/contours.mbtiles
 #   hillshade  -> data/hillshade.mbtiles
+#   elevation  heights for the print tool's terrain analysis, up to zoom
+#              ELEVATION_MAXZOOM (default 12) -> data/elevation.mbtiles
 #   extras     power lines, pipelines, fences and gates, towers,
 #              springs and other landmarks for the print styles
 #              -> data/extras.mbtiles (build-extras.sh; reuses the merged
@@ -35,7 +37,7 @@ source "$REPO_DIR/scripts/lib.sh"
 trap 'disk_full_hint "$REPO_DIR/data"' ERR
 
 usage() {
-    echo "Usage: $0 [--world] [--language <code>] <region-file> [vector] [contours] [hillshade] [extras]" >&2
+    echo "Usage: $0 [--world] [--language <code>] <region-file> [vector] [contours] [hillshade] [elevation] [extras]" >&2
     exit 1
 }
 OPT_WORLD="" OPT_LANGUAGE=""
@@ -67,6 +69,7 @@ check_language
 : "${BBOX:?BBOX is not set in $REGION_FILE}"
 CONTOUR_UNITS="${CONTOUR_UNITS:-ft}"
 PLANETILER_MEMORY="${PLANETILER_MEMORY:-8g}"
+ELEVATION_MAXZOOM="${ELEVATION_MAXZOOM:-12}"
 
 # shellcheck disable=SC2206
 BBOX_ARGS=($BBOX)
@@ -78,11 +81,11 @@ BBOX_CSV="$(IFS=,; echo "${BBOX_ARGS[*]}")"
 
 STEPS=("$@")
 if [ ${#STEPS[@]} -eq 0 ]; then
-    STEPS=(vector contours hillshade extras)
+    STEPS=(vector contours hillshade elevation extras)
 fi
 for step in "${STEPS[@]}"; do
     case "$step" in
-        vector|contours|hillshade|extras) ;;
+        vector|contours|hillshade|elevation|extras) ;;
         *) echo "Error: unknown step '$step'" >&2; exit 1 ;;
     esac
 done
@@ -110,6 +113,10 @@ run_hillshade() {
     "$REPO_DIR/scripts/build-hillshade.sh" "${BBOX_ARGS[@]}"
 }
 
+run_elevation() {
+    "$REPO_DIR/scripts/build-elevation.sh" "${BBOX_ARGS[@]}" "$ELEVATION_MAXZOOM"
+}
+
 run_extras() {
     if [ ! -s "$REPO_DIR/data/sources/$REGION_NAME.osm.pbf" ]; then
         # shellcheck disable=SC2086
@@ -132,8 +139,9 @@ for step in "${STEPS[@]}"; do
     echo "=== $step finished in $(( (end - start) / 60 )) min ==="
 done
 
-# The print styles read data/extras.mbtiles and data/usdata.mbtiles; without the
-# extras step or build-usdata.sh they are empty files.
+# The print styles read data/extras.mbtiles and data/usdata.mbtiles, the print tool
+# data/elevation.mbtiles; without the extras or elevation step or build-usdata.sh they
+# are empty files.
 "$REPO_DIR/scripts/data-placeholders.sh"
 
 echo

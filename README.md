@@ -6,7 +6,7 @@ that prints exact-scale map sheets and atlases. One `docker compose up` on any L
 - **A tile server** (TileServer GL) with six styles: `osm`, `topo-light`, `topo-dark`, `overlay`, `topo-print` and `topo-usgs`
   (tuned for paper), plus print-scale variants of `topo-usgs`. Vector tiles for web maps and MapLibre clients, raster tiles for TAK clients (ATAK, WinTAK, iTAK).
 - **Build scripts** that make the data from public sources: OpenStreetMap extracts (Geofabrik or a mirror) via Planetiler,
-  contours and hillshade from Copernicus GLO-30 elevation data. Build once; nothing needs the internet afterwards.
+  contours, hillshade and elevation tiles from Copernicus GLO-30 elevation data. Build once; nothing needs the internet afterwards.
 - **The print tool** at `/mapprinter/`: Letter, Legal, Tabloid, Super B or Arch C sheets at 1:12k–1:100k, with an MGRS/USNG
   1 km grid, a true-angle declination diagram (WMM2025, computed offline), scale bars, markers and arrows with range and
   true/grid/magnetic bearing, an optional list page, and **atlas mode**: 2×2 to 8×8 overlapping pages with a cover,
@@ -41,9 +41,10 @@ cd fieldmap-server
 ./scripts/build-vector.sh <geofabrik-area>
 ./scripts/build-contours.sh <min-lon> <min-lat> <max-lon> <max-lat> ft
 ./scripts/build-hillshade.sh <min-lon> <min-lat> <max-lon> <max-lat>
+./scripts/build-elevation.sh <min-lon> <min-lat> <max-lon> <max-lat>   # optional: terrain analysis
 
 # 2. Start the server
-./scripts/data-placeholders.sh   # empty extras/usdata files unless you built them (needed after updating, too)
+./scripts/data-placeholders.sh   # empty extras/usdata/elevation files unless you built them (needed after updating, too)
 cp .env.example .env          # optional: ports, config file, image
 ./scripts/mem-limit.sh        # memory cap from this machine's RAM (see "Use with TAK clients")
 docker compose up -d --build
@@ -68,6 +69,7 @@ stops with a clear message if the drive is too small. From a six-state build (ab
 | Base map | ~1 GB | ~15 GB |
 | Contours | ~2 GB | ~40 GB |
 | Hillshade | ~0.5 GB | ~15 GB |
+| Elevation (zoom 12) | ~0.05-0.15 GB | the elevation downloads only |
 
 Finished downloads are kept in `data/sources` and `data/cache` and reused.
 
@@ -209,6 +211,33 @@ mv data/hillshade-webp.mbtiles data/hillshade.mbtiles && docker restart tileserv
 The terrain scripts build a small tool container (GDAL + Tippecanoe) on first run.
 Downloaded elevation tiles stay in `data/cache/dem` for reuse.
 
+### `build-elevation.sh <min-lon> <min-lat> <max-lon> <max-lat> [maxzoom]`
+
+Builds `data/elevation.mbtiles` from the same elevation data as the contours and hillshade: heights in metres for the
+print tool's terrain analysis (viewshed and radio coverage). Tiles are 256 px, Web Mercator, from zoom 8 to `maxzoom`
+(default 12, or `ELEVATION_MAXZOOM`), for every tile that touches the box. Encoding: Mapbox terrain-RGB
+(height = -10000 + (R × 65536 + G × 256 + B) × 0.1 m) in lossless WebP; R = G = B = 0 marks no data. Set
+`ELEVATION_ENCODING=terrarium` and/or `ELEVATION_FORMAT=png` for the other choices; all four keep the heights to
+0.1 m or better and TileServer GL serves all four. WebP was the smallest (about 30 % below PNG) on both test areas.
+At `maxzoom` each pixel is the elevation data's value at the pixel centre; lower zooms average it.
+
+Zoom 12 is about 30 m per pixel at US latitudes (38 m at the equator), like the source data; zoom 11 is about 60 m
+and about a quarter of the size. Measured sizes (all zooms), and what they suggest for larger areas:
+
+| Area type | Zoom 12 | Zoom 11 | A 150,000 km² state at 12 / 11 | Lower 48 at 12 / 11 |
+|---|---|---|---|---|
+| Ridge-and-valley (hills, 300-700 m relief) | 1.4 kB per km² | 0.4 kB per km² | ~210 MB / ~65 MB | ~11 GB / ~3.4 GB if all like this |
+| Flat coastal plain with open water | 0.5 kB per km² | 0.13 kB per km² | ~80 MB / ~20 MB | ~4.4 GB / ~1 GB if all like this |
+
+A whole country of mixed terrain falls in between (for the lower 48, roughly 8 GB at zoom 12 and 2-3 GB at zoom 11).
+The step writes the tiles straight from the downloaded elevation data, so it needs little working space.
+Check a build against the elevation data with `tools/check-elevation.py` (see the comments at its top): at pixel
+centres the tiles and the source agree to within 0.05 m.
+
+Without this file the print tool hides its terrain analysis and nothing else changes; `data-placeholders.sh`
+writes an empty one, because `config.json` lists it. In `config.json` the source carries `"tileSize": 256`, which
+TileServer GL's own elevation endpoint (`/data/elevation/elevation/<z>/<lon>/<lat>`) needs.
+
 ### `build-extras.sh [--bounds=<min-lon>,<min-lat>,<max-lon>,<max-lat>] <osm-file>`
 
 Builds `data/extras.mbtiles` from an OSM extract already in `data/sources`: OpenStreetMap features
@@ -271,13 +300,13 @@ areas are far smaller.
 ./scripts/build-usdata.sh <region-file> flood      # add flood zones
 ```
 
-### `build-region.sh [--world] [--language <code>] <region-file> [vector] [contours] [hillshade] [extras]`
+### `build-region.sh [--world] [--language <code>] <region-file> [vector] [contours] [hillshade] [elevation] [extras]`
 
-Builds the data files for a region described in a region file: base map, contours, hillshade and extras.
+Builds the data files for a region described in a region file: base map, contours, hillshade, elevation and extras.
 A region can cover several Geofabrik extracts, for example several US states.
 The script downloads each extract, merges them into one file with Osmium,
-and runs Planetiler on the merged file. Then it builds contours and hillshade
-for the region's bounding box.
+and runs Planetiler on the merged file. Then it builds contours, hillshade and
+elevation tiles for the region's bounding box.
 
 ```bash
 ./scripts/build-region.sh <region-file>
@@ -301,6 +330,7 @@ country on top of the world layer; its comments list sizes). A region file sets 
 | `GEOFABRIK_AREAS` | Geofabrik paths, for example `north-america/us/new-jersey` |
 | `BBOX` | Terrain box: `min-lon min-lat max-lon max-lat` |
 | `CONTOUR_UNITS` | `ft` or `m` (default `ft`) |
+| `ELEVATION_MAXZOOM` | Highest zoom of `elevation.mbtiles`: 12 (default, about 30 m) or 11 (about 60 m, a quarter of the size) |
 | `PLANETILER_MEMORY` | Java heap for Planetiler (default `8g`) |
 | `WORLD` | `yes`: the whole world at zoom 0-8, the region from zoom 9 (same as `--world`) |
 | `LANGUAGE` | Keep labels in one language only (same as `--language`) |
@@ -373,6 +403,7 @@ Put your own files in `data/` with these names:
 | `data/hillshade.mbtiles` | raster | gray hillshade PNG tiles |
 | `data/extras.mbtiles` | vector | the layers of `planetiler/extras.yml` (built by default); `./scripts/data-placeholders.sh` writes an empty one |
 | `data/usdata.mbtiles` | vector | optional: layers `obstacle`, `gnis`, `survey_mark`, `protected`, `flood` (see `tools/us-data.py`); empty from the same script |
+| `data/elevation.mbtiles` | raster | optional: heights in metres as Mapbox terrain-RGB or Terrarium (metadata `encoding`), PNG or WebP, 256 px tiles; empty from the same script |
 
 `extras.mbtiles` and `usdata.mbtiles` cover only the region they were built for (its OSM extract and `BBOX`), even
 when the base map covers more, for example the whole world at zoom 0-8 with `--world`. Outside that region the
@@ -445,7 +476,7 @@ git pull                                # if you edited files on the Pi: git sta
 sudo ./scripts/install-pi.sh            # placeholders, print tool, nginx, and a tile server restart when needed
 ```
 
-New or rebuilt data files (any of `basemap`, `contours`, `hillshade`, `extras`, `usdata`):
+New or rebuilt data files (any of `basemap`, `contours`, `hillshade`, `elevation`, `extras`, `usdata`):
 
 ```bash
 scp data/<name>.mbtiles <user>@<pi-host>:<repo-dir>/data/
@@ -484,7 +515,9 @@ See [systemd/README.md](systemd/README.md).
 
 - Map data: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL)
 - Tile schema and base styles: [OpenMapTiles](https://openmaptiles.org/) (BSD / CC-BY)
-- Elevation data: © ESA, [Copernicus DEM GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model)
+- Elevation data: © ESA, [Copernicus DEM GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model).
+  Contours, hillshade and elevation tiles are produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus
+  Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved.
 - Optional US layers (public domain, US federal government): FAA Digital Obstacle File, USGS GNIS, NOAA National
   Geodetic Survey, USGS PAD-US, FEMA National Flood Hazard Layer
 - Fonts for the print styles: Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License)

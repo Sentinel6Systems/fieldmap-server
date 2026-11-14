@@ -68,6 +68,10 @@
     },
     "usdata": {
       "mbtiles": "usdata.mbtiles"
+    },
+    "elevation": {
+      "mbtiles": "elevation.mbtiles",
+      "tileSize": 256
     }
   }
 }

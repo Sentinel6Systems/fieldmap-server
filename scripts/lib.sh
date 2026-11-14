@@ -387,6 +387,7 @@ reexec_in_tools() {
         -e HOME=/tmp \
         -e IN_TOOLS=1 \
         -e OSM_MAX_AGE_DAYS \
+        -e ELEVATION_MAXZOOM -e ELEVATION_ENCODING -e ELEVATION_FORMAT \
         -v "$REPO_DIR":/work \
         -w /work \
         "$TOOLS_IMAGE" \
