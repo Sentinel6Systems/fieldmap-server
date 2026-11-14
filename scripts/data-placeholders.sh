@@ -33,5 +33,5 @@ PY
     echo "Wrote an empty data/$name.mbtiles (run $builder for the real layers)."
 }
 
-placeholder extras build-extras.sh power pipeline barrier tower landmark
+placeholder extras build-extras.sh power pipeline barrier tower landmark building_large exit runway
 placeholder usdata build-usdata.sh obstacle gnis survey_mark protected flood

@@ -123,10 +123,33 @@ def floodway(ratio):
     return finish(im, w, h, ratio), w, h
 
 
+def interstate(width):
+    """Interstate shield: blue body, red crown band, white rim; the number is white text from the style."""
+    def draw(ratio):
+        w, h = width, 18; k = ratio * SS; im = canvas(w, h, ratio); d = ImageDraw.Draw(im)
+        def shape(inset):
+            x0, x1, top, mid, bot = inset, w - inset, 1.2 + inset, 10.5, h - 0.6 - inset
+            cx = w / 2
+            pts = [(x0, top + 1.2), (cx * 0.5 + x0 * 0.5, top), (cx, top + 1.0), (cx * 1.5 - x0 * 0.5, top), (x1, top + 1.2),
+                   (x1, mid), (x1 - (x1 - cx) * 0.25, mid + 3.2), (cx, bot), (x0 + (cx - x0) * 0.25, mid + 3.2), (x0, mid)]
+            return [(x * k, y * k) for x, y in pts]
+        d.polygon(shape(0.4), fill=(255, 255, 255, 255))
+        d.polygon(shape(1.4), fill=(0, 59, 135, 255))
+        band = Image.new("L", im.size, 0)
+        ImageDraw.Draw(band).rectangle([0, 0, w * k, 5.6 * k], fill=255)
+        red = Image.new("RGBA", im.size, (200, 16, 46, 255))
+        mask = Image.new("L", im.size, 0); ImageDraw.Draw(mask).polygon(shape(1.4), fill=255)
+        im.paste(red, (0, 0), Image.composite(mask, Image.new("L", im.size, 0), band))
+        d.line([(1.4 * k, 5.6 * k), ((w - 1.4) * k, 5.6 * k)], fill=(255, 255, 255, 255), width=int(0.8 * k))
+        return finish(im, w, h, ratio), w, h
+    return draw
+
+
 EXTRA = {"pat_marsh": marsh, "pat_sand": sand, "pat_rock": rock, "pat_cemetery": cemetery,
          "sym_peak": peak, "sym_spot": spot, "sym_flow": flow,
          "sym_tower": tower, "sym_spring": spring, "sym_survey": survey,
-         "sym_obstacle": obstacle, "pat_floodway": floodway}
+         "sym_obstacle": obstacle, "pat_floodway": floodway,
+         **{f"usgs-interstate_{n}": interstate(wd) for n, wd in zip(range(1, 7), (17, 17, 21, 25, 29, 33))}}
 
 for suffix, ratio in (("", 1), ("@2x", 2)):
     base = Image.open(f"sprites/topo{suffix}.png").convert("RGBA")

@@ -194,6 +194,9 @@ add("road-area", "fill", "roads", OMT, "transportation", ["all", POLY, ["!", cls
 
 add("building", "fill", "buildings", OMT, "building", minzoom=13,
     paint={"fill-color": "#1a1a1a", "fill-outline-color": "#000000", "fill-opacity": 0.9})
+# Large buildings (5,000 m² and up, from data/extras.mbtiles) grey, as on USGS sheets.
+add("building-large", "fill", "buildings", EXT, "building_large", minzoom=13,
+    paint={"fill-color": "#8c8c8c", "fill-outline-color": "#000000"})
 
 # ------------------------------------------------------------------ extras: barriers (data/extras.mbtiles)
 
@@ -354,7 +357,8 @@ sym("survey-horizontal", "survey-marks", "survey_mark", ["!=", ["get", "kind"], 
     {"icon-image": "sym_survey", "icon-size": 0.75, "text-font": MONO, "text-size": size(7.5), "text-anchor": "left", "text-offset": [0.6, 0],
      "text-field": ["case", ["has", "elev_ft"], ["to-string", ["get", "elev_ft"]], ""], "text-optional": True},
     {"text-color": "#222222", **halo()}, minzoom=13, source=USD)
-sym("obstacle", "obstacles", "obstacle", None,
+# Obstacles under 150 ft only from z14 (1:12k), where there is room for them.
+sym("obstacle", "obstacles", "obstacle", ["any", [">=", ["zoom"], 14], [">=", ["coalesce", ["get", "agl_ft"], 0], 150]],
     {"icon-image": "sym_obstacle", "icon-size": ["interpolate", ["linear"], ["get", "agl_ft"], 100, 0.75, 500, 1.1],
      "text-field": ["case", ["has", "agl_ft"], ["to-string", ["get", "agl_ft"]], ""], "text-font": MONOB, "text-size": size(7.5),
      "text-optional": True, "text-anchor": "left", "text-offset": [0.7, 0.1], "symbol-sort-key": ["-", 0, ["coalesce", ["get", "agl_ft"], 0]]},
@@ -404,11 +408,20 @@ def shield(id, flt, image, minzoom, color):
         {"symbol-placement": "line", "symbol-spacing": 420, "icon-image": image, "icon-rotation-alignment": "viewport",
          "icon-size": 0.95, "text-field": ["get", "ref"], "text-font": MONOB, "text-size": 8, "text-rotation-alignment": "viewport",
          "text-letter-spacing": -0.03, "icon-padding": 6}, {"text-color": color}, minzoom=minzoom)
-shield("shield-interstate", ["==", ["get", "network"], "us-interstate"], ["concat", "us-interstate_", ["to-string", ["get", "ref_length"]]], 7, "#000000")   # the sprite shield is white
+shield("shield-interstate", ["==", ["get", "network"], "us-interstate"], ["concat", "usgs-interstate_", ["to-string", ["get", "ref_length"]]], 7, "#ffffff")
 shield("shield-us", ["match", ["get", "network"], ["us-highway", "us-state"], True, False],
        ["concat", ["get", "network"], "_", ["to-string", ["get", "ref_length"]]], 9, "#000000")
 shield("shield-other", ["match", ["coalesce", ["get", "network"], ""], ["us-interstate", "us-highway", "us-state"], False, True],
        ["concat", "road_", ["to-string", ["get", "ref_length"]]], 9, "#000000")
+
+# Motorway exit numbers and runway lengths (data/extras.mbtiles), monospace.
+sym("exit-number", "road-names", "exit", ["has", "ref"],
+    {"text-field": ["get", "ref"], "text-font": MONOB, "text-size": size(7.5), "text-padding": 2, "text-anchor": "left",
+     "text-offset": [0.5, 0]}, {"text-color": C["black"], **halo(width=1.6)}, minzoom=12, source=EXT)
+sym("runway-length", "airfields", "runway", ["has", "length_ft"],
+    {"symbol-placement": "line-center", "text-field": ["concat", ["to-string", ["get", "length_ft"]], " ft"], "text-font": MONO,
+     "text-size": size(7.5), "text-rotation-alignment": "map", "text-keep-upright": True, "text-offset": [0, -0.9]},
+    {"text-color": "#333333", **halo()}, minzoom=12.5, source=EXT)
 
 sym("ridge-name", "terrain-names", "mountain_peak", ["all", LINE, ["has", "name"]],
     {"symbol-placement": "line", "symbol-spacing": 450, "text-field": NAME, "text-font": ITAL, "text-size": size(9),

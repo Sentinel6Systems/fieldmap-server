@@ -1937,5 +1937,47 @@
   "width": 12,
   "height": 12,
   "pixelRatio": 1
+ },
+ "usgs-interstate_1": {
+  "x": 200,
+  "y": 288,
+  "width": 17,
+  "height": 18,
+  "pixelRatio": 1
+ },
+ "usgs-interstate_2": {
+  "x": 218,
+  "y": 288,
+  "width": 17,
+  "height": 18,
+  "pixelRatio": 1
+ },
+ "usgs-interstate_3": {
+  "x": 236,
+  "y": 288,
+  "width": 21,
+  "height": 18,
+  "pixelRatio": 1
+ },
+ "usgs-interstate_4": {
+  "x": 258,
+  "y": 288,
+  "width": 25,
+  "height": 18,
+  "pixelRatio": 1
+ },
+ "usgs-interstate_5": {
+  "x": 284,
+  "y": 288,
+  "width": 29,
+  "height": 18,
+  "pixelRatio": 1
+ },
+ "usgs-interstate_6": {
+  "x": 314,
+  "y": 288,
+  "width": 33,
+  "height": 18,
+  "pixelRatio": 1
  }
 }

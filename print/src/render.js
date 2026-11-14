@@ -138,11 +138,13 @@ async function renderMapPage(pdf, lay, opts, atlas, cell, status, pageNo, total)
   ctx.drawImage(mapCanvas, mapRect.x, mapRect.y, mapRect.w, mapRect.h);
 
   // Buildings: tiles below z14 only carry large buildings, so between z13 and z14
-  // (1:24k, 1:25k) draw the building layer again from the z14 tiles.
+  // (1:24k, 1:25k) draw the building layers again from the z14 tiles (in order, so
+  // a style's grey large buildings stay on top of its black ones).
   if (zoom >= 13 && zoom < 14) {
     status("Adding buildings from the detailed tiles…");
     const style = await loadStyle(opts.styleUrl);
-    const layers = (style.layers || []).filter((l) => l["source-layer"] === "building" && l.type === "fill");
+    const layers = (style.layers || []).filter((l) => l.type === "fill" &&
+      (l["source-layer"] === "building" || (l.metadata && l.metadata["fieldmap:group"] === "buildings")));
     if (layers.length) {
       const sources = {}; for (const l of layers) sources[l.source] = style.sources[l.source];
       const overlay = { version: 8, sources, layers: layers.map((l) => ({ ...l, minzoom: 13 })) };

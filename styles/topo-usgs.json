@@ -1917,6 +1917,20 @@
       }
     },
     {
+      "id": "building-large",
+      "type": "fill",
+      "metadata": {
+        "fieldmap:group": "buildings"
+      },
+      "source": "extras",
+      "source-layer": "building_large",
+      "minzoom": 13,
+      "paint": {
+        "fill-color": "#8c8c8c",
+        "fill-outline-color": "#000000"
+      }
+    },
+    {
       "id": "barrier-hedge",
       "type": "line",
       "metadata": {
@@ -13798,6 +13812,28 @@
       "source": "usdata",
       "source-layer": "obstacle",
       "minzoom": 11,
+      "filter": [
+        "any",
+        [
+          ">=",
+          [
+            "zoom"
+          ],
+          14
+        ],
+        [
+          ">=",
+          [
+            "coalesce",
+            [
+              "get",
+              "agl_ft"
+            ],
+            0
+          ],
+          150
+        ]
+      ],
       "layout": {
         "icon-image": "sym_obstacle",
         "icon-size": [
@@ -14509,7 +14545,7 @@
         "symbol-spacing": 420,
         "icon-image": [
           "concat",
-          "us-interstate_",
+          "usgs-interstate_",
           [
             "to-string",
             [
@@ -14533,7 +14569,7 @@
         "icon-padding": 6
       },
       "paint": {
-        "text-color": "#000000"
+        "text-color": "#ffffff"
       }
     },
     {
@@ -14695,6 +14731,112 @@
       },
       "paint": {
         "text-color": "#000000"
+      }
+    },
+    {
+      "id": "exit-number",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "road-names"
+      },
+      "source": "extras",
+      "source-layer": "exit",
+      "minzoom": 12,
+      "filter": [
+        "has",
+        "ref"
+      ],
+      "layout": {
+        "text-field": [
+          "get",
+          "ref"
+        ],
+        "text-font": [
+          "Atkinson Hyperlegible Mono Bold"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          6.75,
+          13.25,
+          7.5,
+          15,
+          8.62
+        ],
+        "text-padding": 2,
+        "text-anchor": "left",
+        "text-offset": [
+          0.5,
+          0
+        ]
+      },
+      "paint": {
+        "text-color": "#000000",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.6
+      }
+    },
+    {
+      "id": "runway-length",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "airfields"
+      },
+      "source": "extras",
+      "source-layer": "runway",
+      "minzoom": 12.5,
+      "filter": [
+        "has",
+        "length_ft"
+      ],
+      "layout": {
+        "symbol-placement": "line-center",
+        "text-field": [
+          "concat",
+          [
+            "to-string",
+            [
+              "get",
+              "length_ft"
+            ]
+          ],
+          " ft"
+        ],
+        "text-font": [
+          "Atkinson Hyperlegible Mono Regular"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          6.75,
+          13.25,
+          7.5,
+          15,
+          8.62
+        ],
+        "text-rotation-alignment": "map",
+        "text-keep-upright": true,
+        "text-offset": [
+          0,
+          -0.9
+        ]
+      },
+      "paint": {
+        "text-color": "#333333",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
       }
     },
     {

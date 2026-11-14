@@ -93,7 +93,11 @@ python3 tools/make-usgs-sprite.py   # sprites/usgs*: the topo sprite plus patter
 python3 tools/make-topo-usgs.py     # styles/topo-usgs.json
 ```
 
-Line widths in the generator are millimetres on paper at 1:24,000 and scale gently with zoom. Every layer carries a
+Line widths in the generator are millimetres on paper at 1:24,000 and scale gently with zoom. Route shields come from
+the topo sprite, except the interstate shield (blue and red, white numbers), which `make-usgs-sprite.py` draws.
+Motorway exit numbers, runway lengths and the grey large buildings (5,000 m² and more) need `data/extras.mbtiles`.
+Not done: deciduous and conifer woodland (OpenMapTiles carries no leaf type) and spot heights chosen by prominence
+(needs a hilltop set derived from the elevation data). Every layer carries a
 `fieldmap:group` in its metadata (roads, trails, contours, parks, pois, ...), which the print tool's **Layers** panel
 switches. Its fonts
 are Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License, texts in `fonts/`).
@@ -172,6 +176,7 @@ that the OpenMapTiles base map leaves out but that matter on a paper map. The la
 | `barrier` | fences, walls, hedges, guard rails, gates | thin black line with ticks (fences), from 1:12k |
 | `tower` | towers, masts, chimneys, water towers, tanks, silos (height) | ring-and-dot symbol, height in feet |
 | `landmark` | springs, waterfalls, caves, sinkholes, wells, cairns, survey points, viewpoints, ruins | springs in blue, survey points as triangles with elevation |
+| `building_large`, `exit`, `runway` | buildings of 5,000 m² and more, motorway junctions, runways | grey large buildings, exit numbers, runway length in feet |
 
 Without this step `data/extras.mbtiles` is an empty placeholder (written by `scripts/data-placeholders.sh`, which
 the other build scripts and `install-pi.sh` call): the tile server needs every file `config.json` lists, and the
