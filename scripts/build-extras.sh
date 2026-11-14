@@ -7,12 +7,12 @@
 # Usage:
 #   ./scripts/build-extras.sh [--bounds=<min-lon>,<min-lat>,<max-lon>,<max-lat>] <osm-file>
 #
-# <osm-file> is an OSM extract in data/sources, such as mid-atlantic.osm.pbf (made by
-# build-region.sh or merge-osm.sh) or switzerland.osm.pbf (made by build-vector.sh).
+# <osm-file> is an OSM extract in data/sources: <region-name>.osm.pbf (made by
+# build-region.sh or merge-osm.sh) or <area>.osm.pbf (made by build-vector.sh).
 # build-region.sh runs this as its optional "extras" step.
 #
-# Size: about 1 MB per 2,000 square miles of US countryside; roughly 70 MB for six
-# Mid-Atlantic states and 1-2 GB for the whole US. Most of it is z14 detail (fences,
+# Size: about 1 MB per 2,000 square miles of US countryside; roughly 70 MB for a
+# six-state region and 1-2 GB for the whole US. Most of it is z14 detail (fences,
 # gates, power towers). Set PLANETILER_MEMORY to change the Java heap (default 4g).
 
 set -euo pipefail

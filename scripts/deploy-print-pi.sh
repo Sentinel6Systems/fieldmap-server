@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Build the print tool and push it to the Pi. Run from the repo root on your workstation.
-#   ./scripts/deploy-print.sh user@pi-host
+# Build the print tool on this workstation and copy it to a Pi installed with install-pi.sh,
+# which serves it from <repo-dir>/print/dist. Run from the repository root:
+#   ./scripts/deploy-print-pi.sh <user>@<pi-host> <repo-dir>
 set -euo pipefail
-PI="${1:-}"
-if [ -z "$PI" ]; then echo "usage: $0 user@pi-host" >&2; exit 1; fi
+if [ $# -ne 2 ]; then echo "usage: $0 <user>@<pi-host> <repo-dir>" >&2; exit 1; fi
+PI="$1" DIR="${2%/}"
 cd "$(dirname "$0")/.."
 ( cd print && npm run build )
-# First run only: create the target folder (asks for the Pi's sudo password).
-ssh -t "$PI" 'test -d /opt/fieldmap-server/print || { sudo mkdir -p /opt/fieldmap-server/print && sudo chown -R "$(id -un):$(id -un)" /opt/fieldmap-server; }'
-rsync -a --delete print/dist/ "$PI:/opt/fieldmap-server/print/dist/"
-echo "Deployed to $PI:/opt/fieldmap-server/print/dist  ->  http://<pi-host>/mapprinter/"
+rsync -a --delete print/dist/ "$PI:$DIR/print/dist/"
+echo "Deployed to $PI:$DIR/print/dist  ->  http://<pi-host>/mapprinter/"

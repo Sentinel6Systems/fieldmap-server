@@ -8,36 +8,38 @@ Nothing here contains credentials; put your own in IIAB's `local_vars.yml`.
 
 ```bash
 sudo apt install -y git
-sudo git clone https://github.com/Sentinel6Systems/fieldmap-server.git /library/maps/fieldmap-server
-sudo chown -R "$USER:$USER" /library/maps/fieldmap-server
-cd /library/maps/fieldmap-server
-cp /path/to/your/*.mbtiles data/      # basemap, contours, hillshade, built elsewhere with scripts/build-region.sh
+sudo git clone https://github.com/Sentinel6Systems/fieldmap-server.git <repo-dir>
+sudo chown -R "$USER:$USER" <repo-dir>
+cd <repo-dir>
+cp <path>/*.mbtiles data/      # basemap, contours, hillshade (and optional extras, usdata), built elsewhere
 sudo ./scripts/install-pi.sh
 ```
 
+`<repo-dir>` is any folder on a drive with room for the map data.
+
 That installs Docker if needed, starts TileServer GL on localhost, builds the print tool on the Pi with the
-Node.js that IIAB installs, and adds the nginx snippets. Open `http://<pi>/mapprinter/`; TAK clients use
-`http://<pi>/maps/styles/topo-light/{z}/{x}/{y}.png` (see the main README). To update later:
-`git pull && sudo ./scripts/install-pi.sh`.
+Node.js that IIAB installs, and adds the nginx snippets. Open `http://<pi-host>/mapprinter/`; TAK clients use
+`http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.png` (see the main README). To update later, see "Updating" in
+the main README: `git pull && sudo ./scripts/install-pi.sh` in `<repo-dir>`.
 
 Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty of RAM and disk; do that with
-`scripts/build-region.sh` elsewhere and copy the three `.mbtiles` files over.
+`scripts/build-region.sh <region-file>` elsewhere and copy the `.mbtiles` files over.
 
 ## What the script does, step by step
 
 1. **Docker.** `sudo apt install docker.io docker-compose`. Copy `docker/daemon.json` to `/etc/docker/daemon.json`
    first (no iptables, no bridge) so Docker never touches IIAB's firewall; the container uses host networking.
-2. **Data.** Clone this repository to `/library/maps/fieldmap-server` (IIAB's `/library` is where bulk content lives)
-   and copy your three `.mbtiles` files into its `data/`. Copy `tileserver/docker-compose.pi.yml`
+2. **Data.** Clone this repository to `<repo-dir>` and copy your `.mbtiles` files into its `data/`; any optional file
+   you did not build is written empty by `scripts/data-placeholders.sh`. Copy `tileserver/docker-compose.pi.yml`
    to the repository root on the Pi, then
    `sudo docker compose -f docker-compose.pi.yml up -d`. The server listens on `127.0.0.1:8080` with
    `--public_url /maps/`, so URLs work under whatever hostname the client used.
 3. **nginx.** Copy `nginx/maps-nginx.conf` and `nginx/mapprinter-nginx.conf` to `/etc/nginx/conf.d/` (IIAB includes that
    folder and does not overwrite files it did not create), `sudo nginx -t && sudo systemctl reload nginx`.
-   Maps are now at `http://<pi>/maps/`.
+   Maps are now at `http://<pi-host>/maps/`.
 4. **Print tool.** `cd print && npm ci && node build.mjs` on the Pi; nginx serves `print/dist` from the clone.
-   (`scripts/deploy-print-pi.sh user@<pi>` does the same build on a workstation and rsyncs the result, handy while
-   developing.) Open `http://<pi>/mapprinter/`. `/print/` is left free, for example for CUPS.
+   (`scripts/deploy-print-pi.sh <user>@<pi-host> <repo-dir>` does the same build on a workstation and rsyncs the
+   result, handy while developing.) Open `http://<pi-host>/mapprinter/`. `/print/` is left free, for example for CUPS.
 
 ## Notes
 

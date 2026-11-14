@@ -24,12 +24,12 @@ Requirements: Docker with the Compose plugin; disk space for the build (see belo
 git clone https://github.com/Sentinel6Systems/fieldmap-server.git
 cd fieldmap-server
 
-# 1. Build the data for a region (hours, once). Example: a group of US states from a region file:
-./scripts/build-region.sh regions/mid-atlantic.env
-#    or a single Geofabrik area plus a terrain bounding box:
-./scripts/build-vector.sh switzerland
-./scripts/build-contours.sh 5.9 45.8 10.5 47.8 m
-./scripts/build-hillshade.sh 5.9 45.8 10.5 47.8
+# 1. Build the data for your region (hours, once), from a region file (see "Region files"):
+./scripts/build-region.sh <region-file>
+#    or from a single Geofabrik area plus a terrain bounding box:
+./scripts/build-vector.sh <geofabrik-area>
+./scripts/build-contours.sh <min-lon> <min-lat> <max-lon> <max-lat> ft
+./scripts/build-hillshade.sh <min-lon> <min-lat> <max-lon> <max-lat>
 
 # 2. Start the server
 ./scripts/data-placeholders.sh   # empty extras/usdata files unless you built them (needed after updating, too)
@@ -168,7 +168,7 @@ Units are meters by default (minor 20 m, major 100 m).
 Use `ft` for feet (minor 40 ft, major 200 ft):
 
 ```bash
-./scripts/build-contours.sh -150.5 61.0 -149.0 61.6 ft
+./scripts/build-contours.sh <min-lon> <min-lat> <max-lon> <max-lat> ft
 ```
 
 ### `build-hillshade.sh <min-lon> <min-lat> <max-lon> <max-lat>`
@@ -203,12 +203,12 @@ that the OpenMapTiles base map leaves out but that matter on a paper map. The la
 
 Without this step `data/extras.mbtiles` is an empty placeholder (written by `scripts/data-placeholders.sh`, which
 the other build scripts and `install-pi.sh` call): the tile server needs every file `config.json` lists, and the
-layers are simply blank. Size: about 1 MB per 2,000 square miles; roughly 70 MB for the six Mid-Atlantic states and
-1-2 GB for the whole US, most of it z14 fences, gates and power towers.
+layers are simply blank. Size: about 1 MB per 2,000 square miles of US countryside (roughly 70 MB for a six-state
+region, 1-2 GB for the whole US), most of it z14 fences, gates and power towers.
 
 ```bash
-./scripts/build-region.sh regions/mid-atlantic.env extras     # reuses the merged OSM file of the vector step
-./scripts/build-extras.sh switzerland.osm.pbf                 # after build-vector.sh switzerland
+./scripts/build-region.sh <region-file> extras    # reuses the merged OSM file of the vector step
+./scripts/build-extras.sh <name>.osm.pbf          # any extract in data/sources, e.g. after build-vector.sh <name>
 ```
 
 ### `build-usdata.sh <region-file> [obstacles] [names] [marks] [protected] [flood]`
@@ -231,12 +231,12 @@ FEMA's web service 200 at a time (allow an hour or more for a large state). PAD-
 which holds fee lands only, so easements are not drawn. Flood zones on the map are not an official FEMA determination.
 
 Size measured on a 30 × 28 km box around a small city: 2.2 MB (flood zones half of it, protected land most of
-the rest). Scaled to the six Mid-Atlantic states, expect a few hundred MB without `flood` and about 1 GB with it;
-rural areas are far smaller.
+the rest). Scaled to a six-state region, expect a few hundred MB without `flood` and about 1 GB with it; rural
+areas are far smaller.
 
 ```bash
-./scripts/build-usdata.sh regions/mid-atlantic.env                 # obstacles, names, marks, protected
-./scripts/build-usdata.sh regions/mid-atlantic.env flood           # add flood zones
+./scripts/build-usdata.sh <region-file>            # obstacles, names, marks, protected
+./scripts/build-usdata.sh <region-file> flood      # add flood zones
 ```
 
 ### `build-region.sh [--world] [--language <code>] <region-file> [vector] [contours] [hillshade] [extras]`
@@ -248,19 +248,20 @@ and runs Planetiler on the merged file. Then it builds contours and hillshade
 for the region's bounding box.
 
 ```bash
-./scripts/build-region.sh regions/mid-atlantic.env
+./scripts/build-region.sh <region-file>
 ```
 
 The `extras` step is optional and runs only when named. Add step names to run only some steps:
 
 ```bash
-./scripts/build-region.sh regions/mid-atlantic.env contours hillshade
+./scripts/build-region.sh <region-file> contours hillshade
 ```
 
-Two region files come with the repository: `regions/mid-atlantic.env` (six states) and `regions/us-lower48.env`
-(the contiguous US on top of the world layer, English labels; read its comments for sizes before you start).
+#### Region files
 
-A region file sets these values (see `regions/mid-atlantic.env`):
+A region file is a short shell file. Write your own for your area, or start from one of the two examples in
+`regions/`: `mid-atlantic.env` (an example of several US states) and `us-lower48.env` (an example of a whole
+country on top of the world layer; its comments list sizes). A region file sets these values:
 
 | Variable | Meaning |
 |---|---|
@@ -311,8 +312,8 @@ Two options work the same for `build-region.sh` and `build-vector.sh` (in a regi
   map. A world layer is built per language (`world-z0-8-<code>.mbtiles`).
 
 ```bash
-./scripts/build-region.sh --world --language es regions/mid-atlantic.env
-./scripts/build-vector.sh --world europe/switzerland
+./scripts/build-region.sh --world --language <code> <region-file>
+./scripts/build-vector.sh --world <geofabrik-area>
 ```
 
 ### OpenStreetMap download mirrors
@@ -358,13 +359,13 @@ TileServer GL serves rendered raster tiles for each style, on x86 and ARM alike.
 Add a map source in ATAK/WinTAK/iTAK with this URL pattern:
 
 ```
-http://YOUR_SERVER:8080/styles/topo-light/{z}/{x}/{y}.png
+http://<server-host>:8080/styles/topo-light/{z}/{x}/{y}.png
 ```
 
 On a Raspberry Pi installed with `scripts/install-pi.sh`, the tile server sits behind nginx at `/maps/` instead:
 
 ```
-http://YOUR_PI/maps/styles/topo-light/{z}/{x}/{y}.png
+http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.png
 ```
 
 Replace `topo-light` with `osm`, `topo-dark`, or `overlay` for the other styles.
@@ -387,6 +388,37 @@ See [pi/README.md](pi/README.md): clone onto the Pi, copy your `.mbtiles` files 
 It starts TileServer GL in Docker on localhost, builds the print tool on the Pi, and adds the nginx snippets so
 IIAB serves `/maps/` and `/mapprinter/`.
 `/print/` is left free, for example for CUPS.
+
+## Updating
+
+Data files are built on a machine with Docker and enough RAM and disk, then copied to the server's `data/` folder.
+After `git pull`, the steps are the same whatever region you use.
+
+Docker Compose install:
+
+```bash
+cd <repo-dir>
+git pull
+./scripts/data-placeholders.sh          # empty files for optional data you have not built
+docker compose up -d --build
+docker restart tileserver               # loads changed config, styles and data
+```
+
+Raspberry Pi with Internet-in-a-Box:
+
+```bash
+ssh <user>@<pi-host>
+cd <repo-dir>
+git pull                                # if you edited files on the Pi: git stash -u && git pull && git stash drop
+sudo ./scripts/install-pi.sh            # placeholders, print tool, nginx, and a tile server restart when needed
+```
+
+New or rebuilt data files (any of `basemap`, `contours`, `hillshade`, `extras`, `usdata`):
+
+```bash
+scp data/<name>.mbtiles <user>@<pi-host>:<repo-dir>/data/
+ssh <user>@<pi-host> 'cd <repo-dir> && sudo ./scripts/install-pi.sh'     # or: docker restart tileserver
+```
 
 ## Start at boot
 

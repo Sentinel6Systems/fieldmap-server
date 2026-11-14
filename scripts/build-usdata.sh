@@ -10,7 +10,7 @@
 # GEOFABRIK_AREAS. Default steps: obstacles names marks protected.
 # Downloads stay in data/cache/usdata; the FAA file is fetched again after a day.
 #
-# Size for six Mid-Atlantic states: obstacles, names and marks a few MB each,
+# Size for a six-state region: obstacles, names and marks a few MB each,
 # protected land 20-60 MB; flood zones several hundred MB to over 1 GB per large state.
 
 set -euo pipefail

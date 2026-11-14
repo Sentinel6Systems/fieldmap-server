@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build all map data for one region from a region file.
 # A region file lists Geofabrik extracts, a terrain bounding box, and options.
-# See regions/mid-atlantic.env for an example.
+# See regions/mid-atlantic.env for an example region file.
 #
 # Usage:
 #   ./scripts/build-region.sh [--world] [--language <code>] <region-file> [step ...]
@@ -24,8 +24,8 @@
 #              -> data/extras.mbtiles (build-extras.sh; reuses the merged
 #              OSM file from the vector step)
 #
-# Example: rebuild only the contours
-#   ./scripts/build-region.sh regions/mid-atlantic.env contours
+# Rebuild only the contours:
+#   ./scripts/build-region.sh <region-file> contours
 
 set -euo pipefail
 
