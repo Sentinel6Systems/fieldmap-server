@@ -16,7 +16,9 @@ Steps, each written to data/cache/usdata/<step>.mbtiles and then joined:
   flood      FEMA National Flood Hazard Layer: 100-year zone and floodway.
              Large; ask for it by name                                      layer flood
 Default: obstacles names marks protected. A step whose download fails is reported and
-skipped; earlier results of that step are kept and joined.
+skipped; earlier results of that step are kept and joined. protected and flood are fetched
+in pieces (one state, or one 1-degree cell) and cached, so a rerun fetches only the pieces
+that failed before.
 """
 import argparse
 import csv
@@ -160,30 +162,98 @@ def marks(a):
     return out.close()
 
 
-def rest_query(url, fields, where, a, dest, **extra):
-    """Page through an ArcGIS REST layer inside the bbox with GDAL, into line-delimited GeoJSON."""
+# Steps that could only fetch part of their pieces; reported at the end, and a rerun fetches the rest.
+PARTIAL = {}
+
+
+def rest_piece(url, fields, where, bbox, dest, page, extra):
+    """One ArcGIS REST query (where + bbox), paged by GDAL, into line-delimited GeoJSON."""
     q = {"where": where, "outFields": fields, "returnGeometry": "true", "f": "json", "outSR": "4326",
-         "geometry": ",".join(map(str, a.bbox)), "geometryType": "esriGeometryEnvelope", "inSR": "4326",
-         "spatialRel": "esriSpatialRelIntersects", "orderByFields": "OBJECTID", "resultRecordCount": "1000", **extra}
-    src = "ESRIJSON:" + url + "?" + urllib.parse.urlencode(q)
-    if os.path.exists(dest):
-        os.remove(dest)
-    subprocess.check_call(["ogr2ogr", "-f", "GeoJSONSeq", dest, src, "-oo", "FEATURE_SERVER_PAGING=YES",
-                           "-makevalid", "-skipfailures", "-nlt", "PROMOTE_TO_MULTI", "-lco", "RS=NO"])
-    with open(dest) as f:
-        return sum(1 for _ in f)
+         "geometry": ",".join(map(str, bbox)), "geometryType": "esriGeometryEnvelope", "inSR": "4326",
+         "spatialRel": "esriSpatialRelIntersects", "orderByFields": "OBJECTID", "resultRecordCount": str(page), **extra}
+    tmp = dest + ".part"
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    subprocess.run(["ogr2ogr", "-q", "-f", "GeoJSONSeq", tmp, "ESRIJSON:" + url + "?" + urllib.parse.urlencode(q),
+                    "-oo", "FEATURE_SERVER_PAGING=YES", "-makevalid", "-skipfailures", "-nlt", "PROMOTE_TO_MULTI",
+                    "-lco", "RS=NO"], check=True, stderr=subprocess.DEVNULL)
+    os.replace(tmp, dest)
+
+
+def rest_pieces(step, url, fields, pieces, pages, extra):
+    """Fetch an ArcGIS REST layer in pieces [(key, where, bbox)]: one state or one map cell at a time,
+    because the services refuse large queries. Each piece is retried with smaller pages and cached
+    in data/cache/usdata/<step>/, so a rerun fetches only what is missing (delete that folder to
+    fetch everything again). Features found in two pieces are kept once (by OBJECTID)."""
+    d = os.path.join(WORK, step)
+    os.makedirs(d, exist_ok=True)
+    missing = []
+    for i, (key, where, bbox) in enumerate(pieces, 1):
+        dest = os.path.join(d, f"{key}.geojsonl")
+        if os.path.exists(dest):
+            continue
+        for page in pages:
+            try:
+                rest_piece(url, fields, where, bbox, dest, page, extra)
+                break
+            except subprocess.CalledProcessError:
+                time.sleep(5)
+        else:
+            missing.append(key)
+        if i % 25 == 0 or i == len(pieces):
+            log(f"  {i} / {len(pieces)} pieces")
+    seen, n = set(), 0
+    with open(os.path.join(WORK, f"{step}.geojsonl"), "w") as out:
+        for key, _, _ in pieces:
+            path = os.path.join(d, f"{key}.geojsonl")
+            if not os.path.exists(path):
+                continue
+            with open(path) as f:
+                for line in f:
+                    feat = json.loads(line)
+                    oid = feat["properties"].pop("OBJECTID", None)
+                    if oid is not None:
+                        if oid in seen:
+                            continue
+                        seen.add(oid)
+                    out.write(json.dumps(feat) + "\n")
+                    n += 1
+    if missing:
+        PARTIAL[step] = missing
+        log(f"  {len(missing)} pieces failed ({', '.join(missing[:8])}{' ...' if len(missing) > 8 else ''}); "
+            "run the step again to fetch them")
+    return n
+
+
+def cells(bbox, size):
+    """The bbox cut into cells of `size` degrees (the last row and column may be smaller)."""
+    w, s, e, n = bbox
+    out = []
+    y = s
+    while y < n:
+        x = w
+        while x < e:
+            out.append((round(x, 4), round(y, 4), round(min(x + size, e), 4), round(min(y + size, n), 4)))
+            x += size
+        y += size
+    return out
 
 
 def protected(a):
-    return rest_query(PADUS_URL, "Pub_Access,Unit_Nm,Mang_Type,Des_Tp,GIS_Acres", "1=1", a, os.path.join(WORK, "protected.geojsonl"))
+    # One state at a time (PAD-US has a State_Nm field), simplified to about 2 m on the server.
+    tag = "_".join(f"{v:g}" for v in a.bbox)
+    pieces = [(f"{st}_{tag}", f"State_Nm='{st}'", a.bbox) for st in a.states]
+    return rest_pieces("protected", PADUS_URL, "OBJECTID,Pub_Access,Unit_Nm,Mang_Type,Des_Tp,GIS_Acres", pieces,
+                       (500, 200, 100), {"maxAllowableOffset": "0.00002", "geometryPrecision": "6"})
 
 
 def flood(a):
-    # The zones are drawn in great detail; simplified to about 1 m on the server, in pages of 200,
-    # or the service gives up.
-    return rest_query(NFHL_URL, "FLD_ZONE,ZONE_SUBTY,SFHA_TF", "SFHA_TF='T' OR ZONE_SUBTY LIKE '%FLOODWAY%'", a,
-                      os.path.join(WORK, "flood.geojsonl"), resultRecordCount="200", maxAllowableOffset="0.00001",
-                      geometryPrecision="6")
+    # The zones are drawn in great detail: 1-degree cells, simplified to about 1 m on the server,
+    # in pages of 200 or fewer, or the service gives up.
+    where = "SFHA_TF='T' OR ZONE_SUBTY LIKE '%FLOODWAY%'"
+    pieces = [("_".join(f"{v:g}" for v in c), where, c) for c in cells(a.bbox, 1.0)]
+    return rest_pieces("flood", NFHL_URL, "OBJECTID,FLD_ZONE,ZONE_SUBTY,SFHA_TF", pieces, (200, 100, 50),
+                       {"maxAllowableOffset": "0.00001", "geometryPrecision": "6"})
 
 
 # Tippecanoe settings per step: layer name and zoom range.
@@ -239,8 +309,11 @@ def main():
                            *[os.path.join(WORK, f"{s}.mbtiles") for s in parts]])
     os.replace(tmp, OUT)
     log(f"Done: data/usdata.mbtiles, {os.path.getsize(OUT) / 1e6:.1f} MB")
+    for step, keys in PARTIAL.items():
+        log(f"{step}: {len(keys)} pieces could not be fetched and are missing; run the step again to fetch them.")
     if failed:
         log(f"These steps failed and were skipped: {', '.join(failed)}. Run them again later.")
+    if failed or PARTIAL:
         sys.exit(2)
 
 

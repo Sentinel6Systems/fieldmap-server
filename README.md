@@ -245,9 +245,13 @@ skipped without losing the others. Drawn by `topo-usgs`, each in its own Layers 
 | `protected` | [USGS PAD-US 4.1](https://www.usgs.gov/programs/gap-analysis-project/science/protected-areas) fee lands, `Pub_Access` | band inside the edge: purple open or unknown access, dashed edge restricted, rust closed (`XA`) |
 | `flood` | [FEMA National Flood Hazard Layer](https://www.fema.gov/flood-maps/national-flood-hazard-layer) | ruled blue floodway, dotted blue edge of the 1%-annual-chance (100-year) zone |
 
-The default steps are the first four; `flood` runs only when named, because a state's flood zones come through
-FEMA's web service 200 at a time (allow an hour or more for a large state). PAD-US comes from the USGS web service,
-which holds fee lands only, so easements are not drawn. Flood zones on the map are not an official FEMA determination.
+The default steps are the first four; `flood` runs only when named, because flood zones come through FEMA's web
+service in 1° cells, 200 features at a time (allow an hour or more for a large state). PAD-US comes from the USGS
+web service one state at a time; it holds fee lands only, so easements are not drawn. Both services refuse large
+queries, so each state or cell is fetched on its own, retried with smaller pages, and kept in
+`data/cache/usdata/<step>/`: when a piece still fails, the build says so, and running the same step again fetches
+only the missing pieces (delete that folder to fetch everything fresh). Flood zones on the map are not an official
+FEMA determination.
 
 Size measured on a 30 × 28 km box around a small city: 2.2 MB (flood zones half of it, protected land most of
 the rest). Scaled to a six-state region, expect a few hundred MB without `flood` and about 1 GB with it; rural
