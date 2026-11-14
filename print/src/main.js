@@ -40,12 +40,23 @@ async function findTiles() {
 }
 const TILES = await findTiles();
 const styleUrlFor = (id) => `${TILES}/styles/${id}/style.json`;
+let serverStyles = new Set();
 async function availableStyles() {
   try {
     const r = await fetch(`${TILES}/styles.json`, { cache: "no-store" });
-    const ids = new Set((await r.json()).map((s) => s.id));
-    return PRINT_STYLES.filter(([id]) => ids.has(id));
+    serverStyles = new Set((await r.json()).map((s) => s.id));
+    return PRINT_STYLES.filter(([id]) => serverStyles.has(id));
   } catch { return [PRINT_STYLES[0]]; }
+}
+// Print scale bands with their own style (<style>-12k, -24k, -50k, -100k): line weights
+// fixed for the scale, so a sheet looks the same at any latitude. Used when the server has one.
+const band = (scale) => (scale <= 16000 ? "12k" : scale <= 36000 ? "24k" : scale <= 75000 ? "50k" : "100k");
+async function printStyle() {
+  const id = `${STYLE}-${band(state.scale)}`;
+  if (serverStyles.has(id)) {
+    try { return applyLayers(await fetchStyle(styleUrlFor(id)), state.layers); } catch (e) { console.warn("print style:", e); }
+  }
+  return drawnStyle();
 }
 const styles = await availableStyles();
 let STYLE = qs.get("style") || (styles.some(([id]) => id === state.style) ? state.style : PRINT_STYLES[0][0]);
@@ -558,7 +569,7 @@ async function makePdf(kind) {
   try {
     const c = currentCenter();
     const { pdf, pages } = await renderSheet({
-      styleUrl: drawnStyle(), center: c, scale: state.scale, paper: state.paper, orientation: state.orientation,
+      styleUrl: await printStyle(), center: c, scale: state.scale, paper: state.paper, orientation: state.orientation,
       dpi: effectiveDpi(), title: state.title.trim(), markers, arrows, listPage: state.listPage, config,
       atlas: +state.atlas || 1, binder: state.binder, gridLines: state.layers.grid !== false, ink: state.layers.ink, signal: aborter.signal,
       onStatus: (t) => (status.textContent = t),

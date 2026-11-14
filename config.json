@@ -34,6 +34,22 @@
     "topo-usgs": {
       "style": "topo-usgs.json",
       "serve_rendered": true
+    },
+    "topo-usgs-12k": {
+      "style": "topo-usgs-12k.json",
+      "serve_rendered": false
+    },
+    "topo-usgs-24k": {
+      "style": "topo-usgs-24k.json",
+      "serve_rendered": false
+    },
+    "topo-usgs-50k": {
+      "style": "topo-usgs-50k.json",
+      "serve_rendered": false
+    },
+    "topo-usgs-100k": {
+      "style": "topo-usgs-100k.json",
+      "serve_rendered": false
     }
   },
   "data": {

@@ -72,6 +72,16 @@ cp pi/tileserver/docker-compose.pi.yml .
 rm -f config-pi.json   # left by older versions, which ran the light image
 docker compose -f docker-compose.pi.yml pull -q
 docker compose -f docker-compose.pi.yml up -d
+# TileServer GL reads config.json, the styles, sprites and the list of data files only when
+# it starts, and `up -d` leaves a running container alone. Restart it when any of them changed
+# since the last run of this script (always on the first run).
+STAMP="data/.tileserver-inputs.sha256"
+SUM="$( { cat config.json styles/*.json sprites/*.json; ls -l --time-style=+%s data/*.mbtiles; } | sha256sum | cut -d' ' -f1)"
+if [ "$(cat "$STAMP" 2>/dev/null)" != "$SUM" ]; then
+  docker restart tileserver >/dev/null
+  echo "Tile server restarted to load the current config, styles and data."
+fi
+echo "$SUM" > "$STAMP"
 
 echo "== Print tool"
 command -v node >/dev/null || { echo "Node.js is not installed. IIAB installs it; otherwise: apt-get install nodejs npm" >&2; exit 1; }

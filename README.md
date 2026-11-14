@@ -4,7 +4,7 @@ A self-hosted, fully offline topographic map service for a region of your choice
 that prints exact-scale map sheets and atlases. One `docker compose up` on any Linux machine gives you:
 
 - **A tile server** (TileServer GL) with six styles: `osm`, `topo-light`, `topo-dark`, `overlay`, `topo-print` and `topo-usgs`
-  (tuned for paper). Vector tiles for web maps and MapLibre clients, raster tiles for TAK clients (ATAK, WinTAK, iTAK).
+  (tuned for paper), plus print-scale variants of `topo-usgs`. Vector tiles for web maps and MapLibre clients, raster tiles for TAK clients (ATAK, WinTAK, iTAK).
 - **Build scripts** that make the data from public sources: OpenStreetMap extracts (Geofabrik or a mirror) via Planetiler,
   contours and hillshade from Copernicus GLO-30 elevation data. Build once; nothing needs the internet afterwards.
 - **The print tool** at `/mapprinter/`: Letter, Legal, Tabloid, Super B or Arch C sheets at 1:12k–1:100k, with an MGRS/USNG
@@ -65,8 +65,9 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | Path | What it is |
 |---|---|
 | `docker-compose.yml`, `.env.example` | The two services: `tileserver` and `web` (print tool + proxy) |
-| `config.json`, `config-basic.json` | TileServer GL configs: all six styles, or `osm`+`overlay` with only a base map |
-| `styles/`, `fonts/`, `sprites/` | The six styles and every asset they need, all local |
+| `config.json`, `config-basic.json` | TileServer GL configs: all six styles and the `topo-usgs` scale bands, or `osm`+`overlay` with only a base map |
+| `styles/`, `fonts/`, `sprites/` | The styles and every asset they need, all local |
+| `planetiler/` | Custom Planetiler schema for the optional extras layers |
 | `scripts/`, `regions/`, `tools/` | Data builders (Planetiler, GDAL, Tippecanoe, Osmium in a tool container) |
 | `print/` | The print tool: `src/`, `public/`, `build.mjs` (esbuild). Built inside the `web` image |
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
@@ -128,8 +129,22 @@ are Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License, text
   and area patterns keep their colours.
 - Contour interval and data date shown in the margin come from `print/public/config.json`. The credit line names OpenMapTiles and
   OpenStreetMap plus every other data set the style reads (from each tile set's attribution; empty files add nothing).
+- Print scale bands: the generator also writes `topo-usgs-12k`, `-24k`, `-50k` and `-100k`, with every line width
+  and text size fixed at its value for that scale (at 40°N). The print tool uses the band nearest the sheet's
+  scale when the server has it, so a 1:24,000 sheet has the same line weights at any latitude; the screen map keeps
+  the zoom-based `topo-usgs`. The band styles are listed with `serve_rendered: false` (no raster rendering).
 - Development: `cd print && npm install && npm run build`; `npm run serve` serves `dist/` on :8090
   (`http://localhost:8090/?tiles=http://localhost:8080`).
+
+### Contour interval
+
+The contours are a fixed set built from the elevation data (`build-contours.sh`: 40 ft with 200 ft index lines,
+or metres), and the Layers panel can thin them to index lines only. A contour interval chosen per sheet from the
+terrain (about 2.4 mm apart on paper for "sparse", 1.2 mm for "full", rounded to a standard interval and printed
+in the collar) would need contour lines computed in the browser from an elevation tile set. That is not built: a
+phone would have to fetch and trace elevation tiles for every page of an atlas, and the Pi would serve a third
+large tile set. The planned route is two or three pre-built contour sets (for example 20, 40 and 100 ft) and a
+choice per scale in the print tool.
 
 ## Build scripts
 
@@ -159,6 +174,14 @@ Use `ft` for feet (minor 40 ft, major 200 ft):
 ### `build-hillshade.sh <min-lon> <min-lat> <max-lon> <max-lat>`
 
 Builds `data/hillshade.mbtiles` from the same elevation data.
+
+To shrink a large hillshade file, drop zoom 13 and re-encode the tiles as WebP (about a tenth of the size; tested on
+a small sample, not yet on a US-wide file):
+
+```bash
+python3 tools/hillshade-webp.py --maxzoom 12      # data/hillshade.mbtiles -> data/hillshade-webp.mbtiles
+mv data/hillshade-webp.mbtiles data/hillshade.mbtiles && docker restart tileserver
+```
 
 The terrain scripts build a small tool container (GDAL + Tippecanoe) on first run.
 Downloaded elevation tiles stay in `data/cache/dem` for reuse.

@@ -543,3 +543,61 @@ with open("styles/topo-usgs.json", "w") as f:
     f.write(json.dumps(style, indent=2) + "\n")
 groups = sorted({l["metadata"]["fieldmap:group"] for l in layers})
 print(f"styles/topo-usgs.json: {len(layers)} layers in {len(groups)} groups: {', '.join(groups)}")
+
+# ------------------------------------------------------------------ one style per print scale band
+# The style above sizes lines and text by zoom, and the zoom of a given scale shifts with
+# latitude (1:24,000 is about z13.25 at 40°N and z12.6 in Alaska). The print tool uses these
+# variants instead: every zoom-driven size is fixed at its value for the band's scale at 40°N,
+# so a 1:24,000 sheet has the same line weights everywhere. What is shown (minzoom, maxzoom,
+# zoom filters) still follows the zoom.
+import copy
+import math
+
+BANDS = {"12k": 12000, "24k": 24000, "50k": 50000, "100k": 100000}
+
+
+def nominal_zoom(scale, lat=40.0):
+    metres_per_css_px = scale * 0.0254 / 100
+    return math.log2(40075016.686 / 512 * math.cos(math.radians(lat)) / metres_per_css_px)
+
+
+def freeze(v, z):
+    """Replace ["interpolate", type, ["zoom"], ...] and ["step", ["zoom"], ...] by their value at zoom z."""
+    if not isinstance(v, list) or not v:
+        return v
+    if v[0] == "interpolate" and v[2] == ["zoom"]:
+        kind, stops = v[1], v[3:]
+        pairs = [(stops[i], freeze(stops[i + 1], z)) for i in range(0, len(stops), 2)]
+        if z <= pairs[0][0]:
+            return pairs[0][1]
+        if z >= pairs[-1][0]:
+            return pairs[-1][1]
+        for (z0, a), (z1, b) in zip(pairs, pairs[1:]):
+            if z0 <= z <= z1:
+                base = kind[1] if kind[0] == "exponential" else 1
+                t = (z - z0) / (z1 - z0) if base == 1 else (base ** (z - z0) - 1) / (base ** (z1 - z0) - 1)
+                if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+                    return round(a + (b - a) * t, 3)
+                return ["+", ["*", a, round(1 - t, 4)], ["*", b, round(t, 4)]]
+    if v[0] == "step" and v[1] == ["zoom"]:
+        out = v[2]
+        for i in range(3, len(v), 2):
+            if z >= v[i]:
+                out = v[i + 1]
+        return freeze(out, z)
+    return [freeze(x, z) for x in v]
+
+
+for band, scale in BANDS.items():
+    z = nominal_zoom(scale)
+    variant = copy.deepcopy(style)
+    variant["name"] = f"Topo USGS 1:{scale:,}"
+    variant["metadata"]["fieldmap:print-scale"] = scale
+    variant["metadata"]["fieldmap:frozen-zoom"] = round(z, 3)
+    for layer in variant["layers"]:
+        for key in ("paint", "layout"):
+            if key in layer:
+                layer[key] = {k: freeze(v, z) for k, v in layer[key].items()}
+    with open(f"styles/topo-usgs-{band}.json", "w") as f:
+        f.write(json.dumps(variant, indent=2) + "\n")
+print(f"styles/topo-usgs-{{{','.join(BANDS)}}}.json: sizes fixed for each print scale")
