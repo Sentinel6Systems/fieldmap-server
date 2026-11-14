@@ -105,9 +105,28 @@ def survey(ratio):
     return finish(im, w, h, ratio), w, h
 
 
+def obstacle(ratio):
+    """Obstacle (FAA): the aeronautical-chart inverted V with a dot at its foot."""
+    w, h = 11, 12; k = ratio * SS; im = canvas(w, h, ratio); d = ImageDraw.Draw(im)
+    for col, wd in (((255, 255, 255, 255), 2.6), ((20, 40, 90, 255), 1.2)):
+        d.line([(1.2 * k, 10.5 * k), (5.5 * k, 1.2 * k), (9.8 * k, 10.5 * k)], fill=col, width=int(wd * k), joint="curve")
+    d.ellipse([4.3 * k, 8.8 * k, 6.7 * k, 11.2 * k], fill=(20, 40, 90, 255))
+    return finish(im, w, h, ratio), w, h
+
+
+def floodway(ratio):
+    """Floodway: blue diagonal rules (tiles seamlessly)."""
+    w = h = 12; k = ratio * SS; im = canvas(w, h, ratio); d = ImageDraw.Draw(im)
+    blue = (40, 110, 190, 150)
+    for off in (-12, 0, 12):
+        d.line([((off) * k, 12 * k), ((off + 12) * k, 0)], fill=blue, width=max(1, int(0.8 * k)))
+    return finish(im, w, h, ratio), w, h
+
+
 EXTRA = {"pat_marsh": marsh, "pat_sand": sand, "pat_rock": rock, "pat_cemetery": cemetery,
          "sym_peak": peak, "sym_spot": spot, "sym_flow": flow,
-         "sym_tower": tower, "sym_spring": spring, "sym_survey": survey}
+         "sym_tower": tower, "sym_spring": spring, "sym_survey": survey,
+         "sym_obstacle": obstacle, "pat_floodway": floodway}
 
 for suffix, ratio in (("", 1), ("@2x", 2)):
     base = Image.open(f"sprites/topo{suffix}.png").convert("RGBA")

@@ -16,7 +16,7 @@ Every layer carries metadata "fieldmap:group", for switching groups on and off.
 """
 import json
 
-OMT, TER, EXT = "openmaptiles", "terrain", "extras"
+OMT, TER, EXT, USD = "openmaptiles", "terrain", "extras", "usdata"
 PX_PER_MM = 100 / 25.4
 
 # Fonts
@@ -30,6 +30,7 @@ C = dict(
     black="#000000", casing="#ffffff", grey="#8c8c8c", closed="#9a9a96", park="#6d3fa6",
     military="#b0307a", admin="#3f3a4d", built="#ead9d4", industrial="#ddd3ea", commercial="#f3dfcb",
     civic="#ece1bd", peak="#6b4a2b", power="#d9572b", pipeline="#7d3c98", spring="#1d5aaa",
+    noaccess="#b35a2e", flood="#2a6db8", obstacle="#14285a",
 )
 
 layers = []
@@ -124,6 +125,27 @@ def banded(prefix, group, layer, flt, color, dash):
 
 banded("park", "parks", "park", POLY, C["park"], [4, 2])
 banded("military", "landuse", "landuse", cls("military"), C["military"], None)
+
+# ------------------------------------------------------------------ US data (data/usdata.mbtiles)
+
+# PAD-US public access: open and unknown land purple, restricted purple with a dashed edge,
+# closed land (Pub_Access XA) rust.
+# Parcels under 10 acres (school grounds, pocket parks) only from z14.
+ACCESS_CLR = ["match", ["get", "Pub_Access"], "XA", C["noaccess"], C["park"]]
+BIG_ENOUGH = ["any", [">=", ["zoom"], 14], [">=", ["coalesce", ["get", "GIS_Acres"], 0], 10]]
+add("protected-band", "line", "public-land", USD, "protected", BIG_ENOUGH, minzoom=8, layout={"line-join": "round"},
+    paint={"line-color": ACCESS_CLR, "line-opacity": 0.12, "line-width": w(1.5), "line-offset": w(0.75)})
+add("protected-edge", "line", "public-land", USD, "protected", ["all", BIG_ENOUGH, ["!=", ["get", "Pub_Access"], "RA"]], minzoom=8,
+    layout={"line-join": "round"}, paint={"line-color": ACCESS_CLR, "line-opacity": 0.7, "line-width": w(0.15)})
+add("protected-edge-restricted", "line", "public-land", USD, "protected", ["all", BIG_ENOUGH, ["==", ["get", "Pub_Access"], "RA"]], minzoom=8,
+    layout={"line-join": "round"}, paint={"line-color": ACCESS_CLR, "line-opacity": 0.7, "line-width": w(0.15), "line-dasharray": [3, 2]})
+
+# FEMA flood zones: ruled floodway, dotted edge of the 100-year zone.
+FLOODWAY = ["in", "FLOODWAY", ["coalesce", ["get", "ZONE_SUBTY"], ""]]
+add("floodway", "fill", "flood", USD, "flood", FLOODWAY, minzoom=11, paint={"fill-pattern": "pat_floodway", "fill-opacity": 0.8})
+add("flood-zone-edge", "line", "flood", USD, "flood", ["==", ["get", "SFHA_TF"], "T"], minzoom=11,
+    layout={"line-cap": "round", "line-join": "round"},
+    paint={"line-color": C["flood"], "line-opacity": 0.8, "line-width": w(0.2), "line-dasharray": [0.1, 2.2]})
 
 # ------------------------------------------------------------------ contours
 
@@ -313,6 +335,31 @@ sym("flow-arrow", "flow-arrows", "waterway",
      "icon-image": "sym_flow", "icon-size": ["match", ["get", "class"], "river", 1, 0.75],
      "icon-rotation-alignment": "map", "icon-padding": 12}, {}, minzoom=12)
 
+# US data labels come first in the symbol list, so OSM labels win any collision.
+sym("gnis-terrain", "terrain-names", "gnis", ["==", ["get", "kind"], "terrain"],
+    {"text-field": ["get", "name"], "text-font": ITAL, "text-size": size(8.5), "text-max-width": 7, "text-letter-spacing": 0.08,
+     "text-padding": 4}, {"text-color": "#222222", **halo()}, minzoom=12, source=USD)
+sym("gnis-water", "water-names", "gnis", ["all", ["==", ["get", "kind"], "water"], ["!=", ["get", "class"], "spring"]],
+    {"text-field": ["get", "name"], "text-font": ITAL, "text-size": size(8.5), "text-max-width": 7, "text-letter-spacing": 0.08,
+     "text-padding": 4}, {"text-color": C["water_text"], **halo()}, minzoom=12, source=USD)
+sym("gnis-spring", "springs", "gnis", ["==", ["get", "class"], "spring"],
+    {"icon-image": "sym_spring", "icon-size": 0.9, "text-field": ["get", "name"], "text-font": ITAL, "text-size": size(8.5),
+     "text-optional": True, "text-variable-anchor": ["left", "right", "top"], "text-radial-offset": 0.7, "text-justify": "auto"},
+    {"text-color": C["water_text"], **halo()}, minzoom=12, source=USD)
+sym("survey-benchmark", "survey-marks", "survey_mark", ["==", ["get", "kind"], "benchmark"],
+    {"icon-image": "sym_spot", "icon-size": 0.8, "text-font": MONO, "text-size": size(7.5), "text-anchor": "left", "text-offset": [0.6, 0],
+     "text-field": ["concat", "BM ", ["to-string", ["get", "elev_ft"]]], "text-optional": True}, {"text-color": "#222222", **halo()},
+    minzoom=13, source=USD)
+sym("survey-horizontal", "survey-marks", "survey_mark", ["!=", ["get", "kind"], "benchmark"],
+    {"icon-image": "sym_survey", "icon-size": 0.75, "text-font": MONO, "text-size": size(7.5), "text-anchor": "left", "text-offset": [0.6, 0],
+     "text-field": ["case", ["has", "elev_ft"], ["to-string", ["get", "elev_ft"]], ""], "text-optional": True},
+    {"text-color": "#222222", **halo()}, minzoom=13, source=USD)
+sym("obstacle", "obstacles", "obstacle", None,
+    {"icon-image": "sym_obstacle", "icon-size": ["interpolate", ["linear"], ["get", "agl_ft"], 100, 0.75, 500, 1.1],
+     "text-field": ["case", ["has", "agl_ft"], ["to-string", ["get", "agl_ft"]], ""], "text-font": MONOB, "text-size": size(7.5),
+     "text-optional": True, "text-anchor": "left", "text-offset": [0.7, 0.1], "symbol-sort-key": ["-", 0, ["coalesce", ["get", "agl_ft"], 0]]},
+    {"text-color": C["obstacle"], **halo()}, minzoom=11, source=USD)
+
 sym("contour-label", "contours", "contours_major", None,
     {"symbol-placement": "line", "symbol-spacing": 420,
      "text-field": ["to-string", ["coalesce", ["get", "elev_ft"], ["get", "elev_m"]]],
@@ -460,6 +507,7 @@ style = {
         "fieldmap:px-per-mm": round(PX_PER_MM, 4),
         "fieldmap:attribution": "© OpenMapTiles © OpenStreetMap contributors",
         "fieldmap:extras": "planetiler/extras.yml (data/extras.mbtiles, empty unless built)",
+        "fieldmap:usdata": "tools/us-data.py (data/usdata.mbtiles, empty unless built)",
     },
     "center": [0.0, 0.0],
     "zoom": 2,
@@ -470,6 +518,7 @@ style = {
         "terrain": {"type": "vector", "url": "mbtiles://contours"},
         "hillshade": {"type": "raster", "url": "mbtiles://hillshade"},
         "extras": {"type": "vector", "url": "mbtiles://extras"},
+        "usdata": {"type": "vector", "url": "mbtiles://usdata"},
     },
     "sprite": "/sprites/usgs",
     "glyphs": "{fontstack}/{range}.pbf",

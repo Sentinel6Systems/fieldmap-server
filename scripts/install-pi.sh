@@ -13,8 +13,8 @@ echo "== Checking data"
 for f in basemap contours hillshade; do
   [ -f "data/$f.mbtiles" ] || { echo "data/$f.mbtiles is missing. Copy your three .mbtiles files into data/ first." >&2; exit 1; }
 done
-# Optional fourth file (build-extras.sh); an empty one keeps the tile server starting without it.
-sudo -u "${SUDO_USER:-$(id -un)}" ./scripts/extras-placeholder.sh
+# Optional files (build-extras.sh, build-usdata.sh); empty ones keep the tile server starting without them.
+sudo -u "${SUDO_USER:-$(id -un)}" ./scripts/data-placeholders.sh
 
 echo "== Docker"
 if ! command -v docker >/dev/null; then

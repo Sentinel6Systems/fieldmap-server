@@ -6,7 +6,8 @@
     "fieldmap:reference-zoom": 13.25,
     "fieldmap:px-per-mm": 3.937,
     "fieldmap:attribution": "\u00a9 OpenMapTiles \u00a9 OpenStreetMap contributors",
-    "fieldmap:extras": "planetiler/extras.yml (data/extras.mbtiles, empty unless built)"
+    "fieldmap:extras": "planetiler/extras.yml (data/extras.mbtiles, empty unless built)",
+    "fieldmap:usdata": "tools/us-data.py (data/usdata.mbtiles, empty unless built)"
   },
   "center": [
     0.0,
@@ -31,6 +32,10 @@
     "extras": {
       "type": "vector",
       "url": "mbtiles://extras"
+    },
+    "usdata": {
+      "type": "vector",
+      "url": "mbtiles://usdata"
     }
   },
   "sprite": "/sprites/usgs",
@@ -784,6 +789,332 @@
           1.472,
           18,
           3.898
+        ]
+      }
+    },
+    {
+      "id": "protected-band",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "public-land"
+      },
+      "source": "usdata",
+      "source-layer": "protected",
+      "minzoom": 8,
+      "filter": [
+        "any",
+        [
+          ">=",
+          [
+            "zoom"
+          ],
+          14
+        ],
+        [
+          ">=",
+          [
+            "coalesce",
+            [
+              "get",
+              "GIS_Acres"
+            ],
+            0
+          ],
+          10
+        ]
+      ],
+      "layout": {
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": [
+          "match",
+          [
+            "get",
+            "Pub_Access"
+          ],
+          "XA",
+          "#b35a2e",
+          "#6d3fa6"
+        ],
+        "line-opacity": 0.12,
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          2.657,
+          11.25,
+          3.839,
+          13.25,
+          5.906,
+          15,
+          10.039,
+          18,
+          26.575
+        ],
+        "line-offset": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          1.329,
+          11.25,
+          1.919,
+          13.25,
+          2.953,
+          15,
+          5.02,
+          18,
+          13.287
+        ]
+      }
+    },
+    {
+      "id": "protected-edge",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "public-land"
+      },
+      "source": "usdata",
+      "source-layer": "protected",
+      "minzoom": 8,
+      "filter": [
+        "all",
+        [
+          "any",
+          [
+            ">=",
+            [
+              "zoom"
+            ],
+            14
+          ],
+          [
+            ">=",
+            [
+              "coalesce",
+              [
+                "get",
+                "GIS_Acres"
+              ],
+              0
+            ],
+            10
+          ]
+        ],
+        [
+          "!=",
+          [
+            "get",
+            "Pub_Access"
+          ],
+          "RA"
+        ]
+      ],
+      "layout": {
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": [
+          "match",
+          [
+            "get",
+            "Pub_Access"
+          ],
+          "XA",
+          "#b35a2e",
+          "#6d3fa6"
+        ],
+        "line-opacity": 0.7,
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          0.266,
+          11.25,
+          0.384,
+          13.25,
+          0.591,
+          15,
+          1.004,
+          18,
+          2.657
+        ]
+      }
+    },
+    {
+      "id": "protected-edge-restricted",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "public-land"
+      },
+      "source": "usdata",
+      "source-layer": "protected",
+      "minzoom": 8,
+      "filter": [
+        "all",
+        [
+          "any",
+          [
+            ">=",
+            [
+              "zoom"
+            ],
+            14
+          ],
+          [
+            ">=",
+            [
+              "coalesce",
+              [
+                "get",
+                "GIS_Acres"
+              ],
+              0
+            ],
+            10
+          ]
+        ],
+        [
+          "==",
+          [
+            "get",
+            "Pub_Access"
+          ],
+          "RA"
+        ]
+      ],
+      "layout": {
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": [
+          "match",
+          [
+            "get",
+            "Pub_Access"
+          ],
+          "XA",
+          "#b35a2e",
+          "#6d3fa6"
+        ],
+        "line-opacity": 0.7,
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          0.266,
+          11.25,
+          0.384,
+          13.25,
+          0.591,
+          15,
+          1.004,
+          18,
+          2.657
+        ],
+        "line-dasharray": [
+          3,
+          2
+        ]
+      }
+    },
+    {
+      "id": "floodway",
+      "type": "fill",
+      "metadata": {
+        "fieldmap:group": "flood"
+      },
+      "source": "usdata",
+      "source-layer": "flood",
+      "minzoom": 11,
+      "filter": [
+        "in",
+        "FLOODWAY",
+        [
+          "coalesce",
+          [
+            "get",
+            "ZONE_SUBTY"
+          ],
+          ""
+        ]
+      ],
+      "paint": {
+        "fill-pattern": "pat_floodway",
+        "fill-opacity": 0.8
+      }
+    },
+    {
+      "id": "flood-zone-edge",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "flood"
+      },
+      "source": "usdata",
+      "source-layer": "flood",
+      "minzoom": 11,
+      "filter": [
+        "==",
+        [
+          "get",
+          "SFHA_TF"
+        ],
+        "T"
+      ],
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#2a6db8",
+        "line-opacity": 0.8,
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          0.354,
+          11.25,
+          0.512,
+          13.25,
+          0.787,
+          15,
+          1.339,
+          18,
+          3.543
+        ],
+        "line-dasharray": [
+          0.1,
+          2.2
         ]
       }
     },
@@ -13160,6 +13491,385 @@
         ],
         "icon-rotation-alignment": "map",
         "icon-padding": 12
+      }
+    },
+    {
+      "id": "gnis-terrain",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "terrain-names"
+      },
+      "source": "usdata",
+      "source-layer": "gnis",
+      "minzoom": 12,
+      "filter": [
+        "==",
+        [
+          "get",
+          "kind"
+        ],
+        "terrain"
+      ],
+      "layout": {
+        "text-field": [
+          "get",
+          "name"
+        ],
+        "text-font": [
+          "Roboto Condensed Italic"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          7.65,
+          13.25,
+          8.5,
+          15,
+          9.77
+        ],
+        "text-max-width": 7,
+        "text-letter-spacing": 0.08,
+        "text-padding": 4
+      },
+      "paint": {
+        "text-color": "#222222",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
+      }
+    },
+    {
+      "id": "gnis-water",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "water-names"
+      },
+      "source": "usdata",
+      "source-layer": "gnis",
+      "minzoom": 12,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "get",
+            "kind"
+          ],
+          "water"
+        ],
+        [
+          "!=",
+          [
+            "get",
+            "class"
+          ],
+          "spring"
+        ]
+      ],
+      "layout": {
+        "text-field": [
+          "get",
+          "name"
+        ],
+        "text-font": [
+          "Roboto Condensed Italic"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          7.65,
+          13.25,
+          8.5,
+          15,
+          9.77
+        ],
+        "text-max-width": 7,
+        "text-letter-spacing": 0.08,
+        "text-padding": 4
+      },
+      "paint": {
+        "text-color": "#1b4a86",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
+      }
+    },
+    {
+      "id": "gnis-spring",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "springs"
+      },
+      "source": "usdata",
+      "source-layer": "gnis",
+      "minzoom": 12,
+      "filter": [
+        "==",
+        [
+          "get",
+          "class"
+        ],
+        "spring"
+      ],
+      "layout": {
+        "icon-image": "sym_spring",
+        "icon-size": 0.9,
+        "text-field": [
+          "get",
+          "name"
+        ],
+        "text-font": [
+          "Roboto Condensed Italic"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          7.65,
+          13.25,
+          8.5,
+          15,
+          9.77
+        ],
+        "text-optional": true,
+        "text-variable-anchor": [
+          "left",
+          "right",
+          "top"
+        ],
+        "text-radial-offset": 0.7,
+        "text-justify": "auto"
+      },
+      "paint": {
+        "text-color": "#1b4a86",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
+      }
+    },
+    {
+      "id": "survey-benchmark",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "survey-marks"
+      },
+      "source": "usdata",
+      "source-layer": "survey_mark",
+      "minzoom": 13,
+      "filter": [
+        "==",
+        [
+          "get",
+          "kind"
+        ],
+        "benchmark"
+      ],
+      "layout": {
+        "icon-image": "sym_spot",
+        "icon-size": 0.8,
+        "text-font": [
+          "Atkinson Hyperlegible Mono Regular"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          6.75,
+          13.25,
+          7.5,
+          15,
+          8.62
+        ],
+        "text-anchor": "left",
+        "text-offset": [
+          0.6,
+          0
+        ],
+        "text-field": [
+          "concat",
+          "BM ",
+          [
+            "to-string",
+            [
+              "get",
+              "elev_ft"
+            ]
+          ]
+        ],
+        "text-optional": true
+      },
+      "paint": {
+        "text-color": "#222222",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
+      }
+    },
+    {
+      "id": "survey-horizontal",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "survey-marks"
+      },
+      "source": "usdata",
+      "source-layer": "survey_mark",
+      "minzoom": 13,
+      "filter": [
+        "!=",
+        [
+          "get",
+          "kind"
+        ],
+        "benchmark"
+      ],
+      "layout": {
+        "icon-image": "sym_survey",
+        "icon-size": 0.75,
+        "text-font": [
+          "Atkinson Hyperlegible Mono Regular"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          6.75,
+          13.25,
+          7.5,
+          15,
+          8.62
+        ],
+        "text-anchor": "left",
+        "text-offset": [
+          0.6,
+          0
+        ],
+        "text-field": [
+          "case",
+          [
+            "has",
+            "elev_ft"
+          ],
+          [
+            "to-string",
+            [
+              "get",
+              "elev_ft"
+            ]
+          ],
+          ""
+        ],
+        "text-optional": true
+      },
+      "paint": {
+        "text-color": "#222222",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
+      }
+    },
+    {
+      "id": "obstacle",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "obstacles"
+      },
+      "source": "usdata",
+      "source-layer": "obstacle",
+      "minzoom": 11,
+      "layout": {
+        "icon-image": "sym_obstacle",
+        "icon-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "get",
+            "agl_ft"
+          ],
+          100,
+          0.75,
+          500,
+          1.1
+        ],
+        "text-field": [
+          "case",
+          [
+            "has",
+            "agl_ft"
+          ],
+          [
+            "to-string",
+            [
+              "get",
+              "agl_ft"
+            ]
+          ],
+          ""
+        ],
+        "text-font": [
+          "Atkinson Hyperlegible Mono Bold"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          6.75,
+          13.25,
+          7.5,
+          15,
+          8.62
+        ],
+        "text-optional": true,
+        "text-anchor": "left",
+        "text-offset": [
+          0.7,
+          0.1
+        ],
+        "symbol-sort-key": [
+          "-",
+          0,
+          [
+            "coalesce",
+            [
+              "get",
+              "agl_ft"
+            ],
+            0
+          ]
+        ]
+      },
+      "paint": {
+        "text-color": "#14285a",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
       }
     },
     {

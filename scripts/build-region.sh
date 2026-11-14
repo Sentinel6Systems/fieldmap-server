@@ -132,8 +132,9 @@ for step in "${STEPS[@]}"; do
     echo "=== $step finished in $(( (end - start) / 60 )) min ==="
 done
 
-# The print styles read data/extras.mbtiles; without the extras step it is an empty file.
-"$REPO_DIR/scripts/extras-placeholder.sh"
+# The print styles read data/extras.mbtiles and data/usdata.mbtiles; without the
+# extras step or build-usdata.sh they are empty files.
+"$REPO_DIR/scripts/data-placeholders.sh"
 
 echo
 echo "Output files:"

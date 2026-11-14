@@ -60,6 +60,7 @@ export function cellFor(cells, lng, lat) {
  * ===================================================================*/
 export async function renderSheet(opts) {
   const status = opts.onStatus || (() => {});
+  opts = { ...opts, credits: await dataCredits(await loadStyle(opts.styleUrl)) };
   const n = opts.atlas || 1;
   const binder = !!opts.binder && n > 1;
   const lay = layout(opts.paper, opts.orientation, opts.scale, { binder });
@@ -319,7 +320,7 @@ async function renderCoverPage(pdf, lay, opts, atlas, g, feats, total, status) {
     ["Grid", `MGRS / USNG, UTM zone ${g.zone}${g.band}, 100 km square${squares.size > 1 ? "s" : ""} ${[...squares].join(", ")} · 1 km lines · WGS 84`],
     ["Declination", `${fmtAngle(decl.declination)} at centre (${decl.asOf.getUTCFullYear()}), moving ${Math.abs(decl.annualChange).toFixed(2)}°/yr ${decl.annualChange < 0 ? "west" : "east"} · G-M angle ${fmtAngle(decl.gmAngle)} · ${decl.model}`],
     ["Contours", `${cfg.contourMinor || 40} ${cfg.contourUnit || "ft"}, index ${cfg.contourMajor || 200} ${cfg.contourUnit || "ft"} · terrain ${cfg.terrainSource || "Copernicus GLO-30"}`],
-    ["Map data", `© OpenMapTiles © OpenStreetMap contributors${cfg.dataDate ? ` · ${cfg.dataDate}` : ""} · printed ${new Date().toISOString().slice(0, 10)} from the Emergency Box, offline`],
+    ["Map data", `${opts.credits}${cfg.dataDate ? ` · ${cfg.dataDate}` : ""} · printed ${new Date().toISOString().slice(0, 10)} from the Emergency Box, offline`],
   ];
 
   // Locator map (one small render; the atlas occupies about a third of it)
@@ -474,6 +475,22 @@ function renderMap(style, center, zoom, cssW, cssH, pixelRatio) {
     map.on("error", (e) => console.warn("maplibre:", e && e.error && e.error.message));
     map.once("idle", () => { clearTimeout(timer); setTimeout(() => resolve({ map, container }), 150); });
   });
+}
+
+/** Credit line: OpenMapTiles and OpenStreetMap, plus the attribution of every other
+ *  data set the style reads that has any (empty placeholder files have none). */
+const BASE_CREDITS = "© OpenMapTiles © OpenStreetMap contributors";
+async function dataCredits(style) {
+  const parts = [BASE_CREDITS];
+  for (const src of Object.values(style.sources || {})) {
+    if (!src.url || !/^https?:/.test(src.url)) continue;
+    try {
+      const tj = await (await fetch(src.url)).json();
+      const text = String(tj.attribution || "").replace(/<[^>]*>/g, "").replace(/&copy;/g, "©").replace(/\s+/g, " ").trim();
+      if (text && !/copernicus/i.test(text) && !parts.some((p) => p.includes(text))) parts.push(text);
+    } catch { /* offline source: no credit to add */ }
+  }
+  return parts.join(" · ");
 }
 
 const styleCache = new Map();
@@ -816,7 +833,7 @@ function drawBlock(ctx, lay, dpi, opts, g, extra = {}) {
   const lines = [
     `Centre ${g.centerMGRS}  ·  ${opts.center.lat.toFixed(5)}, ${opts.center.lng.toFixed(5)}${extra.pageNote ? "  ·  " + extra.pageNote : ""}`,
     `Contours ${cfg.contourMinor || 40} ${unit}, index ${cfg.contourMajor || 200} ${unit}  ·  Terrain ${cfg.terrainSource || "Copernicus GLO-30"}`,
-    `© OpenMapTiles © OpenStreetMap contributors${cfg.dataDate ? ` · ${cfg.dataDate}` : ""}  ·  Printed ${new Date().toISOString().slice(0, 10)}`,
+    `${opts.credits}${cfg.dataDate ? ` · ${cfg.dataDate}` : ""}  ·  Printed ${new Date().toISOString().slice(0, 10)}`,
   ];
   if (g.straddles) lines.push(`UTM zone ${g.zone} grid extended across the zone boundary.`);
   for (const l of lines) { fitText(ctx, l, titleW, `${px(0.075)}px ${FAM}`, 0.7); ctx.fillText(l, bx, y); y += px(0.105); }

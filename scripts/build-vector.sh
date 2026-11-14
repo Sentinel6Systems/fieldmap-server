@@ -80,5 +80,5 @@ fetch_shared_sources "$REPO_DIR/data/sources"
 # and Planetiler would then build the whole world.
 build_basemap "$NAME.osm.pbf" "$MEMORY" --osm_parse_node_bounds=true
 
-"$REPO_DIR/scripts/extras-placeholder.sh"
+"$REPO_DIR/scripts/data-placeholders.sh"
 echo "Done. Output: $REPO_DIR/data/basemap.mbtiles"

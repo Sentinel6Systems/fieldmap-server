@@ -1923,5 +1923,19 @@
   "width": 11,
   "height": 10,
   "pixelRatio": 1
+ },
+ "sym_obstacle": {
+  "x": 175,
+  "y": 288,
+  "width": 11,
+  "height": 12,
+  "pixelRatio": 1
+ },
+ "pat_floodway": {
+  "x": 187,
+  "y": 288,
+  "width": 12,
+  "height": 12,
+  "pixelRatio": 1
  }
 }

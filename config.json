@@ -49,6 +49,9 @@
     },
     "extras": {
       "mbtiles": "extras.mbtiles"
+    },
+    "usdata": {
+      "mbtiles": "usdata.mbtiles"
     }
   }
 }

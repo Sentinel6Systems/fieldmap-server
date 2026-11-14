@@ -32,7 +32,7 @@ cd fieldmap-server
 ./scripts/build-hillshade.sh 5.9 45.8 10.5 47.8
 
 # 2. Start the server
-./scripts/extras-placeholder.sh   # empty data/extras.mbtiles unless you built it (needed after updating, too)
+./scripts/data-placeholders.sh   # empty extras/usdata files unless you built them (needed after updating, too)
 cp .env.example .env          # optional: ports, config file, image
 ./scripts/mem-limit.sh        # memory cap from this machine's RAM (see "Use with TAK clients")
 docker compose up -d --build
@@ -122,7 +122,8 @@ are Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License, text
   remembered with the other settings. Both print styles carry the groups: `topo-usgs` from its generator, `topo-print`
   from `tools/tag-print-groups.py` (run it again after editing that style by hand). In black and white, raster icons
   and area patterns keep their colours.
-- Contour interval and data date shown in the margin come from `print/public/config.json`.
+- Contour interval and data date shown in the margin come from `print/public/config.json`. The credit line names OpenMapTiles and
+  OpenStreetMap plus every other data set the style reads (from each tile set's attribution; empty files add nothing).
 - Development: `cd print && npm install && npm run build`; `npm run serve` serves `dist/` on :8090
   (`http://localhost:8090/?tiles=http://localhost:8080`).
 
@@ -172,7 +173,7 @@ that the OpenMapTiles base map leaves out but that matter on a paper map. The la
 | `tower` | towers, masts, chimneys, water towers, tanks, silos (height) | ring-and-dot symbol, height in feet |
 | `landmark` | springs, waterfalls, caves, sinkholes, wells, cairns, survey points, viewpoints, ruins | springs in blue, survey points as triangles with elevation |
 
-Without this step `data/extras.mbtiles` is an empty placeholder (written by `scripts/extras-placeholder.sh`, which
+Without this step `data/extras.mbtiles` is an empty placeholder (written by `scripts/data-placeholders.sh`, which
 the other build scripts and `install-pi.sh` call): the tile server needs every file `config.json` lists, and the
 layers are simply blank. Size: about 1 MB per 2,000 square miles; roughly 70 MB for the six Mid-Atlantic states and
 1-2 GB for the whole US, most of it z14 fences, gates and power towers.
@@ -180,6 +181,34 @@ layers are simply blank. Size: about 1 MB per 2,000 square miles; roughly 70 MB 
 ```bash
 ./scripts/build-region.sh regions/mid-atlantic.env extras     # reuses the merged OSM file of the vector step
 ./scripts/build-extras.sh switzerland.osm.pbf                 # after build-vector.sh switzerland
+```
+
+### `build-usdata.sh <region-file> [obstacles] [names] [marks] [protected] [flood]`
+
+Optional, US only. Builds `data/usdata.mbtiles` from US federal data (public domain) for the region file's `BBOX`
+and states (`US_STATES`, or the US states in `GEOFABRIK_AREAS`). Each step downloads its source, keeps it in
+`data/cache/usdata`, and tiles it; the results are joined into one file, and a step whose source is down is
+skipped without losing the others. Drawn by `topo-usgs`, each in its own Layers group:
+
+| Step | Source | On the map |
+|---|---|---|
+| `obstacles` | [FAA Digital Obstacle File](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dof/) (daily, whole US) | chart obstacle symbol, height above ground in feet |
+| `names` | [USGS GNIS](https://www.usgs.gov/tools/geographic-names-information-system-gnis) Domestic Names, per state | terrain names (gap, ridge, valley, summit ...) in italic black, water names (bay, rapids, falls ...) in blue, springs with the spring symbol |
+| `marks` | [NOAA NGS](https://geodesy.noaa.gov/) survey mark shapefiles, per state | bench marks as "BM 412" (feet), horizontal control as triangles |
+| `protected` | [USGS PAD-US 4.1](https://www.usgs.gov/programs/gap-analysis-project/science/protected-areas) fee lands, `Pub_Access` | band inside the edge: purple open or unknown access, dashed edge restricted, rust closed (`XA`) |
+| `flood` | [FEMA National Flood Hazard Layer](https://www.fema.gov/flood-maps/national-flood-hazard-layer) | ruled blue floodway, dotted blue edge of the 1%-annual-chance (100-year) zone |
+
+The default steps are the first four; `flood` runs only when named, because a state's flood zones come through
+FEMA's web service 200 at a time (allow an hour or more for a large state). PAD-US comes from the USGS web service,
+which holds fee lands only, so easements are not drawn. Flood zones on the map are not an official FEMA determination.
+
+Size measured on a 30 × 28 km box around a small city: 2.2 MB (flood zones half of it, protected land most of
+the rest). Scaled to the six Mid-Atlantic states, expect a few hundred MB without `flood` and about 1 GB with it;
+rural areas are far smaller.
+
+```bash
+./scripts/build-usdata.sh regions/mid-atlantic.env                 # obstacles, names, marks, protected
+./scripts/build-usdata.sh regions/mid-atlantic.env flood           # add flood zones
 ```
 
 ### `build-region.sh [--world] [--language <code>] <region-file> [vector] [contours] [hillshade] [extras]`
@@ -277,7 +306,8 @@ Put your own files in `data/` with these names:
 | `data/basemap.mbtiles` | vector | OpenMapTiles schema base map |
 | `data/contours.mbtiles` | vector | layers `contours_major` and `contours_minor`, attribute `elev_ft` (feet) or `elev_m` (meters) |
 | `data/hillshade.mbtiles` | raster | gray hillshade PNG tiles |
-| `data/extras.mbtiles` | vector | optional: the layers of `planetiler/extras.yml`; run `./scripts/extras-placeholder.sh` for an empty one |
+| `data/extras.mbtiles` | vector | optional: the layers of `planetiler/extras.yml`; run `./scripts/data-placeholders.sh` for an empty one |
+| `data/usdata.mbtiles` | vector | optional: layers `obstacle`, `gnis`, `survey_mark`, `protected`, `flood` (see `tools/us-data.py`); empty from the same script |
 
 The hillshade source is marked `"sparse": false` in `config.json`. Outside the area it covers, the tile server
 answers with a transparent tile, so the topo styles still render there, without shading.
@@ -342,6 +372,9 @@ See [systemd/README.md](systemd/README.md).
 - Map data: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL)
 - Tile schema and base styles: [OpenMapTiles](https://openmaptiles.org/) (BSD / CC-BY)
 - Elevation data: © ESA, [Copernicus DEM GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model)
+- Optional US layers (public domain, US federal government): FAA Digital Obstacle File, USGS GNIS, NOAA National
+  Geodetic Survey, USGS PAD-US, FEMA National Flood Hazard Layer
+- Fonts for the print styles: Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License)
 - Fonts: [Open Sans](https://fonts.google.com/specimen/Open+Sans) (Apache License 2.0)
 - Server: [TileServer GL](https://github.com/maptiler/tileserver-gl) (BSD)
 
