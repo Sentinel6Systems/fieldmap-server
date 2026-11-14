@@ -174,7 +174,9 @@ export function inputsLine(t, units, where) {
     parts.push(`observer ${fmtH(t.obsH, units)} above ground`, `target ${fmtH(t.tgtH, units)}`);
   } else {
     parts.push(t.kind === "line" ? `Radio path${where ? " " + where : ""}` : `Radio coverage${where ? " from " + where : ""}`);
-    parts.push(`${+t.freq.toFixed(3)} MHz`, `transmitter antenna ${fmtH(t.txH, units)}`, `receiver antenna ${fmtH(t.rxH, units)}`);
+    parts.push(`${+t.freq.toFixed(3)} MHz`, ...(t.kind === "line"
+      ? [`antenna ${fmtH(t.txH, units)} at A`, `${fmtH(t.rxH, units)} at B`]
+      : [`transmitter antenna ${fmtH(t.txH, units)}`, `receiver antenna ${fmtH(t.rxH, units)}`]));
   }
   if (t.kind !== "line") parts.push(`radius ${fmtD(t.radius, units)}`);
   parts.push(`k ${fmtK(t.mode === "viewshed" ? t.kVis : t.kRadio)}`);
@@ -246,7 +248,11 @@ export function drawProfile(ctx, prof, rect, o) {
     ctx.beginPath(); ctx.moveTo(X(d * du), T); ctx.lineTo(X(d * du), B); ctx.stroke();
     ctx.fillText(`${+d.toFixed(3)}`, X(d * du), B + fp * 0.3);
   }
-  ctx.fillText(`Distance from A (${u === "metric" ? "km" : "mi"}) · height above sea level (${u === "metric" ? "m" : "ft"}) · earth bulge for k ${fmtK(o.k)}`, (L + R) / 2, B + fp * 1.45);
+  const caption = `Distance from A (${u === "metric" ? "km" : "mi"}) · height above sea level (${u === "metric" ? "m" : "ft"}) · earth bulge for k ${fmtK(o.k)}`;
+  const cw = ctx.measureText(caption).width;
+  if (cw > R - L) ctx.font = `${fp * Math.max(0.6, (R - L) / cw)}px Helvetica, Arial, sans-serif`;
+  ctx.fillText(caption, (L + R) / 2, B + fp * 1.45);
+  ctx.font = `${fp}px Helvetica, Arial, sans-serif`;
   // Terrain
   ctx.beginPath(); ctx.moveTo(X(0), B);
   for (const p of s) if (Number.isFinite(p.terrain)) ctx.lineTo(X(p.d), Y(p.terrain));

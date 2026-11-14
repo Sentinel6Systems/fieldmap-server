@@ -248,7 +248,7 @@ let terrain = null;
 const terrainReady = initTerrain({
   map, tilesBase: TILES, state, saveSettings, root: $("terrain"),
   onLayout: () => updateFootprint(),
-}).then((t) => (terrain = t));
+}).then((t) => { terrain = t; renderLayerPanel(); return t; });
 
 map.on("click", (e) => {
   if (justDragged) { justDragged = false; return; }
@@ -341,7 +341,7 @@ function effectiveDpi() {
 }
 function currentAtlas() {
   const n = +state.atlas || 1;
-  const lay = layout(state.paper, state.orientation, state.scale, { binder: state.binder && n > 1 });
+  const lay = layout(state.paper, state.orientation, state.scale, { binder: state.binder && n > 1, terrain: !!(terrain && terrain.printData()) });
   return { ...atlasCells(currentCenter(), n, lay, state.scale, effectiveDpi()), lay };
 }
 function footprintPolygon() {
@@ -718,6 +718,12 @@ function renderLayerPanel() {
   }
   const h = document.createElement("h3"); h.textContent = "Grid"; box.appendChild(h);
   box.appendChild(toggle("MGRS grid lines (edge numbers stay)", state.layers.grid !== false, (on) => { state.layers.grid = on; saveSettings(); }));
+  if (terrain && terrain.available) {
+    const ht = document.createElement("h3"); ht.textContent = "Terrain analysis"; box.appendChild(ht);
+    box.appendChild(toggle("Viewshed or radio overlay and its points", state.layers.terrain !== false, (on) => {
+      state.layers.terrain = on; saveSettings(); terrain.refresh(); updateFootprint();
+    }));
+  }
   const hidden = state.layers.off.filter((g) => have.has(g)).length;
   $("layers-summary").textContent = hidden ? `${hidden} hidden` : "";
 }
@@ -750,6 +756,7 @@ async function makePdf(kind) {
       styleUrl: await printStyle(), center: c, scale: state.scale, paper: state.paper, orientation: state.orientation,
       dpi: effectiveDpi(), title: state.title.trim(), markers, arrows, shapes, units: state.units, shapeMeasure: state.shapeMeasure !== false, listPage: state.listPage, config,
       atlas: +state.atlas || 1, binder: state.binder, gridLines: state.layers.grid !== false, ink: state.layers.ink, signal: aborter.signal,
+      terrain: terrain && terrain.printData(),
       onStatus: (t) => (status.textContent = t),
     });
     const base = (state.title.trim() || toMGRS(c.lat, c.lng, 3)).replace(/[^\w-]+/g, "_");

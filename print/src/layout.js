@@ -18,16 +18,19 @@ export const SCALES = [12000, 24000, 25000, 50000, 100000];
 const OUTER = 0.25;      // page edge to grid-label gutter
 const GUTTER = 0.25;    // grid labels live here, outside the neatline
 const GAP = 0.08;       // neatline to bottom block
+const INFO_H = 0.85;    // title, scale, grid, credits, scale bars and declination
+const TERRAIN_H = 0.45; // terrain analysis strip under them, when one is printed
 
 /**
- * Compute the sheet geometry.
- * Returns inches: page {w,h}, map {x,y,w,h}, block {x,y,w,h}.
+ * Compute the sheet geometry. options: binder (wider left margin), terrain (room in the
+ * bottom block for the terrain analysis strip).
+ * Returns inches: page {w,h}, map {x,y,w,h}, block {x,y,w,h}, infoH (the block's usual part).
  */
 export function layout(paper, orientation, scale, options = {}) {
   const p = PAPERS[paper];
   const page = orientation === "landscape" ? { w: p.h, h: p.w } : { w: p.w, h: p.h };
 
-  const blockH = 0.85;
+  const blockH = INFO_H + (options.terrain ? TERRAIN_H : 0);
 
   const left = options.binder ? BINDER_MARGIN_IN : OUTER + GUTTER;
   const top = OUTER + GUTTER;
@@ -36,7 +39,7 @@ export function layout(paper, orientation, scale, options = {}) {
 
   const map = { x: left, y: top, w: page.w - left - right, h: page.h - top - bottom };
   const block = { x: options.binder ? BINDER_MARGIN_IN - GUTTER : OUTER, y: page.h - OUTER - blockH, w: page.w - OUTER - (options.binder ? BINDER_MARGIN_IN - GUTTER : OUTER), h: blockH };
-  return { page, map, block, gutter: GUTTER, blockH };
+  return { page, map, block, gutter: GUTTER, blockH, infoH: INFO_H };
 }
 
 /** Ground footprint in metres for a layout at a scale. */

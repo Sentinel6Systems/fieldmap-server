@@ -10,7 +10,8 @@ that prints exact-scale map sheets and atlases. One `docker compose up` on any L
 - **The print tool** at `/mapprinter/`: Letter, Legal, Tabloid, Super B or Arch C sheets at 1:12k–1:100k, with an MGRS/USNG
   1 km grid, a true-angle declination diagram (WMM2025, computed offline), scale bars, markers and arrows with range and
   true/grid/magnetic bearing, an optional list page, and **atlas mode**: 2×2 to 8×8 overlapping pages with a cover,
-  an index page and neighbour tabs, ready for a binder. Everything renders in the browser; the server only serves files.
+  an index page and neighbour tabs, ready for a binder; and **terrain analysis** (viewshed and VHF/UHF radio coverage)
+  when the elevation tiles are built. Everything renders in the browser; the server only serves files.
 
 It runs on a laptop, a home server, or a Raspberry Pi 4 behind Internet-in-a-Box (see `pi/`). It was built for an
 emergency box that people reach over its own Wi-Fi with no internet connection, so there are no CDN calls, no web
@@ -160,6 +161,67 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
   the zoom-based `topo-usgs`. The band styles are listed with `serve_rendered: false` (no raster rendering).
 - Development: `cd print && npm install && npm run build`; `npm run serve` serves `dist/` on :8090
   (`http://localhost:8090/?tiles=http://localhost:8080`).
+
+### Terrain analysis: viewshed and radio coverage
+
+With `data/elevation.mbtiles` on the server (`build-elevation.sh`, or the `elevation` step of `build-region.sh`) the
+panel has a **Terrain** section, collapsed at first. Without the file the section is not shown and nothing else
+changes. Everything runs in the browser, in a web worker, from the server's elevation tiles: no internet.
+
+- **Viewshed**: what can be seen by eye from a point. Place the observer (tap **Place**, then the map; drag it to
+  move it), set the observer's height above ground (6 ft standing) and the target's (0 ft = can I see the ground there;
+  presets 6 ft person and 30 ft building, or any value) and a radius of 1 to 25 km. The overlay shows the ground that
+  is visible, and with a target height also where the target is visible but the ground beneath it is not.
+- **Radio**: where a handheld, vehicle or base radio can likely reach on VHF and UHF. Frequency presets: MURS 151 MHz,
+  2 m amateur 146 MHz, GMRS/FRS 462 MHz, 70 cm amateur 440 MHz and 915 MHz ISM (LoRa, Meshtastic), or any frequency
+  from 30 to 3000 MHz; antenna heights handheld 5 ft, vehicle roof 6 ft, mast 30 ft or any value (the receiver's height
+  applies to every place on the map). Each place is classed by its path from the transmitter: **clear** (line of
+  sight with 60 % of the first Fresnel zone clear), **marginal** (line of sight, Fresnel zone partly blocked),
+  **diffraction** (one ridge in the way: extra loss by single knife-edge diffraction, ITU-R P.526, at the worst
+  obstacle) or **blocked** (more than 20 dB, or two or more ridges cut the line of sight). Under **Link budget**
+  (transmit power, antenna gains, cable loss, receiver sensitivity; the defaults are a 5 W handheld with its stock
+  antenna) the map is coloured by link margin instead: received level = power + gains − cable loss − free-space loss
+  (ITU-R P.525) − diffraction loss, against the sensitivity, in four bands: comfortable (20 dB or more to spare),
+  workable (10-20 dB), unlikely (0-10 dB), none. CB and HF are not offered: their ground wave and skywave are outside
+  this model.
+- **Line A to B** (both modes): an elevation profile between two points, with the earth's curvature drawn as a bulge,
+  the straight sight line or radio path between the antennas, for radio the 60 % and 100 % first Fresnel zone, and the
+  worst obstruction marked (also on the map). Read-outs: distance, bearing (true and magnetic), clearance at the worst
+  point as a share of the Fresnel zone, free-space and diffraction loss, and the link margin when a budget is set.
+- **Advanced**: the earth's curvature with refraction is an earth of k × 6,371 km: k = 7/6 for sight and 4/3 for radio
+  by default.
+- Heights and distances follow the **Units** setting (feet and miles, or metres and kilometres); points are shown in
+  MGRS and latitude/longitude. Settings and points are remembered with the other print settings.
+- **On paper**: the overlay, the radius ring and the points print on the sheet and on every atlas page and the index
+  (the Layers panel switches them off under "Terrain analysis"; in black and white the overlay prints as hatching and
+  stipple, not a tint). The collar gets a strip with the inputs (mode, heights, frequency, radius, k, the link budget),
+  a legend or the line's read-outs, the date of the elevation data and its notice. **Print the profile as an extra
+  page** adds the A-to-B chart and read-outs after the map, like the list page.
+
+**Limits** (also stated in the panel and on paper): it is a simple terrain-only model: no trees, buildings or clutter
+loss, no ground reflection, no ducting, and only single-edge diffraction at the worst obstacle. Real coverage is
+usually worse in forest and towns. It is an estimate for planning, not a guarantee. The elevation data is Copernicus
+GLO-30, a surface model at 30 m: it holds some of the height of forest and large buildings, smoothed, and none of
+anything smaller. A more complete radio model is Longley-Rice (the Irregular Terrain Model, ITM); NTIA's reference
+implementation is public domain, and adding it, compiled to WebAssembly, is a possible later step. It is not built.
+
+How it works: the worker fetches the elevation tiles around the point (cached for the session), resamples them to a
+square grid in metres around the point at the data's resolution (about 30 m at zoom 12), and runs an R2 viewshed (a
+ray from the observer to every edge cell; each cell takes the answer of the ray passing closest to its centre) or, for
+radio, radials from the transmitter one grid cell apart at the edge, testing the path to every point on them. Radio
+work grows with the cube of the radius, so past 12 km its grid coarsens to radius / 400 (63 m at 25 km). Moving a point
+or changing an input cancels a run in progress. Measured on a desktop browser (a mid-range phone is perhaps three
+times slower; not measured on one): viewshed 10 km 0.2 s, 25 km 0.8 s; radio 10 km 0.9 s, 25 km 1.6 s.
+
+Checks (`cd print && npm test`, Node 22 or later): synthetic terrain with a known answer (cone, conical pit, pit with
+vertical walls, single ridge, the radio horizon over flat ground) and the formulas against ITU-R P.525 and P.526 worked
+values. Against `gdal_viewshed` on the same 30 m grid, 10 km radius, two areas (flat coastal plain, ridge and valley),
+three observer and target settings: 98.8-99.95 % of the cells agree, and the visible areas overlap 82-91 %
+(intersection over union); the differences are cells at the edges of visible areas, where the two algorithms
+interpolate differently. Built from the tiles instead of the source, the agreement drops by at most 0.3 points. To
+repeat it: `tools/viewshed-compare.py` (in the tool container) and `print/test/compare-viewshed.mjs`. A radio profile
+across a ridge checked by hand from the source elevation data: diffraction loss 10.5 dB by hand, 10.4 dB in the tool
+(the difference is the tiles' 30 m resampling).
 
 ### Contour interval
 
@@ -491,6 +553,9 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- Terrain analysis in the print tool: viewshed and VHF/UHF radio coverage from a point, point-to-point profiles,
+  printed on sheets and atlases with a collar strip and an optional profile page; `build-elevation.sh` writes the
+  elevation tiles it uses.
 - Print styles: `topo-usgs` (USGS-quadrangle look, generated by `tools/make-topo-usgs.py`) with print-scale bands,
   English-only labels in both print styles, and a Map style menu in the print tool.
 - Print tool: circles with an exact radius, rectangles and polygons, with imperial or metric units.
@@ -515,6 +580,7 @@ See [systemd/README.md](systemd/README.md).
 
 - Map data: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL)
 - Tile schema and base styles: [OpenMapTiles](https://openmaptiles.org/) (BSD / CC-BY)
+- Radio formulas: ITU-R P.525 (free-space loss) and P.526 (Fresnel zone, single knife-edge diffraction)
 - Elevation data: © ESA, [Copernicus DEM GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model).
   Contours, hillshade and elevation tiles are produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus
   Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved.

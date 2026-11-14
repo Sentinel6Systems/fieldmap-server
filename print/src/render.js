@@ -1,12 +1,13 @@
 import * as maplibregl from "maplibre-gl";
 import { jsPDF } from "jspdf";
-import { zoomForScale, project, unproject, viewportBounds, fmtDistance, fmtBearing, EARTH_CIRC } from "./geo.js";
+import { zoomForScale, project, unproject, viewportBounds, fmtDistance, fmtBearing, EARTH_CIRC, destination } from "./geo.js";
 import { layout, ATLAS_OVERLAP_IN } from "./layout.js";
 import { toUTM, fromUTM, zoneFor, bandFor, squareId, toMGRS } from "./utm.js";
 import { declinationInfo, fmtAngle } from "./declination.js";
 import { arrowInfo } from "./features.js";
 import { colorName } from "./palette.js";
 import { shapeRing, shapeCenter, shapeSummary, shapeLegs, shapeInsideText, fmtLength, SHAPE_NAMES } from "./shapes.js";
+import { drawOverlay, drawSwatch, drawProfile, LIMITS, VIEW_LIMITS } from "./terrain/draw.js";
 
 const BLUE = "#1f5fa8";
 const INK = "#111";
@@ -57,6 +58,7 @@ export function cellFor(cells, lng, lat) {
  *  and area next to each shape's name on the map), listPage, config, atlas (1|2|3|4|6|8), binder (bool),
  *  gridLines (bool, default true: false keeps only the edge numbers and ticks),
  *  ink ("colour" | "bw": the grid prints black in bw),
+ *  terrain (from the Terrain panel's printData(), or null: overlay, collar strip, profile page),
  *  onStatus(text), signal (AbortSignal)
  * Resolves to { pdf, pages }.
  * ===================================================================*/
@@ -65,7 +67,7 @@ export async function renderSheet(opts) {
   opts = { ...opts, credits: await dataCredits(await loadStyle(opts.styleUrl)) };
   const n = opts.atlas || 1;
   const binder = !!opts.binder && n > 1;
-  const lay = layout(opts.paper, opts.orientation, opts.scale, { binder });
+  const lay = layout(opts.paper, opts.orientation, opts.scale, { binder, terrain: !!opts.terrain });
   const atlas = atlasCells(opts.center, n, lay, opts.scale, opts.dpi);
   const pdf = new jsPDF({
     unit: "in", format: [lay.page.w, lay.page.h],
@@ -78,7 +80,8 @@ export async function renderSheet(opts) {
 
   const wantList = !!opts.listPage && [opts.markers, opts.arrows, opts.shapes].some((l) => l && l.length);
   const extra = (n > 1 ? 2 : 0) + (wantList ? 1 : 0);        // cover + index (+ list)
-  const total = atlas.cells.length + extra;
+  const wantProfile = !!(opts.terrain && opts.terrain.profilePage && opts.terrain.line);
+  const total = atlas.cells.length + extra + (wantProfile ? 1 : 0);
   const firstCellPage = 1 + extra;                            // single sheet: 1; atlas: after cover, index (and list)
 
   let gridInfo;
@@ -114,6 +117,11 @@ export async function renderSheet(opts) {
     status("Adding the list page…");
     addPage();
     addListPage(pdf, lay, opts, gridInfo, atlas, total);
+  }
+  if (wantProfile) {
+    status("Adding the profile page…");
+    addPage();
+    renderProfilePage(pdf, lay, opts, total, total);
   }
   return { pdf, pages: total };
 }
@@ -163,6 +171,7 @@ async function renderMapPage(pdf, lay, opts, atlas, cell, status, pageNo, total)
   status("Drawing grid and margins…");
   const tabs = atlas.n > 1 ? neighbourTabs(lay, dpi, atlas, cell) : [];
   const gridInfo = drawGrid(ctx, bounds, toPage, mapRect, { ...opts, center }, dpi, { avoid: tabs.map((t) => t.rect) });
+  drawTerrain(ctx, toPage, mapRect, opts.terrain, dpi, opts.ink === "bw");
   drawShapes(ctx, toPage, mapRect, opts.shapes || [], dpi, opts.units, opts.shapeMeasure !== false);
   drawArrows(ctx, toPage, mapRect, opts.arrows || [], dpi, opts.center);
   drawMarkers(ctx, toPage, mapRect, opts.markers || [], dpi);
@@ -225,6 +234,7 @@ async function renderIndexPage(lay, opts, atlas, status, total) {
     ctx.lineWidth = dpi / 70; ctx.strokeStyle = "#c0392b";
   }
   ctx.restore();
+  drawTerrain(ctx, toPage, mapRect, opts.terrain, dpi, opts.ink === "bw");
   drawShapes(ctx, toPage, mapRect, opts.shapes || [], dpi, opts.units, opts.shapeMeasure !== false);
   drawArrows(ctx, toPage, mapRect, opts.arrows || [], dpi, opts.center);
   drawMarkers(ctx, toPage, mapRect, opts.markers || [], dpi);
@@ -328,6 +338,7 @@ async function renderCoverPage(pdf, lay, opts, atlas, g, feats, total, status) {
     ["Contours", `${cfg.contourMinor || 40} ${cfg.contourUnit || "ft"}, index ${cfg.contourMajor || 200} ${cfg.contourUnit || "ft"} · terrain ${cfg.terrainSource || "Copernicus GLO-30"}`],
     ["Map data", `${opts.credits}${cfg.dataDate ? ` · ${cfg.dataDate}` : ""} · printed ${new Date().toISOString().slice(0, 10)} from the Emergency Box, offline`],
   ];
+  if (opts.terrain) facts.push(["Terrain", `${opts.terrain.inputs} · ${opts.terrain.data}`]);
 
   // Locator map (one small render; the atlas occupies about a third of it)
   status("Rendering the locator map…");
@@ -1083,8 +1094,135 @@ function drawBlock(ctx, lay, dpi, opts, g, extra = {}) {
 
   drawScaleBars(ctx, barsX, by + px(0.16), barsW, opts.scale, dpi);
   const decl = declinationInfo(opts.center.lat, opts.center.lng, g.zone);
-  drawDeclination(ctx, declX, by + px(0.02), dpi, decl, lay.block.h);
+  drawDeclination(ctx, declX, by + px(0.02), dpi, decl, lay.infoH);
   ctx.restore();
+  if (opts.terrain) drawTerrainStrip(ctx, lay, dpi, opts.terrain, opts.ink === "bw");
+}
+
+/* =====================================================================
+ * Terrain analysis: overlay and points on the map, strip in the collar,
+ * profile page
+ * ===================================================================*/
+function drawTerrain(ctx, toPage, r, T, dpi, bw) {
+  if (!T) return;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
+  if (T.area) drawOverlay(ctx, T.area, T.t, bw, toPage, r, dpi);
+  const accent = bw ? INK : "#5b2a86";
+  const dashed = (pts) => {
+    for (const [col, lw, dash] of [["#fff", dpi / 45, []], [INK, dpi / 110, [dpi * 0.06, dpi * 0.04]]]) {
+      ctx.setLineDash(dash); ctx.strokeStyle = col; ctx.lineWidth = lw;
+      ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  };
+  const label = (text, p, dx) => {
+    ctx.font = `bold ${Math.round(dpi * 0.1)}px ${FAM}`; ctx.textBaseline = "middle"; ctx.textAlign = "left";
+    ctx.lineWidth = dpi / 40; ctx.strokeStyle = "#fff"; ctx.strokeText(text, p.x + dx, p.y);
+    ctx.fillStyle = INK; ctx.fillText(text, p.x + dx, p.y);
+  };
+  const t = T.t;
+  if (t.kind === "area" && t.point) {
+    const ring = [];
+    for (let a = 0; a <= 360; a += 2) { const q = destination(t.point.lat, t.point.lng, a, t.radius); ring.push(toPage(q.lng, q.lat)); }
+    dashed(ring);
+    const p = toPage(t.point.lng, t.point.lat), s = dpi * 0.075;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y - s); ctx.lineTo(p.x + s * 0.87, p.y + s * 0.5); ctx.lineTo(p.x - s * 0.87, p.y + s * 0.5); ctx.closePath();
+    ctx.fillStyle = accent; ctx.fill(); ctx.lineWidth = dpi / 100; ctx.strokeStyle = "#fff"; ctx.stroke();
+    label(t.mode === "radio" ? "Transmitter" : "Observer", p, s * 1.2);
+  } else if (T.line && t.a && t.b) {
+    const a = toPage(t.a.lng, t.a.lat), b = toPage(t.b.lng, t.b.lat);
+    dashed([a, b]);
+    const wi = T.line.prof.worstIndex;
+    if (wi > 0 && T.line.pts[wi]) {
+      const w = toPage(T.line.pts[wi].lng, T.line.pts[wi].lat), k = dpi * 0.04;
+      ctx.strokeStyle = bw ? INK : "#c0392b"; ctx.lineWidth = dpi / 60;
+      ctx.beginPath(); ctx.moveTo(w.x - k, w.y - k); ctx.lineTo(w.x + k, w.y + k); ctx.moveTo(w.x + k, w.y - k); ctx.lineTo(w.x - k, w.y + k); ctx.stroke();
+    }
+    for (const [p, name] of [[a, "A"], [b, "B"]]) {
+      const s = dpi * 0.06;
+      ctx.beginPath(); ctx.arc(p.x, p.y, s, 0, 2 * Math.PI); ctx.fillStyle = accent; ctx.fill();
+      ctx.lineWidth = dpi / 100; ctx.strokeStyle = "#fff"; ctx.stroke();
+      ctx.font = `bold ${Math.round(dpi * 0.075)}px ${FAM}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff";
+      ctx.fillText(name, p.x, p.y + dpi * 0.004);
+    }
+  }
+  ctx.restore();
+}
+
+/** The collar strip under the usual block: inputs, legend or read-outs, data and limits. */
+function drawTerrainStrip(ctx, lay, dpi, T, bw) {
+  const px = (i) => i * dpi;
+  const x = px(lay.block.x), w = px(lay.block.w), lh = px(0.1);
+  let y = px(lay.block.y + lay.infoH + 0.08);
+  ctx.save();
+  ctx.strokeStyle = "#bbb"; ctx.lineWidth = dpi / 200;
+  ctx.beginPath(); ctx.moveTo(x, y - px(0.05)); ctx.lineTo(x + w, y - px(0.05)); ctx.stroke();
+  ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+  y += px(0.07);
+  ctx.font = `bold ${px(0.075)}px ${FAM}`; ctx.fillStyle = INK;
+  const head = T.t.mode === "radio" ? "RADIO" : "VIEWSHED";
+  ctx.fillText(head, x, y);
+  const hx = x + ctx.measureText(head).width + px(0.1);
+  fitText(ctx, T.inputs, x + w - hx, `${px(0.075)}px ${FAM}`, 0.6); ctx.fillText(T.inputs, hx, y);
+  y += lh;
+  if (T.legend.length) {
+    let lx = x;
+    ctx.font = `${px(0.07)}px ${FAM}`;
+    for (const item of T.legend) {
+      if (item.style) { drawSwatch(ctx, lx, y - px(0.075), px(0.2), px(0.09), item.style, bw, dpi * 0.035); lx += px(0.26); }
+      ctx.fillStyle = item.style ? INK : "#555"; ctx.fillText(item.label, lx, y);
+      lx += ctx.measureText(item.label).width + px(0.22);
+    }
+  } else if (T.readouts) {
+    const txt = T.readouts.map(([k, v]) => `${k} ${v}`).join("  ·  ");
+    fitText(ctx, txt, w, `${px(0.072)}px ${FAM}`, 0.6); ctx.fillStyle = INK; ctx.fillText(txt, x, y);
+  }
+  y += lh;
+  ctx.fillStyle = "#333";
+  const lim = `${T.data} · ${T.t.mode === "radio" ? LIMITS : VIEW_LIMITS}`;
+  fitText(ctx, lim, w, `${px(0.068)}px ${FAM}`, 0.6); ctx.fillText(lim, x, y);
+  y += lh;
+  fitText(ctx, T.src.attribution, w, `${px(0.065)}px ${FAM}`, 0.6); ctx.fillText(T.src.attribution, x, y);
+  ctx.restore();
+}
+
+/** A page with the A-to-B elevation profile and its read-outs. */
+function renderProfilePage(pdf, lay, opts, pageNo, total) {
+  const T = opts.terrain, dpi = Math.min(opts.dpi, 200), px = (i) => i * dpi;
+  const W = Math.round(lay.page.w * dpi), H = Math.round(lay.page.h * dpi);
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+  const M = px(0.5), cw = W - 2 * M, bw = opts.ink === "bw";
+  let y = M + px(0.2);
+  ctx.fillStyle = INK; ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+  const title = `${opts.title ? opts.title + " — " : ""}${T.t.mode === "radio" ? "radio path" : "line of sight"} from A to B`;
+  fitText(ctx, title, cw, `bold ${px(0.2)}px ${FAM}`); ctx.fillText(title, M, y);
+  y += px(0.22);
+  fitText(ctx, T.inputs, cw, `${px(0.09)}px ${FAM}`, 0.6); ctx.fillStyle = "#333"; ctx.fillText(T.inputs, M, y);
+  y += px(0.15);
+  const chartH = Math.min(px(4.2), H * 0.5);
+  ctx.fillStyle = INK;
+  drawProfile(ctx, T.line.prof, { x: M, y, w: cw, h: chartH }, { units: opts.units, fontPx: px(0.085), bw, mode: T.t.mode, k: T.t.mode === "radio" ? T.t.kRadio : T.t.kVis });
+  y += chartH + px(0.3);
+  const t = T.t, mg = (p) => `${toMGRS(p.lat, p.lng, 5)}   ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
+  const rows = [["A", mg(t.a)], ["B", mg(t.b)], ...T.readouts];
+  const colW = rows.length > 8 && cw > px(6) ? cw / 2 : cw, perCol = colW < cw ? Math.ceil(rows.length / 2) : rows.length;
+  rows.forEach(([k, v], i) => {
+    const cx = M + Math.floor(i / perCol) * colW, cy = y + (i % perCol) * px(0.19);
+    ctx.font = `bold ${px(0.085)}px ${FAM}`; ctx.fillStyle = "#555"; ctx.fillText(k.toUpperCase(), cx, cy);
+    ctx.font = `${px(0.1)}px ${FAM}`; ctx.fillStyle = INK; ctx.fillText(v, cx + px(1.45), cy);
+  });
+  y += perCol * px(0.19) + px(0.2);
+  ctx.font = `${px(0.085)}px ${FAM}`; ctx.fillStyle = "#333";
+  y = wrapText(ctx, t.mode === "radio" ? LIMITS : VIEW_LIMITS, M, y, cw, px(0.13)) + px(0.05);
+  y = wrapText(ctx, `${T.data}. ${T.src.attribution}`, M, y, cw, px(0.13));
+  ctx.fillStyle = "#555"; ctx.textAlign = "right";
+  ctx.fillText(`Page ${pageNo} of ${total} · printed ${new Date().toISOString().slice(0, 10)}`, W - M, H - M * 0.6);
+  pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, lay.page.w, lay.page.h, undefined, "FAST");
+  canvas.width = canvas.height = 0;
 }
 
 function niceBar(scale, maxInches, unitMeters) {

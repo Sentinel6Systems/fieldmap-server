@@ -17,7 +17,7 @@ export const SECTIONS = [
 ];
 export const OWN_CONTROLS = new Set(["base", "hillshade", "contours"]);
 
-export const DEFAULTS = { ink: "colour", hillshade: "sharp", contours: "all", grid: true, off: [] };
+export const DEFAULTS = { ink: "colour", hillshade: "sharp", contours: "all", grid: true, terrain: true, off: [] };
 
 /** The set of groups present in a style. */
 export function groupsOf(style) {
