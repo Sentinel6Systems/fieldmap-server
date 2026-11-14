@@ -257,6 +257,9 @@ The `extras` step is optional and runs only when named. Add step names to run on
 ./scripts/build-region.sh regions/mid-atlantic.env contours hillshade
 ```
 
+Two region files come with the repository: `regions/mid-atlantic.env` (six states) and `regions/us-lower48.env`
+(the contiguous US on top of the world layer, English labels; read its comments for sizes before you start).
+
 A region file sets these values (see `regions/mid-atlantic.env`):
 
 | Variable | Meaning |
@@ -268,6 +271,7 @@ A region file sets these values (see `regions/mid-atlantic.env`):
 | `PLANETILER_MEMORY` | Java heap for Planetiler (default `8g`) |
 | `WORLD` | `yes`: the whole world at zoom 0-8, the region from zoom 9 (same as `--world`) |
 | `LANGUAGE` | Keep labels in one language only (same as `--language`) |
+| `US_STATES` | Two-letter state codes for `build-usdata.sh` (default: the US states in `GEOFABRIK_AREAS`) |
 
 Planetiler output is limited to the region's `BBOX`.
 
@@ -336,6 +340,10 @@ Put your own files in `data/` with these names:
 | `data/hillshade.mbtiles` | raster | gray hillshade PNG tiles |
 | `data/extras.mbtiles` | vector | optional: the layers of `planetiler/extras.yml`; run `./scripts/data-placeholders.sh` for an empty one |
 | `data/usdata.mbtiles` | vector | optional: layers `obstacle`, `gnis`, `survey_mark`, `protected`, `flood` (see `tools/us-data.py`); empty from the same script |
+
+`extras.mbtiles` and `usdata.mbtiles` cover only the region they were built for (its OSM extract and `BBOX`), even
+when the base map covers more, for example the whole world at zoom 0-8 with `--world`. Outside that region the
+extra layers are simply blank. To widen them, build them again from a larger region file.
 
 The hillshade source is marked `"sparse": false` in `config.json`. Outside the area it covers, the tile server
 answers with a transparent tile, so the topo styles still render there, without shading.
