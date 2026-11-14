@@ -77,7 +77,7 @@ export function shapeSummary(s, system) {
     const w = inverse(a.lat, a.lng, a.lat, b.lng).distance, h = inverse(a.lat, a.lng, b.lat, a.lng).distance;
     return `${fmtLength(w, system)} × ${fmtLength(h, system)} · ${area}`;
   }
-  return `${s.points.length} corners · ${area}`;
+  return area;
 }
 
 export const SHAPE_NAMES = { circle: "Circle", rect: "Rectangle", polygon: "Polygon" };
