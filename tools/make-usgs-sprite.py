@@ -80,8 +80,34 @@ def flow(ratio):
     return finish(im, w, h, ratio), w, h
 
 
+def tower(ratio):
+    """Tower or mast: a ring with a dot (extras layer)."""
+    w = h = 11; k = ratio * SS; im = canvas(w, h, ratio); d = ImageDraw.Draw(im)
+    d.ellipse([1 * k, 1 * k, 10 * k, 10 * k], fill=(255, 255, 255, 255), outline=(0, 0, 0, 255), width=int(1.1 * k))
+    d.ellipse([4 * k, 4 * k, 7 * k, 7 * k], fill=(0, 0, 0, 255))
+    return finish(im, w, h, ratio), w, h
+
+
+def spring(ratio):
+    """Spring: a blue ring with a short outflow tail."""
+    w, h = 14, 9; k = ratio * SS; im = canvas(w, h, ratio); d = ImageDraw.Draw(im)
+    blue = (29, 90, 170, 255)
+    d.line([(7 * k, 4.5 * k), (13 * k, 4.5 * k)], fill=blue, width=int(1.2 * k))
+    d.ellipse([1 * k, 1 * k, 8 * k, 8 * k], fill=(255, 255, 255, 255), outline=blue, width=int(1.3 * k))
+    return finish(im, w, h, ratio), w, h
+
+
+def survey(ratio):
+    """Survey mark: a small triangle with a centre dot."""
+    w, h = 11, 10; k = ratio * SS; im = canvas(w, h, ratio); d = ImageDraw.Draw(im)
+    d.polygon([(5.5 * k, 0.8 * k), (10.2 * k, 9.2 * k), (0.8 * k, 9.2 * k)], fill=(255, 255, 255, 255), outline=(0, 0, 0, 255), width=int(1.0 * k))
+    d.ellipse([4.6 * k, 5.4 * k, 6.4 * k, 7.2 * k], fill=(0, 0, 0, 255))
+    return finish(im, w, h, ratio), w, h
+
+
 EXTRA = {"pat_marsh": marsh, "pat_sand": sand, "pat_rock": rock, "pat_cemetery": cemetery,
-         "sym_peak": peak, "sym_spot": spot, "sym_flow": flow}
+         "sym_peak": peak, "sym_spot": spot, "sym_flow": flow,
+         "sym_tower": tower, "sym_spring": spring, "sym_survey": survey}
 
 for suffix, ratio in (("", 1), ("@2x", 2)):
     base = Image.open(f"sprites/topo{suffix}.png").convert("RGBA")

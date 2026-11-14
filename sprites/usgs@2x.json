@@ -1902,5 +1902,26 @@
   "width": 20,
   "height": 16,
   "pixelRatio": 2
+ },
+ "sym_tower": {
+  "x": 272,
+  "y": 576,
+  "width": 22,
+  "height": 22,
+  "pixelRatio": 2
+ },
+ "sym_spring": {
+  "x": 296,
+  "y": 576,
+  "width": 28,
+  "height": 18,
+  "pixelRatio": 2
+ },
+ "sym_survey": {
+  "x": 326,
+  "y": 576,
+  "width": 22,
+  "height": 20,
+  "pixelRatio": 2
  }
 }

@@ -16,7 +16,7 @@ Every layer carries metadata "fieldmap:group", for switching groups on and off.
 """
 import json
 
-OMT, TER = "openmaptiles", "terrain"
+OMT, TER, EXT = "openmaptiles", "terrain", "extras"
 PX_PER_MM = 100 / 25.4
 
 # Fonts
@@ -29,7 +29,7 @@ C = dict(
     water="#bcd6ee", shore="#2a6db8", water_text="#1b4a86", red="#cf2a33", red2="#9c1f2b",
     black="#000000", casing="#ffffff", grey="#8c8c8c", closed="#9a9a96", park="#6d3fa6",
     military="#b0307a", admin="#3f3a4d", built="#ead9d4", industrial="#ddd3ea", commercial="#f3dfcb",
-    civic="#ece1bd", peak="#6b4a2b",
+    civic="#ece1bd", peak="#6b4a2b", power="#d9572b", pipeline="#7d3c98", spring="#1d5aaa",
 )
 
 layers = []
@@ -173,6 +173,17 @@ add("road-area", "fill", "roads", OMT, "transportation", ["all", POLY, ["!", cls
 add("building", "fill", "buildings", OMT, "building", minzoom=13,
     paint={"fill-color": "#1a1a1a", "fill-outline-color": "#000000", "fill-opacity": 0.9})
 
+# ------------------------------------------------------------------ extras: barriers (data/extras.mbtiles)
+
+add("barrier-hedge", "line", "barriers", EXT, "barrier", ["all", LINE, cls("hedge")], minzoom=14,
+    paint={"line-color": "#4f7a2e", "line-width": w(0.3)})
+add("barrier-wall", "line", "barriers", EXT, "barrier", ["all", LINE, cls("wall", "retaining_wall")], minzoom=14,
+    paint={"line-color": "#3a3a3a", "line-width": w(0.22)})
+add("barrier-fence", "line", "barriers", EXT, "barrier", ["all", LINE, cls("fence", "guard_rail")], minzoom=14,
+    paint={"line-color": C["black"], "line-opacity": 0.8, "line-width": w(0.08)})
+add("barrier-fence-ticks", "line", "barriers", EXT, "barrier", ["all", LINE, cls("fence")], minzoom=14,
+    paint={"line-color": C["black"], "line-opacity": 0.8, "line-width": w(0.45), "line-dasharray": [0.12, 6]})
+
 # ------------------------------------------------------------------ roads and rail
 
 # class group, fill colour, fill mm, extra mm for the black outline (0 = none), extra mm for the white casing, minzoom
@@ -237,6 +248,34 @@ add("aerialway", "line", "roads", OMT, "transportation", ["all", LINE, cls("aeri
     paint={"line-color": C["black"], "line-width": w(0.13)})
 add("aerialway-ticks", "line", "roads", OMT, "transportation", ["all", LINE, cls("aerialway")], minzoom=12,
     paint={"line-color": C["black"], "line-width": w(0.8), "line-dasharray": [0.15, 2.5]})
+
+# ------------------------------------------------------------------ extras: power and pipelines
+
+add("power-area", "fill", "power", EXT, "power", ["all", POLY, cls("substation", "plant")], minzoom=12,
+    paint={"fill-color": C["power"], "fill-opacity": 0.12})
+add("power-area-edge", "line", "power", EXT, "power", ["all", POLY, cls("substation", "plant")], minzoom=12,
+    paint={"line-color": C["power"], "line-width": w(0.15)})
+add("pipeline", "line", "pipelines", EXT, "pipeline", None, minzoom=11,
+    paint={"line-color": C["pipeline"], "line-width": w(0.2), "line-dasharray": [9, 2, 1.5, 2],
+           "line-opacity": ["match", ["get", "location"], ["underground", "underwater"], 0.55, 1]})
+# Power lines: dashed, on a white casing, heavier at 115 kV and above.
+HIGH_V = ["==", ["get", "high"], True]
+def power_w(extra_mm):
+    """Line width in mm like w(), chosen per feature: 115 kV+, other lines, minor lines."""
+    stops = []
+    for z, f in ((9, 0.45), (11.25, 0.65), (13.25, 1.0), (15, 1.7), (18, 4.5)):
+        px = lambda mm: round((mm + extra_mm) * PX_PER_MM * f, 3)
+        stops += [z, ["case", HIGH_V, px(0.32), ["==", ["get", "class"], "minor_line"], px(0.14), px(0.22)]]
+    return ["interpolate", ["exponential", 1.4], ["zoom"], *stops]
+add("power-line-casing", "line", "power", EXT, "power", ["all", LINE, cls("line", "minor_line")], minzoom=10,
+    paint={"line-color": C["casing"], "line-width": power_w(0.3)})
+add("power-line", "line", "power", EXT, "power", ["all", LINE, cls("line", "minor_line")],
+    paint={"line-color": C["power"], "line-dasharray": [6, 1.5], "line-width": power_w(0)})
+add("power-cable", "line", "power", EXT, "power", ["all", LINE, cls("cable")], minzoom=12,
+    paint={"line-color": C["power"], "line-opacity": 0.55, "line-width": w(0.15), "line-dasharray": [1.5, 2]})
+add("power-tower", "circle", "power", EXT, "power", ["all", POINT, cls("tower", "portal")], minzoom=13.5,
+    paint={"circle-color": C["power"], "circle-radius": ["interpolate", ["linear"], ["zoom"], 13.5, 1.8, 16, 3.5],
+           "circle-stroke-color": C["casing"], "circle-stroke-width": 0.8})
 
 # ------------------------------------------------------------------ boundaries
 
@@ -340,6 +379,29 @@ sym("peak", "peaks", "mountain_peak", ["all", POINT, ["has", "name"]],
      "text-radial-offset": 0.6, "text-justify": "auto", "symbol-sort-key": ["get", "rank"]},
     {"text-color": C["peak"], **halo(width=1.6)}, minzoom=10)
 
+# Extras: towers and masts with height, springs and waterfalls, other landmarks.
+FEET = ["to-string", ["round", ["*", ["get", "height"], 3.28084]]]
+sym("tower", "towers", "tower", POINT,
+    {"icon-image": "sym_tower", "icon-size": ["match", ["get", "class"], ["mast", "communications_tower"], 1, 0.85],
+     "text-field": ["case", ["has", "height"], ["concat", FEET, " ft"], ""], "text-font": MONO, "text-size": size(7.5),
+     "text-optional": True, "text-variable-anchor": ["right", "left", "top"], "text-radial-offset": 0.6, "text-justify": "auto",
+     "symbol-sort-key": ["-", 0, ["coalesce", ["get", "height"], 0]]},
+    {"text-color": "#222222", **halo()}, minzoom=12.5, source=EXT)
+sym("spring", "springs", "landmark", ["all", POINT, cls("spring", "waterfall")],
+    {"icon-image": "sym_spring", "icon-size": 0.9, "text-field": NAME, "text-font": ITAL, "text-size": size(8.5),
+     "text-optional": True, "text-variable-anchor": ["left", "right", "top"], "text-radial-offset": 0.7, "text-justify": "auto"},
+    {"text-color": C["water_text"], **halo()}, minzoom=12, source=EXT)
+sym("survey-mark", "landmarks", "landmark", ["all", POINT, cls("survey_point")],
+    {"icon-image": "sym_survey", "icon-size": 0.8, "text-field": ["case", ["has", "ele"], ["to-string", ["round", ["*", ["get", "ele"], 3.28084]]], ""],
+     "text-font": MONO, "text-size": size(7.5), "text-optional": True, "text-anchor": "left", "text-offset": [0.7, 0]},
+    {"text-color": "#222222", **halo()}, minzoom=13, source=EXT)
+sym("landmark", "landmarks", "landmark", ["all", POINT, ["!", cls("spring", "waterfall", "survey_point")]],
+    {"text-field": ["format", ["match", ["get", "class"], "cave_entrance", "Cave", "sinkhole", "Sinkhole", "water_well", "Well",
+                               "cairn", "Cairn", "viewpoint", "View", "mineshaft", "Shaft", "adit", "Adit", "ruins", "Ruins", "stone", "Boulder", ""],
+                    {"font-scale": 0.9}, ["case", ["!=", NAME, ""], ["concat", "\n", NAME], ""], {}],
+     "text-font": ITAL, "text-size": size(8), "text-max-width": 8, "text-padding": 3},
+    {"text-color": "#333333", **halo()}, minzoom=13.5, source=EXT)
+
 EMERGENCY = ["hospital", "fire_station", "police", "pharmacy", "shelter", "drinking_water", "fuel", "ranger_station"]
 POI_LAYOUT = {"icon-image": ["concat", ["get", "class"], "_11"], "icon-size": 0.8, "text-field": NAME, "text-anchor": "top",
               "text-offset": [0, 0.7], "text-max-width": 8, "text-optional": True, "text-padding": 2}
@@ -397,6 +459,7 @@ style = {
         "fieldmap:reference-zoom": 13.25,
         "fieldmap:px-per-mm": round(PX_PER_MM, 4),
         "fieldmap:attribution": "© OpenMapTiles © OpenStreetMap contributors",
+        "fieldmap:extras": "planetiler/extras.yml (data/extras.mbtiles, empty unless built)",
     },
     "center": [0.0, 0.0],
     "zoom": 2,
@@ -406,6 +469,7 @@ style = {
         "openmaptiles": {"type": "vector", "url": "mbtiles://basemap"},
         "terrain": {"type": "vector", "url": "mbtiles://contours"},
         "hillshade": {"type": "raster", "url": "mbtiles://hillshade"},
+        "extras": {"type": "vector", "url": "mbtiles://extras"},
     },
     "sprite": "/sprites/usgs",
     "glyphs": "{fontstack}/{range}.pbf",

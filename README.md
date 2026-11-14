@@ -32,6 +32,7 @@ cd fieldmap-server
 ./scripts/build-hillshade.sh 5.9 45.8 10.5 47.8
 
 # 2. Start the server
+./scripts/extras-placeholder.sh   # empty data/extras.mbtiles unless you built it (needed after updating, too)
 cp .env.example .env          # optional: ports, config file, image
 ./scripts/mem-limit.sh        # memory cap from this machine's RAM (see "Use with TAK clients")
 docker compose up -d --build
@@ -157,7 +158,31 @@ Builds `data/hillshade.mbtiles` from the same elevation data.
 The terrain scripts build a small tool container (GDAL + Tippecanoe) on first run.
 Downloaded elevation tiles stay in `data/cache/dem` for reuse.
 
-### `build-region.sh [--world] [--language <code>] <region-file> [vector] [contours] [hillshade]`
+### `build-extras.sh [--bounds=<min-lon>,<min-lat>,<max-lon>,<max-lat>] <osm-file>`
+
+Optional. Builds `data/extras.mbtiles` from an OSM extract already in `data/sources`: OpenStreetMap features
+that the OpenMapTiles base map leaves out but that matter on a paper map. The layers are defined in
+`planetiler/extras.yml` (Planetiler's custom schema format) and drawn by `topo-usgs`:
+
+| Layer | Features | On the map |
+|---|---|---|
+| `power` | power lines (voltage), minor lines, cables, towers, substations, power plants | orange-red dashes on a white casing, heavier at 115 kV and above; towers as dots |
+| `pipeline` | pipelines (substance, underground or not) | purple long dash-dot, fainter when underground |
+| `barrier` | fences, walls, hedges, guard rails, gates | thin black line with ticks (fences), from 1:12k |
+| `tower` | towers, masts, chimneys, water towers, tanks, silos (height) | ring-and-dot symbol, height in feet |
+| `landmark` | springs, waterfalls, caves, sinkholes, wells, cairns, survey points, viewpoints, ruins | springs in blue, survey points as triangles with elevation |
+
+Without this step `data/extras.mbtiles` is an empty placeholder (written by `scripts/extras-placeholder.sh`, which
+the other build scripts and `install-pi.sh` call): the tile server needs every file `config.json` lists, and the
+layers are simply blank. Size: about 1 MB per 2,000 square miles; roughly 70 MB for the six Mid-Atlantic states and
+1-2 GB for the whole US, most of it z14 fences, gates and power towers.
+
+```bash
+./scripts/build-region.sh regions/mid-atlantic.env extras     # reuses the merged OSM file of the vector step
+./scripts/build-extras.sh switzerland.osm.pbf                 # after build-vector.sh switzerland
+```
+
+### `build-region.sh [--world] [--language <code>] <region-file> [vector] [contours] [hillshade] [extras]`
 
 Builds all three data files for a region described in a region file.
 A region can cover several Geofabrik extracts, for example several US states.
@@ -169,7 +194,7 @@ for the region's bounding box.
 ./scripts/build-region.sh regions/mid-atlantic.env
 ```
 
-Add step names to run only some steps:
+The `extras` step is optional and runs only when named. Add step names to run only some steps:
 
 ```bash
 ./scripts/build-region.sh regions/mid-atlantic.env contours hillshade
@@ -252,6 +277,7 @@ Put your own files in `data/` with these names:
 | `data/basemap.mbtiles` | vector | OpenMapTiles schema base map |
 | `data/contours.mbtiles` | vector | layers `contours_major` and `contours_minor`, attribute `elev_ft` (feet) or `elev_m` (meters) |
 | `data/hillshade.mbtiles` | raster | gray hillshade PNG tiles |
+| `data/extras.mbtiles` | vector | optional: the layers of `planetiler/extras.yml`; run `./scripts/extras-placeholder.sh` for an empty one |
 
 The hillshade source is marked `"sparse": false` in `config.json`. Outside the area it covers, the tile server
 answers with a transparent tile, so the topo styles still render there, without shading.

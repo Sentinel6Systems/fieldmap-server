@@ -1,0 +1,176 @@
+# Extra OpenStreetMap layers for the print styles, built with Planetiler's custom
+# schema support into data/extras.mbtiles (scripts/build-extras.sh). OpenMapTiles
+# leaves these out; they help on paper: power lines, pipelines, fences and gates,
+# towers and masts, springs, waterfalls and other navigation landmarks.
+#
+# Layers and attributes:
+#   power     class (line, minor_line, cable, tower, portal, substation, plant),
+#             voltage (kV, first value), high (true at 115 kV and above), location,
+#             name:en, name:latin, source (plant)
+#   pipeline  substance, location (underground, overground, underwater)
+#   barrier   class (fence, wall, hedge, guard_rail, retaining_wall, gate, lift_gate,
+#             swing_gate, stile, cattle_grid)
+#   tower     class (tower, mast, communications_tower, chimney, water_tower,
+#             storage_tank, silo, flagpole), tower_type, height (m), name:en, name:latin
+#   landmark  class (spring, waterfall, cave_entrance, sinkhole, water_well, cairn,
+#             survey_point, viewpoint, mineshaft, adit, ruins, stone), ele (m),
+#             name:en, name:latin
+#
+# Labels are English only, as in the print styles: name:en from the tag, and
+# name:latin is the plain name only when it is written in Latin letters.
+
+schema_name: fieldmap extras
+schema_description: Power, pipelines, barriers, towers and landmarks from OpenStreetMap
+attribution: <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>
+args:
+  osm_path:
+    description: OSM extract to read (inside the container)
+    default: /data/sources/extract.osm.pbf
+sources:
+  osm:
+    type: osm
+    local_path: '${ args.osm_path }'
+
+definitions:
+  attributes:
+    - &name_en
+      key: name:en
+      tag_value: name:en
+    - &name_latin
+      key: name:latin
+      tag_value: name
+      include_when: '${ has(feature.tags.name) && feature.tags.name.matches("^[ -~\\u00a0-\\u024f\\u1e00-\\u1eff\\u2018\\u2019\\u2013\\u2014]+$") }'
+
+layers:
+  - id: power
+    features:
+      - source: osm
+        geometry: line
+        include_when:
+          power: [line, minor_line, cable]
+        min_zoom:
+          default_value: 12
+          overrides:
+            9:
+              power: line
+        attributes:
+          - key: class
+            value: '${ match_value }'
+          - key: voltage
+            include_when: '${ has(feature.tags.voltage) && feature.tags.voltage.matches("^[0-9]{4,7}([;.,].*)?$") }'
+            value: '${ int(feature.tags.voltage.split(";")[0].split(".")[0].split(",")[0]) / 1000 }'
+          - key: high
+            value: true
+            include_when: '${ has(feature.tags.voltage) && feature.tags.voltage.matches("^(11[5-9]|1[2-9][0-9]|[2-9][0-9][0-9]|[0-9]{4})[0-9]{3}([;.,].*)?$") }'
+          - key: location
+            tag_value: location
+          - *name_en
+          - *name_latin
+      - source: osm
+        geometry: point
+        min_zoom: 13
+        include_when:
+          power: [tower, portal]
+        attributes:
+          - key: class
+            value: '${ match_value }'
+      - source: osm
+        geometry: polygon
+        include_when:
+          power: [substation, plant]
+        min_zoom:
+          default_value: 12
+          overrides:
+            10:
+              power: plant
+        min_size: 2
+        attributes:
+          - key: class
+            value: '${ match_value }'
+          - key: source
+            tag_value: plant:source
+          - *name_en
+          - *name_latin
+
+  - id: pipeline
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 11
+        include_when:
+          man_made: pipeline
+        attributes:
+          - key: substance
+            tag_value: substance
+          - key: location
+            tag_value: location
+
+  - id: barrier
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 14
+        include_when:
+          barrier: [fence, wall, hedge, guard_rail, retaining_wall]
+        attributes:
+          - key: class
+            value: '${ match_value }'
+      - source: osm
+        geometry: point
+        min_zoom: 14
+        include_when:
+          barrier: [gate, lift_gate, swing_gate, stile, cattle_grid]
+        attributes:
+          - key: class
+            value: '${ match_value }'
+
+  - id: tower
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 12
+        include_when:
+          man_made: [tower, mast, communications_tower, chimney, water_tower, storage_tank, silo, flagpole]
+        attributes: &tower_attributes
+          - key: class
+            value: '${ match_value }'
+          - key: tower_type
+            tag_value: tower:type
+          - key: height
+            include_when: '${ has(feature.tags.height) && feature.tags.height.matches("^[0-9]+(\\.[0-9]+)?( ?m)?$") }'
+            value: '${ double(feature.tags.height.replace(" ", "").replace("m", "")) }'
+          - *name_en
+          - *name_latin
+      - source: osm
+        geometry: polygon_centroid
+        min_zoom: 12
+        include_when:
+          man_made: [tower, mast, communications_tower, chimney, water_tower, storage_tank, silo]
+        attributes: *tower_attributes
+
+  - id: landmark
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 12
+        include_when:
+          natural: [spring, cave_entrance, sinkhole, stone]
+          waterway: waterfall
+          man_made: [water_well, cairn, survey_point, mineshaft, adit]
+          tourism: viewpoint
+          historic: ruins
+        attributes: &landmark_attributes
+          - key: class
+            value: '${ match_value }'
+          - key: ele
+            include_when: '${ has(feature.tags.ele) && feature.tags.ele.matches("^-?[0-9]+(\\.[0-9]+)?$") }'
+            value: '${ double(feature.tags.ele) }'
+          - *name_en
+          - *name_latin
+      - source: osm
+        geometry: polygon_centroid
+        min_zoom: 12
+        include_when:
+          historic: ruins
+          natural: sinkhole
+        attributes: *landmark_attributes

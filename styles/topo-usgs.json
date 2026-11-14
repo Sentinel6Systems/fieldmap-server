@@ -5,7 +5,8 @@
     "fieldmap:generator": "tools/make-topo-usgs.py",
     "fieldmap:reference-zoom": 13.25,
     "fieldmap:px-per-mm": 3.937,
-    "fieldmap:attribution": "\u00a9 OpenMapTiles \u00a9 OpenStreetMap contributors"
+    "fieldmap:attribution": "\u00a9 OpenMapTiles \u00a9 OpenStreetMap contributors",
+    "fieldmap:extras": "planetiler/extras.yml (data/extras.mbtiles, empty unless built)"
   },
   "center": [
     0.0,
@@ -26,6 +27,10 @@
     "hillshade": {
       "type": "raster",
       "url": "mbtiles://hillshade"
+    },
+    "extras": {
+      "type": "vector",
+      "url": "mbtiles://extras"
     }
   },
   "sprite": "/sprites/usgs",
@@ -1578,6 +1583,234 @@
         "fill-color": "#1a1a1a",
         "fill-outline-color": "#000000",
         "fill-opacity": 0.9
+      }
+    },
+    {
+      "id": "barrier-hedge",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "barriers"
+      },
+      "source": "extras",
+      "source-layer": "barrier",
+      "minzoom": 14,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "hedge"
+          ],
+          true,
+          false
+        ]
+      ],
+      "paint": {
+        "line-color": "#4f7a2e",
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          0.531,
+          11.25,
+          0.768,
+          13.25,
+          1.181,
+          15,
+          2.008,
+          18,
+          5.315
+        ]
+      }
+    },
+    {
+      "id": "barrier-wall",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "barriers"
+      },
+      "source": "extras",
+      "source-layer": "barrier",
+      "minzoom": 14,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "wall",
+            "retaining_wall"
+          ],
+          true,
+          false
+        ]
+      ],
+      "paint": {
+        "line-color": "#3a3a3a",
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          0.39,
+          11.25,
+          0.563,
+          13.25,
+          0.866,
+          15,
+          1.472,
+          18,
+          3.898
+        ]
+      }
+    },
+    {
+      "id": "barrier-fence",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "barriers"
+      },
+      "source": "extras",
+      "source-layer": "barrier",
+      "minzoom": 14,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "fence",
+            "guard_rail"
+          ],
+          true,
+          false
+        ]
+      ],
+      "paint": {
+        "line-color": "#000000",
+        "line-opacity": 0.8,
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          0.142,
+          11.25,
+          0.205,
+          13.25,
+          0.315,
+          15,
+          0.535,
+          18,
+          1.417
+        ]
+      }
+    },
+    {
+      "id": "barrier-fence-ticks",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "barriers"
+      },
+      "source": "extras",
+      "source-layer": "barrier",
+      "minzoom": 14,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "fence"
+          ],
+          true,
+          false
+        ]
+      ],
+      "paint": {
+        "line-color": "#000000",
+        "line-opacity": 0.8,
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          0.797,
+          11.25,
+          1.152,
+          13.25,
+          1.772,
+          15,
+          3.012,
+          18,
+          7.972
+        ],
+        "line-dasharray": [
+          0.12,
+          6
+        ]
       }
     },
     {
@@ -11725,6 +11958,587 @@
       }
     },
     {
+      "id": "power-area",
+      "type": "fill",
+      "metadata": {
+        "fieldmap:group": "power"
+      },
+      "source": "extras",
+      "source-layer": "power",
+      "minzoom": 12,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Polygon"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "substation",
+            "plant"
+          ],
+          true,
+          false
+        ]
+      ],
+      "paint": {
+        "fill-color": "#d9572b",
+        "fill-opacity": 0.12
+      }
+    },
+    {
+      "id": "power-area-edge",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "power"
+      },
+      "source": "extras",
+      "source-layer": "power",
+      "minzoom": 12,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Polygon"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "substation",
+            "plant"
+          ],
+          true,
+          false
+        ]
+      ],
+      "paint": {
+        "line-color": "#d9572b",
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          0.266,
+          11.25,
+          0.384,
+          13.25,
+          0.591,
+          15,
+          1.004,
+          18,
+          2.657
+        ]
+      }
+    },
+    {
+      "id": "pipeline",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "pipelines"
+      },
+      "source": "extras",
+      "source-layer": "pipeline",
+      "minzoom": 11,
+      "paint": {
+        "line-color": "#7d3c98",
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          0.354,
+          11.25,
+          0.512,
+          13.25,
+          0.787,
+          15,
+          1.339,
+          18,
+          3.543
+        ],
+        "line-dasharray": [
+          9,
+          2,
+          1.5,
+          2
+        ],
+        "line-opacity": [
+          "match",
+          [
+            "get",
+            "location"
+          ],
+          [
+            "underground",
+            "underwater"
+          ],
+          0.55,
+          1
+        ]
+      }
+    },
+    {
+      "id": "power-line-casing",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "power"
+      },
+      "source": "extras",
+      "source-layer": "power",
+      "minzoom": 10,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "line",
+            "minor_line"
+          ],
+          true,
+          false
+        ]
+      ],
+      "paint": {
+        "line-color": "#ffffff",
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "high"
+              ],
+              true
+            ],
+            1.098,
+            [
+              "==",
+              [
+                "get",
+                "class"
+              ],
+              "minor_line"
+            ],
+            0.78,
+            0.921
+          ],
+          11.25,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "high"
+              ],
+              true
+            ],
+            1.587,
+            [
+              "==",
+              [
+                "get",
+                "class"
+              ],
+              "minor_line"
+            ],
+            1.126,
+            1.331
+          ],
+          13.25,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "high"
+              ],
+              true
+            ],
+            2.441,
+            [
+              "==",
+              [
+                "get",
+                "class"
+              ],
+              "minor_line"
+            ],
+            1.732,
+            2.047
+          ],
+          15,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "high"
+              ],
+              true
+            ],
+            4.15,
+            [
+              "==",
+              [
+                "get",
+                "class"
+              ],
+              "minor_line"
+            ],
+            2.945,
+            3.48
+          ],
+          18,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "high"
+              ],
+              true
+            ],
+            10.984,
+            [
+              "==",
+              [
+                "get",
+                "class"
+              ],
+              "minor_line"
+            ],
+            7.795,
+            9.213
+          ]
+        ]
+      }
+    },
+    {
+      "id": "power-line",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "power"
+      },
+      "source": "extras",
+      "source-layer": "power",
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "line",
+            "minor_line"
+          ],
+          true,
+          false
+        ]
+      ],
+      "paint": {
+        "line-color": "#d9572b",
+        "line-dasharray": [
+          6,
+          1.5
+        ],
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "high"
+              ],
+              true
+            ],
+            0.567,
+            [
+              "==",
+              [
+                "get",
+                "class"
+              ],
+              "minor_line"
+            ],
+            0.248,
+            0.39
+          ],
+          11.25,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "high"
+              ],
+              true
+            ],
+            0.819,
+            [
+              "==",
+              [
+                "get",
+                "class"
+              ],
+              "minor_line"
+            ],
+            0.358,
+            0.563
+          ],
+          13.25,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "high"
+              ],
+              true
+            ],
+            1.26,
+            [
+              "==",
+              [
+                "get",
+                "class"
+              ],
+              "minor_line"
+            ],
+            0.551,
+            0.866
+          ],
+          15,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "high"
+              ],
+              true
+            ],
+            2.142,
+            [
+              "==",
+              [
+                "get",
+                "class"
+              ],
+              "minor_line"
+            ],
+            0.937,
+            1.472
+          ],
+          18,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "high"
+              ],
+              true
+            ],
+            5.669,
+            [
+              "==",
+              [
+                "get",
+                "class"
+              ],
+              "minor_line"
+            ],
+            2.48,
+            3.898
+          ]
+        ]
+      }
+    },
+    {
+      "id": "power-cable",
+      "type": "line",
+      "metadata": {
+        "fieldmap:group": "power"
+      },
+      "source": "extras",
+      "source-layer": "power",
+      "minzoom": 12,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "cable"
+          ],
+          true,
+          false
+        ]
+      ],
+      "paint": {
+        "line-color": "#d9572b",
+        "line-opacity": 0.55,
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            1.4
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          0.266,
+          11.25,
+          0.384,
+          13.25,
+          0.591,
+          15,
+          1.004,
+          18,
+          2.657
+        ],
+        "line-dasharray": [
+          1.5,
+          2
+        ]
+      }
+    },
+    {
+      "id": "power-tower",
+      "type": "circle",
+      "metadata": {
+        "fieldmap:group": "power"
+      },
+      "source": "extras",
+      "source-layer": "power",
+      "minzoom": 13.5,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Point"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "tower",
+            "portal"
+          ],
+          true,
+          false
+        ]
+      ],
+      "paint": {
+        "circle-color": "#d9572b",
+        "circle-radius": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          13.5,
+          1.8,
+          16,
+          3.5
+        ],
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 0.8
+      }
+    },
+    {
       "id": "admin-county-ribbon",
       "type": "line",
       "metadata": {
@@ -13434,6 +14248,408 @@
         "text-color": "#6b4a2b",
         "text-halo-color": "#ffffff",
         "text-halo-width": 1.6
+      }
+    },
+    {
+      "id": "tower",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "towers"
+      },
+      "source": "extras",
+      "source-layer": "tower",
+      "minzoom": 12.5,
+      "filter": [
+        "==",
+        [
+          "geometry-type"
+        ],
+        "Point"
+      ],
+      "layout": {
+        "icon-image": "sym_tower",
+        "icon-size": [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "mast",
+            "communications_tower"
+          ],
+          1,
+          0.85
+        ],
+        "text-field": [
+          "case",
+          [
+            "has",
+            "height"
+          ],
+          [
+            "concat",
+            [
+              "to-string",
+              [
+                "round",
+                [
+                  "*",
+                  [
+                    "get",
+                    "height"
+                  ],
+                  3.28084
+                ]
+              ]
+            ],
+            " ft"
+          ],
+          ""
+        ],
+        "text-font": [
+          "Atkinson Hyperlegible Mono Regular"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          6.75,
+          13.25,
+          7.5,
+          15,
+          8.62
+        ],
+        "text-optional": true,
+        "text-variable-anchor": [
+          "right",
+          "left",
+          "top"
+        ],
+        "text-radial-offset": 0.6,
+        "text-justify": "auto",
+        "symbol-sort-key": [
+          "-",
+          0,
+          [
+            "coalesce",
+            [
+              "get",
+              "height"
+            ],
+            0
+          ]
+        ]
+      },
+      "paint": {
+        "text-color": "#222222",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
+      }
+    },
+    {
+      "id": "spring",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "springs"
+      },
+      "source": "extras",
+      "source-layer": "landmark",
+      "minzoom": 12,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Point"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "spring",
+            "waterfall"
+          ],
+          true,
+          false
+        ]
+      ],
+      "layout": {
+        "icon-image": "sym_spring",
+        "icon-size": 0.9,
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name:en"
+          ],
+          [
+            "get",
+            "name:latin"
+          ],
+          ""
+        ],
+        "text-font": [
+          "Roboto Condensed Italic"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          7.65,
+          13.25,
+          8.5,
+          15,
+          9.77
+        ],
+        "text-optional": true,
+        "text-variable-anchor": [
+          "left",
+          "right",
+          "top"
+        ],
+        "text-radial-offset": 0.7,
+        "text-justify": "auto"
+      },
+      "paint": {
+        "text-color": "#1b4a86",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
+      }
+    },
+    {
+      "id": "survey-mark",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "landmarks"
+      },
+      "source": "extras",
+      "source-layer": "landmark",
+      "minzoom": 13,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Point"
+        ],
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "survey_point"
+          ],
+          true,
+          false
+        ]
+      ],
+      "layout": {
+        "icon-image": "sym_survey",
+        "icon-size": 0.8,
+        "text-field": [
+          "case",
+          [
+            "has",
+            "ele"
+          ],
+          [
+            "to-string",
+            [
+              "round",
+              [
+                "*",
+                [
+                  "get",
+                  "ele"
+                ],
+                3.28084
+              ]
+            ]
+          ],
+          ""
+        ],
+        "text-font": [
+          "Atkinson Hyperlegible Mono Regular"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          6.75,
+          13.25,
+          7.5,
+          15,
+          8.62
+        ],
+        "text-optional": true,
+        "text-anchor": "left",
+        "text-offset": [
+          0.7,
+          0
+        ]
+      },
+      "paint": {
+        "text-color": "#222222",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
+      }
+    },
+    {
+      "id": "landmark",
+      "type": "symbol",
+      "metadata": {
+        "fieldmap:group": "landmarks"
+      },
+      "source": "extras",
+      "source-layer": "landmark",
+      "minzoom": 13.5,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Point"
+        ],
+        [
+          "!",
+          [
+            "match",
+            [
+              "get",
+              "class"
+            ],
+            [
+              "spring",
+              "waterfall",
+              "survey_point"
+            ],
+            true,
+            false
+          ]
+        ]
+      ],
+      "layout": {
+        "text-field": [
+          "format",
+          [
+            "match",
+            [
+              "get",
+              "class"
+            ],
+            "cave_entrance",
+            "Cave",
+            "sinkhole",
+            "Sinkhole",
+            "water_well",
+            "Well",
+            "cairn",
+            "Cairn",
+            "viewpoint",
+            "View",
+            "mineshaft",
+            "Shaft",
+            "adit",
+            "Adit",
+            "ruins",
+            "Ruins",
+            "stone",
+            "Boulder",
+            ""
+          ],
+          {
+            "font-scale": 0.9
+          },
+          [
+            "case",
+            [
+              "!=",
+              [
+                "coalesce",
+                [
+                  "get",
+                  "name:en"
+                ],
+                [
+                  "get",
+                  "name:latin"
+                ],
+                ""
+              ],
+              ""
+            ],
+            [
+              "concat",
+              "\n",
+              [
+                "coalesce",
+                [
+                  "get",
+                  "name:en"
+                ],
+                [
+                  "get",
+                  "name:latin"
+                ],
+                ""
+              ]
+            ],
+            ""
+          ],
+          {}
+        ],
+        "text-font": [
+          "Roboto Condensed Italic"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          11,
+          7.2,
+          13.25,
+          8,
+          15,
+          9.2
+        ],
+        "text-max-width": 8,
+        "text-padding": 3
+      },
+      "paint": {
+        "text-color": "#333333",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.4
       }
     },
     {

@@ -14,11 +14,15 @@
 #                      en zh hi es ar fr bn pt ru id (the ten most spoken).
 #                      Without it every language is kept.
 #
-# Steps (default: all three, in this order):
+# Steps (default: the first three, in this order):
 #   vector     download and merge the OSM extracts, then run Planetiler
 #              -> data/basemap.mbtiles
 #   contours   -> data/contours.mbtiles
 #   hillshade  -> data/hillshade.mbtiles
+#   extras     optional: power lines, pipelines, fences and gates, towers,
+#              springs and other landmarks for the print styles
+#              -> data/extras.mbtiles (build-extras.sh; reuses the merged
+#              OSM file from the vector step)
 #
 # Example: rebuild only the contours
 #   ./scripts/build-region.sh regions/mid-atlantic.env contours
@@ -31,7 +35,7 @@ source "$REPO_DIR/scripts/lib.sh"
 trap 'disk_full_hint "$REPO_DIR/data"' ERR
 
 usage() {
-    echo "Usage: $0 [--world] [--language <code>] <region-file> [vector] [contours] [hillshade]" >&2
+    echo "Usage: $0 [--world] [--language <code>] <region-file> [vector] [contours] [hillshade] [extras]" >&2
     exit 1
 }
 OPT_WORLD="" OPT_LANGUAGE=""
@@ -78,7 +82,7 @@ if [ ${#STEPS[@]} -eq 0 ]; then
 fi
 for step in "${STEPS[@]}"; do
     case "$step" in
-        vector|contours|hillshade) ;;
+        vector|contours|hillshade|extras) ;;
         *) echo "Error: unknown step '$step'" >&2; exit 1 ;;
     esac
 done
@@ -106,6 +110,14 @@ run_hillshade() {
     "$REPO_DIR/scripts/build-hillshade.sh" "${BBOX_ARGS[@]}"
 }
 
+run_extras() {
+    if [ ! -s "$REPO_DIR/data/sources/$REGION_NAME.osm.pbf" ]; then
+        # shellcheck disable=SC2086
+        "$REPO_DIR/scripts/merge-osm.sh" "$REGION_NAME" $GEOFABRIK_AREAS
+    fi
+    PLANETILER_MEMORY="$PLANETILER_MEMORY" "$REPO_DIR/scripts/build-extras.sh" --bounds="$BBOX_CSV" "$REGION_NAME.osm.pbf"
+}
+
 echo "Region: $REGION_NAME${LANGUAGE:+ (labels: $LANGUAGE)}$([ "$WORLD" = yes ] && echo ' (world layer for zoom 0-8)')"
 echo "Steps:  ${STEPS[*]}"
 mkdir -p "$REPO_DIR/data"
@@ -119,6 +131,9 @@ for step in "${STEPS[@]}"; do
     end=$(date +%s)
     echo "=== $step finished in $(( (end - start) / 60 )) min ==="
 done
+
+# The print styles read data/extras.mbtiles; without the extras step it is an empty file.
+"$REPO_DIR/scripts/extras-placeholder.sh"
 
 echo
 echo "Output files:"

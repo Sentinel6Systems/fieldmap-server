@@ -10,10 +10,10 @@ const GROUP = "fieldmap:group";
 export const SECTIONS = [
   ["Terrain", [["peaks", "Peaks & spot heights"], ["terrain-names", "Terrain names"]]],
   ["Cover", [["woodland", "Woodland"], ["ground", "Wetland, sand, rock, ice"], ["landuse", "Built-up & land use"], ["parks", "Parks & protected land"]]],
-  ["Water", [["water", "Water"], ["seasonal-water", "Seasonal water"], ["flow-arrows", "Flow arrows"], ["water-names", "Water names"]]],
+  ["Water", [["water", "Water"], ["seasonal-water", "Seasonal water"], ["flow-arrows", "Flow arrows"], ["springs", "Springs & waterfalls"], ["water-names", "Water names"]]],
   ["Transport", [["roads", "Roads"], ["trails", "Trails & tracks"], ["railways", "Railways"], ["airfields", "Airfields"], ["road-names", "Road names & shields"], ["trail-names", "Trail names"]]],
-  ["Structures", [["buildings", "Buildings"], ["pois", "Points of interest"]]],
-  ["Places", [["place-names", "Place names"], ["boundaries", "Admin boundaries"]]],
+  ["Structures", [["buildings", "Buildings"], ["power", "Power lines & plants"], ["pipelines", "Pipelines"], ["towers", "Towers & masts"], ["barriers", "Fences, walls & gates"], ["pois", "Points of interest"]]],
+  ["Places", [["place-names", "Place names"], ["landmarks", "Landmarks & survey marks"], ["boundaries", "Admin boundaries"]]],
 ];
 export const OWN_CONTROLS = new Set(["base", "hillshade", "contours"]);
 
