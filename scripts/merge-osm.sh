@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Download several Geofabrik extracts and merge them into one OSM file.
+# Each extract comes from the fastest of several mirrors (see OSM_MIRRORS in
+# lib.sh) whose copy is at most OSM_MAX_AGE_DAYS (default 30) days old.
 # Planetiler accepts only one OSM input file. Use this script when a region
 # covers more than one Geofabrik area (for example, several US states).
 #
@@ -31,12 +33,12 @@ reexec_in_tools "$@"
 OUT_NAME="$1"
 shift
 
-BASE_URL="https://download.geofabrik.de"
 EXTRACT_DIR="$REPO_DIR/data/sources/extracts"
 OUT_FILE="$REPO_DIR/data/sources/$OUT_NAME.osm.pbf"
 mkdir -p "$EXTRACT_DIR"
 
 INPUTS=()
+RANKED=""
 for path in "$@"; do
     name="$(basename "$path")"
     dest="$EXTRACT_DIR/$name.osm.pbf"
@@ -45,14 +47,12 @@ for path in "$@"; do
         echo "cached: $name"
         continue
     fi
-    url="$BASE_URL/$path-latest.osm.pbf"
-    echo "download: $url"
-    if ! curl -fSL --retry 3 -C - -o "$dest.part" "$url"; then
-        echo "Error: download failed: $url" >&2
-        echo "Check the path at $BASE_URL" >&2
-        exit 1
+    # Test the mirrors once, on the first extract that needs downloading.
+    if [ -z "$RANKED" ]; then
+        rank_osm_mirrors "$path"
+        RANKED=1
     fi
-    mv "$dest.part" "$dest"
+    download_osm_extract "$path" "$dest"
 done
 
 # Disk estimate: the merged copy plus Planetiler's work files and output

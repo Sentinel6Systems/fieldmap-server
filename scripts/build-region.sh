@@ -62,66 +62,13 @@ for step in "${STEPS[@]}"; do
     esac
 done
 
-# Shared inputs that Planetiler needs besides the OSM file.
-# Format: "<file name in data/sources> <url> [<fallback url> ...]"
-# URLs are tried in order. Each one gets several attempts before the
-# script moves on to the next. Add mirrors here when a source is unreliable.
-SHARED_SOURCES=(
-    "water-polygons-split-3857.zip https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip https://www.osmdata.org/download/water-polygons-split-3857.zip"
-    "natural_earth_vector.sqlite.zip https://naciscdn.org/naturalearth/packages/natural_earth_vector.sqlite.zip"
-    "lake_centerline.shp.zip https://dev.maptiler.download/geodata/omt/lake_centerline.shp.zip"
-)
-
-# Download one shared input, trying each URL in turn.
-# Arguments: DEST_FILE URL [URL ...]
-# A file that already exists and looks like a zip archive is kept.
-fetch_source() {
-    local dest="$1"
-    shift
-    local name
-    name="$(basename "$dest")"
-
-    if [ -s "$dest" ] && [ "$(head -c 2 "$dest")" = "PK" ]; then
-        echo "cached: $name"
-        return 0
-    fi
-
-    local url
-    for url in "$@"; do
-        echo "download: $url"
-        # Start each URL from scratch: a mirror can hold a different
-        # version of the file, so a partial file must not be resumed
-        # from another source.
-        rm -f "$dest.part"
-        if curl -fSL --retry 3 --retry-delay 10 --retry-connrefused \
-            --connect-timeout 30 -o "$dest.part" "$url" \
-            && [ "$(head -c 2 "$dest.part")" = "PK" ]; then
-            mv "$dest.part" "$dest"
-            return 0
-        fi
-        echo "  failed: $url"
-    done
-    rm -f "$dest.part"
-    echo "Error: could not download $name from any source." >&2
-    return 1
-}
-
 run_vector() {
     # shellcheck disable=SC2086
     "$REPO_DIR/scripts/merge-osm.sh" "$REGION_NAME" $GEOFABRIK_AREAS
 
     # Fetch Planetiler's shared inputs here, with retries and fallback
     # mirrors, so Planetiler itself makes no network calls.
-    local sources="$REPO_DIR/data/sources"
-    mkdir -p "$sources"
-    local entry
-    for entry in "${SHARED_SOURCES[@]}"; do
-        # shellcheck disable=SC2086
-        set -- $entry
-        local file="$1"
-        shift
-        fetch_source "$sources/$file" "$@"
-    done
+    fetch_shared_sources "$REPO_DIR/data/sources"
 
     echo "Planetiler: build data/basemap.mbtiles (Java heap $PLANETILER_MEMORY)"
     # --bounds limits the output to the region box. Without it Planetiler

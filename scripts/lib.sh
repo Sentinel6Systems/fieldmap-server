@@ -79,6 +79,170 @@ EOF
     fi
 }
 
+# Shared inputs that Planetiler needs besides the OSM file.
+# Format: "<file name in data/sources> <url> [<fallback url> ...]"
+# URLs are tried in order. Each one gets several attempts before the
+# script moves on to the next. Add mirrors here when a source is unreliable.
+SHARED_SOURCES=(
+    "water-polygons-split-3857.zip https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip https://www.osmdata.org/download/water-polygons-split-3857.zip"
+    "natural_earth_vector.sqlite.zip https://naciscdn.org/naturalearth/packages/natural_earth_vector.sqlite.zip"
+    "lake_centerline.shp.zip https://dev.maptiler.download/geodata/omt/lake_centerline.shp.zip"
+)
+
+# Download one shared input, trying each URL in turn.
+# Arguments: DEST_FILE URL [URL ...]
+# A file that already exists and looks like a zip archive is kept.
+fetch_source() {
+    local dest="$1"
+    shift
+    local name
+    name="$(basename "$dest")"
+
+    if [ -s "$dest" ] && [ "$(head -c 2 "$dest")" = "PK" ]; then
+        echo "cached: $name"
+        return 0
+    fi
+
+    local url
+    for url in "$@"; do
+        echo "download: $url"
+        # Start each URL from scratch: a mirror can hold a different
+        # version of the file, so a partial file must not be resumed
+        # from another source.
+        rm -f "$dest.part"
+        if curl -fSL --retry 3 --retry-delay 10 --retry-connrefused \
+            --connect-timeout 30 -o "$dest.part" "$url" \
+            && [ "$(head -c 2 "$dest.part")" = "PK" ]; then
+            mv "$dest.part" "$dest"
+            return 0
+        fi
+        echo "  failed: $url"
+    done
+    rm -f "$dest.part"
+    echo "Error: could not download $name from any source." >&2
+    return 1
+}
+
+# Download every shared input into a folder.
+# Argument: DIR
+fetch_shared_sources() {
+    local dir="$1" entry
+    mkdir -p "$dir"
+    for entry in "${SHARED_SOURCES[@]}"; do
+        # shellcheck disable=SC2086
+        set -- $entry
+        local file="$1"
+        shift
+        fetch_source "$dir/$file" "$@"
+    done
+}
+
+# OpenStreetMap extract mirrors: "<name> <url template>". In the template,
+# {path} is the Geofabrik path (north-america/us/new-jersey) and {path_} is
+# the same path with "-" turned into "_" in its first part
+# (north_america/us/new-jersey). Movisda accepts Geofabrik paths and
+# redirects them to its own file names.
+OSM_MIRRORS=(
+    "geofabrik https://download.geofabrik.de/{path}-latest.osm.pbf"
+    "movisda https://osm.download.movisda.io/{path}-latest.osm.pbf"
+    "geo2day https://geo2day.com/{path_}.pbf"
+)
+# A copy older than this many days is never downloaded.
+OSM_MAX_AGE_DAYS="${OSM_MAX_AGE_DAYS:-30}"
+# Size of the speed test download from each mirror.
+OSM_SPEED_TEST_BYTES=2097152
+
+# URL of one extract on one mirror.
+# Arguments: TEMPLATE GEOFABRIK_PATH
+osm_mirror_url() {
+    local template="$1" path="$2"
+    local first="${path%%/*}" rest=""
+    [ "$path" != "$first" ] && rest="/${path#*/}"
+    local path_="${first//-/_}$rest"
+    template="${template//\{path_\}/$path_}"
+    echo "${template//\{path\}/$path}"
+}
+
+# Age in whole days of the file behind a URL, from its Last-Modified header.
+# Prints nothing when the file is missing or the server gives no date.
+# Argument: URL
+osm_age_days() {
+    local modified
+    modified="$(curl -sfIL --connect-timeout 15 -m 30 "$1" 2>/dev/null \
+        | tr -d '\r' | awk -F': ' 'tolower($1)=="last-modified" {d=$2} END {print d}')"
+    [ -n "$modified" ] || return 0
+    local then_s now_s
+    then_s="$(date -d "$modified" +%s 2>/dev/null)" || return 0
+    now_s="$(date +%s)"
+    echo $(( (now_s - then_s) / 86400 ))
+}
+
+# Rank the mirrors by download speed, measured with a short download of one
+# extract from each. Sets OSM_MIRROR_ORDER (fastest first); mirrors that
+# failed the test go last, so they are still tried if the others fail.
+# Argument: GEOFABRIK_PATH (used for the test)
+rank_osm_mirrors() {
+    local path="$1" entry name template url result speed bytes
+    local ranked=() failed=()
+    echo "Mirror speed test: first $((OSM_SPEED_TEST_BYTES / 1048576)) MB of $path from each mirror"
+    for entry in "${OSM_MIRRORS[@]}"; do
+        read -r name template <<<"$entry"
+        url="$(osm_mirror_url "$template" "$path")"
+        result="$(curl -sfL -r "0-$((OSM_SPEED_TEST_BYTES - 1))" -o /dev/null \
+            --connect-timeout 10 -m 30 -w '%{speed_download} %{size_download}' "$url" 2>/dev/null)" || result=""
+        read -r speed bytes <<<"${result:-0 0}"
+        speed="${speed%.*}"
+        if [ "${bytes%.*}" -gt 0 ] 2>/dev/null; then
+            printf '  %-10s %s\n' "$name" "$(python3 -c "print(f'{$speed/1048576:.2f} MB/s')")"
+            ranked+=("$speed $name")
+        else
+            printf '  %-10s no answer or no such area\n' "$name"
+            failed+=("$name")
+        fi
+    done
+    OSM_MIRROR_ORDER=()
+    while read -r _ name; do
+        [ -n "$name" ] && OSM_MIRROR_ORDER+=("$name")
+    done < <(printf '%s\n' "${ranked[@]}" | sort -rn)
+    OSM_MIRROR_ORDER+=("${failed[@]}")
+    echo "Mirror order: ${OSM_MIRROR_ORDER[*]}"
+}
+
+# Download one extract from the fastest mirror whose copy is at most
+# OSM_MAX_AGE_DAYS old. Call rank_osm_mirrors first.
+# Arguments: GEOFABRIK_PATH DEST_FILE
+download_osm_extract() {
+    local path="$1" dest="$2" name entry template url age
+    for name in "${OSM_MIRROR_ORDER[@]}"; do
+        for entry in "${OSM_MIRRORS[@]}"; do
+            [ "${entry%% *}" = "$name" ] && template="${entry#* }"
+        done
+        url="$(osm_mirror_url "$template" "$path")"
+        age="$(osm_age_days "$url")"
+        if [ -z "$age" ]; then
+            echo "  $name: not available (missing, or no date given), skipped"
+            continue
+        fi
+        if [ "$age" -gt "$OSM_MAX_AGE_DAYS" ]; then
+            echo "  $name: copy is $age day$([ "$age" -eq 1 ] || echo s) old (limit $OSM_MAX_AGE_DAYS), skipped"
+            continue
+        fi
+        echo "download: $path from $name ($age day$([ "$age" -eq 1 ] || echo s) old)"
+        # Start from scratch on each mirror: their copies differ, so a
+        # partial file must not be resumed from another one.
+        rm -f "$dest.part"
+        if curl -fSL --retry 3 --retry-delay 10 --connect-timeout 30 -o "$dest.part" "$url"; then
+            mv "$dest.part" "$dest"
+            return 0
+        fi
+        echo "  $name: download failed"
+    done
+    rm -f "$dest.part"
+    echo "Error: no mirror has $path at most $OSM_MAX_AGE_DAYS days old." >&2
+    echo "Check the path at https://download.geofabrik.de, or raise OSM_MAX_AGE_DAYS." >&2
+    return 1
+}
+
 # Run the calling script again inside the tool container.
 # The container has GDAL and Tippecanoe.
 reexec_in_tools() {
@@ -93,6 +257,7 @@ reexec_in_tools() {
         --user "$(id -u):$(id -g)" \
         -e HOME=/tmp \
         -e IN_TOOLS=1 \
+        -e OSM_MAX_AGE_DAYS \
         -v "$REPO_DIR":/work \
         -w /work \
         "$TOOLS_IMAGE" \

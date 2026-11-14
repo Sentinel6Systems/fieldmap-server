@@ -5,7 +5,7 @@ that prints exact-scale map sheets and atlases. One `docker compose up` on any L
 
 - **A tile server** (TileServer GL) with five styles: `osm`, `topo-light`, `topo-dark`, `overlay`, and `topo-print`
   (tuned for paper). Vector tiles for web maps and MapLibre clients, raster tiles for TAK clients (ATAK, WinTAK, iTAK).
-- **Build scripts** that make the data from public sources: OpenStreetMap extracts (Geofabrik) via Planetiler,
+- **Build scripts** that make the data from public sources: OpenStreetMap extracts (Geofabrik or a mirror) via Planetiler,
   contours and hillshade from Copernicus GLO-30 elevation data. Build once; nothing needs the internet afterwards.
 - **The print tool** at `/mapprinter/`: Letter, Legal, Tabloid, Super B or Arch C sheets at 1:12k–1:100k, with an MGRS/USNG
   1 km grid, a true-angle declination diagram (WMM2025, computed offline), scale bars, markers and arrows with range and
@@ -111,7 +111,9 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 
 Builds `data/basemap.mbtiles` with [Planetiler](https://github.com/onthegomap/planetiler) 0.10.2 (set `PLANETILER_IMAGE` to
 use another release).
-Planetiler downloads the OpenStreetMap extract for the area from Geofabrik.
+`<area>` is a Geofabrik path such as `europe/switzerland`, or just its last part (`switzerland`), which is looked
+up in Geofabrik's index. The OpenStreetMap extract comes from the fastest mirror (see
+[OpenStreetMap download mirrors](#openstreetmap-download-mirrors)).
 The output uses the OpenMapTiles schema.
 The first run downloads about 1.5 GB of shared world data (coastlines, lakes).
 This data stays in `data/sources` for the next runs.
@@ -176,7 +178,20 @@ unreliable.
 ### `merge-osm.sh <output-name> <geofabrik-path> ...`
 
 Downloads Geofabrik extracts to `data/sources/extracts` and merges them into
-`data/sources/<output-name>.osm.pbf`. `build-region.sh` calls it for you.
+`data/sources/<output-name>.osm.pbf`. `build-region.sh` and `build-vector.sh` call it for you.
+
+### OpenStreetMap download mirrors
+
+Geofabrik can be slow, so each extract can come from one of three servers:
+[Geofabrik](https://download.geofabrik.de), [Movisda](https://osm.download.movisda.io) and
+[geo2day](https://geo2day.com). All three take the same Geofabrik paths, update daily and serve the same OpenStreetMap
+data, cut to slightly different boundaries.
+
+Before the first download, the build downloads the first 2 MB of that extract from each server and ranks them by
+speed. Each extract then comes from the fastest server whose copy is at most 30 days old (from its `Last-Modified`
+date). A server that is slow to answer, lacks the area, or has an older copy is skipped for the next one. Set
+`OSM_MAX_AGE_DAYS` to change the limit. The list is `OSM_MIRRORS` in `scripts/lib.sh`.
+Extracts already in `data/sources/extracts` are reused; delete that folder to download fresh copies.
 
 ## Bring your own data
 
