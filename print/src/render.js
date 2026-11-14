@@ -696,8 +696,8 @@ function drawShapes(ctx, toPage, r, shapes, dpi, units, measure) {
         if (drawLegLength(ctx, toPage(leg.a.lng, leg.a.lat), toPage(leg.b.lng, leg.b.lat), fmtLength(leg.metres, units), pts, r, { fontPx, pad, halo })) break;
       }
     }
-    // Radius and area (circle) or area once, along the inside of the lowest visible edge.
-    placeAlongBottom(ctx, s, shapeInsideText(s, units), pts, vis, r, { fontPx, pad, halo, cx: s.type === "circle" ? toPage(s.center.lng, s.center.lat) : null });
+    // Radius and area (circle) or area once, inside the shape along the printed part of its outline.
+    placeAlongOutline(ctx, s, shapeInsideText(s, units), pts, vis, r, { fontPx, pad, halo });
   }
   ctx.restore();
 }
@@ -746,67 +746,104 @@ function clipSegment(p, q, r) {
   return [{ x: p.x + t0 * dx, y: p.y + t0 * dy }, { x: p.x + t1 * dx, y: p.y + t1 * dy }];
 }
 
-/** Write `t` inside the shape along its lowest visible edge: curved along the bottom arc of a circle
- *  that is fully on the page there; otherwise along the lowest straight edge that has room; otherwise
- *  level, at the lowest height where the visible part is wide enough. */
-function placeAlongBottom(ctx, s, t, pts, vis, r, o) {
+/** Write `t` inside the shape, following its outline where the outline is on the page: the lowest
+ *  stretch of printed outline that has room (curving with a circle, straight along a polygon side),
+ *  preferring lower edges and level text. If no stretch has room, level text at the lowest height
+ *  where the visible part is wide enough. */
+function placeAlongOutline(ctx, s, t, pts, vis, r, o) {
   const { fontPx, pad, halo } = o;
-  ctx.font = `${fontPx}px ${FAM}`;
-  const tw = ctx.measureText(t).width;
-  const inside = (p) => p.x >= r.x + pad && p.x <= r.x + r.w - pad && p.y >= r.y + pad && p.y <= r.y + r.h - pad;
+  const box = { x: r.x + pad, y: r.y + pad, w: r.w - 2 * pad, h: r.h - 2 * pad };
+  const inBox = (p) => p.x >= box.x && p.x <= box.x + box.w && p.y >= box.y && p.y <= box.y + box.h;
   const glyphs = (draw) => { for (const pass of ["stroke", "fill"]) draw(pass); };
+  const P = pts.slice(0, -1), n = P.length;
+  if (n < 3) return;
 
-  if (s.type === "circle" && o.cx) {
-    const c = o.cx, R = Math.hypot(pts[0].x - c.x, pts[0].y - c.y);
-    const rt = R - pad - fontPx * 0.35;                      // text baseline radius, inside the rim
-    const span = tw / rt;
-    const ok = rt > fontPx * 2 && span < Math.PI * 0.8 &&
-      [-span / 2, 0, span / 2].every((d) => inside({ x: c.x + R * Math.cos(Math.PI / 2 + d), y: c.y + R * Math.sin(Math.PI / 2 + d) }));
-    if (ok) {
-      glyphs((pass) => {
-        let th = Math.PI / 2 + span / 2;                     // left end; reads left to right
-        for (const ch of t) {
-          const cw = ctx.measureText(ch).width, a = th - cw / 2 / rt;
-          ctx.save();
-          ctx.translate(c.x + rt * Math.cos(a), c.y + rt * Math.sin(a));
-          ctx.rotate(a - Math.PI / 2);
-          ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-          if (pass === "stroke") { ctx.lineWidth = halo; ctx.strokeStyle = "#fff"; ctx.strokeText(ch, 0, 0); }
-          else { ctx.fillStyle = INK; ctx.fillText(ch, 0, 0); }
-          ctx.restore();
-          th -= cw / rt;
+  // Outline arc length, and the point, tangent and inward normal at any distance along it.
+  const cum = [0];
+  for (let i = 0; i < n; i++) cum.push(cum[i] + Math.hypot(P[(i + 1) % n].x - P[i].x, P[(i + 1) % n].y - P[i].y));
+  const L = cum[n];
+  if (L <= 0) return;
+  let area = 0;
+  for (let i = 0; i < n; i++) area += P[i].x * P[(i + 1) % n].y - P[(i + 1) % n].x * P[i].y;
+  const sgn = area > 0 ? 1 : -1;
+  const at = (d) => {
+    d = ((d % L) + L) % L;
+    let i = 0;
+    while (i < n - 1 && cum[i + 1] <= d) i++;
+    const a = P[i], b = P[(i + 1) % n], len = cum[i + 1] - cum[i] || 1, f = (d - cum[i]) / len;
+    const tx = (b.x - a.x) / len, ty = (b.y - a.y) / len;
+    return { x: a.x + f * (b.x - a.x), y: a.y + f * (b.y - a.y), tx, ty, nx: -ty * sgn, ny: tx * sgn };
+  };
+
+  const curved = s.type === "circle";
+  for (const scale of [1, 0.85]) {
+    const fs = fontPx * scale;
+    ctx.font = `${fs}px ${FAM}`;
+    const tw = ctx.measureText(t).width;
+    const off = pad * 0.6 + fs * 0.55, hh = fs * 0.55;
+    const half = tw / 2 + pad, step = Math.max(1, fs / 3);
+    // Is the stretch of outline [d - half, d + half] printed, with room inside it for the text?
+    const fits = (d) => {
+      const c = at(d);
+      for (let e = -half; e <= half + 0.01; e += Math.max(1, fs / 4)) {
+        const q = at(d + e);
+        if (!inBox(q)) return false;
+        if (!curved && q.tx * c.tx + q.ty * c.ty < 0.995) return false;     // round a corner
+        if (curved && q.tx * c.tx + q.ty * c.ty < Math.cos(Math.PI * 0.4)) return false;
+        for (const k of [off - hh, off + hh]) {
+          const g = { x: q.x + q.nx * k, y: q.y + q.ny * k };
+          if (!inBox(g) || !pointInPolygon(g, P)) return false;
         }
-      });
-      return;
-    }
-  }
+      }
+      return true;
+    };
+    // Lower edges first (inside above the line), then level text, then low on the page.
+    const cost = (d) => {
+      const c = at(d);
+      return -c.y + (c.ny > -0.3 ? r.h : 0) + Math.abs(c.ty) * r.h * 1.5;
+    };
+    const cand = [];
+    for (let d = 0; d < L; d += step) cand.push({ d, ok: fits(d), cost: 0 });
+    let best = -1;
+    cand.forEach((c, i) => { if (c.ok) { c.cost = cost(c.d); if (best < 0 || c.cost < cand[best].cost) best = i; } });
+    if (best < 0) continue;
+    // Centre on the run of equally good positions around the best one (the middle of a flat side).
+    const good = (i) => cand[(i + cand.length) % cand.length].ok && cand[(i + cand.length) % cand.length].cost <= cand[best].cost + fs * 0.5;
+    let lo = best, hi = best;
+    while (hi - lo < cand.length && good(lo - 1)) lo--;
+    while (hi - lo < cand.length && good(hi + 1)) hi++;
+    const d0 = ((lo + hi) / 2) * step;
 
-  // Straight edges of the visible part whose inside faces up, lowest first.
-  const edges = [];
-  for (let i = 0; i < vis.length; i++) {
-    const p = vis[i], q = vis[(i + 1) % vis.length];
-    const len = Math.hypot(q.x - p.x, q.y - p.y);
-    if (len < tw + 4 * pad) continue;
-    const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-    let n = { x: -(q.y - p.y) / len, y: (q.x - p.x) / len };
-    if (!pointInPolygon({ x: mid.x + n.x * 3, y: mid.y + n.y * 3 }, vis)) n = { x: -n.x, y: -n.y };
-    if (n.y > -0.6) continue;                                // not a lower edge
-    edges.push({ p, q, mid, n });
-  }
-  edges.sort((a, b) => b.mid.y - a.mid.y);
-  for (const e of edges) {
-    const [a, b] = e.p.x <= e.q.x ? [e.p, e.q] : [e.q, e.p];
-    const ang = Math.atan2(b.y - a.y, b.x - a.x), off = pad + fontPx * 0.55;
-    const c = { x: e.mid.x + e.n.x * off, y: e.mid.y + e.n.y * off };
-    const ux = Math.cos(ang), uy = Math.sin(ang), hw = tw / 2 + pad, hh = fontPx * 0.55;
-    const corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([dx, dy]) => ({ x: c.x + dx * ux - dy * uy, y: c.y + dx * uy + dy * ux }));
-    if (!corners.every((k) => pointInPolygon(k, vis))) continue;
+    // The text line: the outline moved inward, in reading order (left to right; bottom to top when upright).
+    const c = at(d0);
+    const rev = c.tx < -1e-6 || (Math.abs(c.tx) <= 1e-6 && c.ty > 0);
+    const line = [];
+    for (let e = -half * 1.3; e <= half * 1.3 + 0.01; e += Math.max(1, fs / 6)) {
+      const q = at(d0 + (rev ? -e : e));
+      line.push({ x: q.x + q.nx * off, y: q.y + q.ny * off });
+    }
+    const lc = [0];
+    for (let i = 1; i < line.length; i++) lc.push(lc[i - 1] + Math.hypot(line[i].x - line[i - 1].x, line[i].y - line[i - 1].y));
+    const onLine = (d) => {
+      let i = 0;
+      while (i < line.length - 2 && lc[i + 1] < d) i++;
+      const a = line[i], b = line[i + 1], f = (d - lc[i]) / (lc[i + 1] - lc[i] || 1);
+      return { x: a.x + f * (b.x - a.x), y: a.y + f * (b.y - a.y), ang: Math.atan2(b.y - a.y, b.x - a.x) };
+    };
+    const total = lc[lc.length - 1];
+    if (total < tw) continue;
     glyphs((pass) => {
-      ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      if (pass === "stroke") { ctx.lineWidth = halo; ctx.strokeStyle = "#fff"; ctx.strokeText(t, 0, 0); }
-      else { ctx.fillStyle = INK; ctx.fillText(t, 0, 0); }
-      ctx.restore();
+      let d = (total - tw) / 2;
+      for (const ch of t) {
+        const cw = ctx.measureText(ch).width, g = onLine(d + cw / 2);
+        ctx.save();
+        ctx.translate(g.x, g.y); ctx.rotate(g.ang);
+        ctx.font = `${fs}px ${FAM}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        if (pass === "stroke") { ctx.lineWidth = halo; ctx.strokeStyle = "#fff"; ctx.strokeText(ch, 0, 0); }
+        else { ctx.fillStyle = INK; ctx.fillText(ch, 0, 0); }
+        ctx.restore();
+        d += cw;
+      }
     });
     return;
   }

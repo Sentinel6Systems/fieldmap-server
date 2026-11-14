@@ -132,9 +132,10 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
   on every printed page and on the list page (a checkbox leaves them off the map; the list page always has them):
   a circle shows its radius and area; a rectangle its width and height, each beside one of its sides, and its area;
   a polygon the length of every side, beside that side, and its area. On paper the name sits in the middle, side
-  lengths just outside their sides, and the radius or area once along the inside of the lowest edge (curved along a
-  circle). When part of a shape is off the sheet, the labels move onto the part that is printed (a rectangle uses
-  its north or west side when the south or east side is off the sheet). A Units menu switches between imperial
+  lengths just outside their sides, and the radius or area once inside the shape along its lowest edge (curved along a
+  circle). When part of a shape is off the sheet, the labels move onto the part that is printed: the radius or area
+  follows the printed part of the outline, and a rectangle uses its north or west side when the south or east side
+  is off the sheet. A Units menu switches between imperial
   (ft, mi, acres) and metric (m, km, ha); the circle's radius can be typed in either unit of the chosen system.
 - Atlas mode: 2×2, 3×3, 4×4, 6×6 or 8×8 pages with 1 cm overlap, rows A… from the north and columns 1… from the west.
   A cover page built from the map data (places, peaks, lakes, rivers inside the atlas, a locator map), an index page
