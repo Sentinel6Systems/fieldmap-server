@@ -6,6 +6,12 @@ await build({
   bundle: true, minify: true, sourcemap: false, format: "esm",
   target: ["es2022"], outfile: "dist/app.js", logLevel: "info",
 });
+// The terrain analysis worker: a classic (non-module) worker, which every browser runs.
+await build({
+  entryPoints: ["src/terrain/worker.js"],
+  bundle: true, minify: true, sourcemap: false, format: "iife",
+  target: ["es2022"], outfile: "dist/terrain-worker.js", logLevel: "info",
+});
 cpSync("public", "dist", { recursive: true });
 cpSync("node_modules/maplibre-gl/dist/maplibre-gl.css", "dist/maplibre-gl.css");
 cpSync("node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs", "dist/maplibre-gl-worker.js");
