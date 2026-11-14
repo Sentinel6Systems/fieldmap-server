@@ -3,7 +3,7 @@
 A self-hosted, fully offline topographic map service for a region of your choice, with a browser-based tool
 that prints exact-scale map sheets and atlases. One `docker compose up` on any Linux machine gives you:
 
-- **A tile server** (TileServer GL) with five styles: `osm`, `topo-light`, `topo-dark`, `overlay`, and `topo-print`
+- **A tile server** (TileServer GL) with six styles: `osm`, `topo-light`, `topo-dark`, `overlay`, `topo-print` and `topo-usgs`
   (tuned for paper). Vector tiles for web maps and MapLibre clients, raster tiles for TAK clients (ATAK, WinTAK, iTAK).
 - **Build scripts** that make the data from public sources: OpenStreetMap extracts (Geofabrik or a mirror) via Planetiler,
   contours and hillshade from Copernicus GLO-30 elevation data. Build once; nothing needs the internet afterwards.
@@ -82,6 +82,19 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `topo-dark` | Topographic, dark colours, for night use | all three |
 | `overlay` | Transparent roads and labels, for use over aerial imagery | `basemap.mbtiles` |
 | `topo-print` | `topo-light` tuned for paper: smaller labels, road names from z11/z13, dark outlined buildings, town names, lighter hillshade | all three |
+| `topo-usgs` | Second paper style in the manner of a USGS quadrangle: white paper, green woodland, brown contours with monospace elevations, red and black cased roads, railway ties, dashed seasonal water with flow arrows, banded park and military boundaries | all three |
+
+`topo-print` and `topo-usgs` read the same tile sets, so the print tool can switch between them (the **Map style**
+menu; the choice is remembered). `topo-usgs` is generated, not hand-edited:
+
+```
+python3 tools/make-usgs-sprite.py   # sprites/usgs*: the topo sprite plus patterns and symbols (needs Pillow)
+python3 tools/make-topo-usgs.py     # styles/topo-usgs.json
+```
+
+Line widths in the generator are millimetres on paper at 1:24,000 and scale gently with zoom. Every layer carries a
+`fieldmap:group` in its metadata (roads, trails, contours, parks, pois, ...), ready for per-group switches. Its fonts
+are Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License, texts in `fonts/`).
 
 ## The print tool
 

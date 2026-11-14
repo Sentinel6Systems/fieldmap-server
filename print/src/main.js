@@ -9,20 +9,6 @@ import { arrowInfo as arrowInfoFor } from "./features.js";
 import { PALETTE, swatchRow } from "./palette.js";
 
 const qs = new URLSearchParams(location.search);
-const STYLE = qs.get("style") || "topo-print";
-// Tile server base. Tried in order: ?tiles=<url>, then /maps on this host (the Pi behind
-// Internet-in-a-Box), then this host's root (the docker-compose stack, where nginx fronts
-// TileServer GL), then port 8080 on this host.
-async function findTiles() {
-  const candidates = qs.get("tiles") ? [qs.get("tiles")] : [`${location.origin}/maps`, location.origin, `${location.protocol}//${location.hostname}:8080`];
-  for (const base of candidates) {
-    const b = base.replace(/\/$/, "");
-    try { const r = await fetch(`${b}/styles/${STYLE}/style.json`, { cache: "no-store" }); if (r.ok) return b; } catch {}
-  }
-  return candidates[0].replace(/\/$/, "");
-}
-const TILES = await findTiles();
-const styleUrl = `${TILES}/styles/${STYLE}/style.json`;
 
 const LS = {
   markers: "fieldmap.print.markers",
@@ -32,9 +18,37 @@ const LS = {
 
 const $ = (id) => document.getElementById(id);
 const state = Object.assign(
-  { scale: 24000, paper: "letter", orientation: "landscape", dpi: 300, title: "", listPage: false, color: PALETTE[0][0], atlas: 1, binder: true },
+  { scale: 24000, paper: "letter", orientation: "landscape", dpi: 300, title: "", listPage: false, color: PALETTE[0][0], atlas: 1, binder: true, style: "topo-print" },
   JSON.parse(localStorage.getItem(LS.settings) || "{}")
 );
+
+// Print styles, in menu order. Only the ones the tile server actually has are offered.
+// ?style=<id> forces any style on the server for this visit.
+const PRINT_STYLES = [["topo-print", "Standard"], ["topo-usgs", "USGS quadrangle"]];
+// Tile server base. Tried in order: ?tiles=<url>, then /maps on this host (the Pi behind
+// Internet-in-a-Box), then this host's root (the docker-compose stack, where nginx fronts
+// TileServer GL), then port 8080 on this host.
+async function findTiles() {
+  const candidates = qs.get("tiles") ? [qs.get("tiles")] : [`${location.origin}/maps`, location.origin, `${location.protocol}//${location.hostname}:8080`];
+  for (const base of candidates) {
+    const b = base.replace(/\/$/, "");
+    try { const r = await fetch(`${b}/styles/${PRINT_STYLES[0][0]}/style.json`, { cache: "no-store" }); if (r.ok) return b; } catch {}
+  }
+  return candidates[0].replace(/\/$/, "");
+}
+const TILES = await findTiles();
+const styleUrlFor = (id) => `${TILES}/styles/${id}/style.json`;
+async function availableStyles() {
+  try {
+    const r = await fetch(`${TILES}/styles.json`, { cache: "no-store" });
+    const ids = new Set((await r.json()).map((s) => s.id));
+    return PRINT_STYLES.filter(([id]) => ids.has(id));
+  } catch { return [PRINT_STYLES[0]]; }
+}
+const styles = await availableStyles();
+let STYLE = qs.get("style") || (styles.some(([id]) => id === state.style) ? state.style : PRINT_STYLES[0][0]);
+let styleUrl = styleUrlFor(STYLE);
+
 let markers = JSON.parse(localStorage.getItem(LS.markers) || "[]");
 let arrows = JSON.parse(localStorage.getItem(LS.arrows) || "[]");
 let config = {};
@@ -49,6 +63,11 @@ fetch("config.json").then((r) => (r.ok ? r.json() : {})).then((c) => (config = c
 const scaleSel = $("scale");
 for (const s of SCALES) scaleSel.add(new Option(`1:${s.toLocaleString("en-US")}`, s));
 scaleSel.value = state.scale;
+const styleSel = $("style");
+for (const [id, label] of styles) styleSel.add(new Option(label, id));
+if (!styles.some(([id]) => id === STYLE)) styleSel.add(new Option(STYLE, STYLE));
+styleSel.value = STYLE;
+styleSel.parentElement.hidden = styleSel.options.length < 2;
 const paperSel = $("paper");
 for (const [k, p] of Object.entries(PAPERS)) paperSel.add(new Option(p.label, k));
 paperSel.value = state.paper;
@@ -423,6 +442,20 @@ function renderNewColor() {
 renderNewColor();
 
 scaleSel.onchange = () => { state.scale = +scaleSel.value; saveSettings(); updateFootprint(); };
+// Switch the map style in place: the sheet outline, markers and arrows are carried over.
+const OWN_SOURCES = ["footprint", "arrows", "markers", "temp"];
+styleSel.onchange = () => {
+  STYLE = state.style = styleSel.value; saveSettings();
+  styleUrl = styleUrlFor(STYLE);
+  map.setStyle(styleUrl, {
+    diff: false,
+    transformStyle: (prev, next) => !prev ? next : {
+      ...next,
+      sources: { ...next.sources, ...Object.fromEntries(OWN_SOURCES.filter((k) => prev.sources[k]).map((k) => [k, prev.sources[k]])) },
+      layers: [...next.layers, ...prev.layers.filter((l) => OWN_SOURCES.includes(l.source))],
+    },
+  });
+};
 paperSel.onchange = () => { state.paper = paperSel.value; saveSettings(); updateFootprint(); };
 $("orientation").onchange = (e) => { state.orientation = e.target.value; saveSettings(); updateFootprint(); };
 atlasSel.onchange = () => { state.atlas = +atlasSel.value; saveSettings(); updateFootprint(); };

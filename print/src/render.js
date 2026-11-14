@@ -317,7 +317,7 @@ async function renderCoverPage(pdf, lay, opts, atlas, g, feats, total, status) {
     ["Grid", `MGRS / USNG, UTM zone ${g.zone}${g.band}, 100 km square${squares.size > 1 ? "s" : ""} ${[...squares].join(", ")} · 1 km lines · WGS 84`],
     ["Declination", `${fmtAngle(decl.declination)} at centre (${decl.asOf.getUTCFullYear()}), moving ${Math.abs(decl.annualChange).toFixed(2)}°/yr ${decl.annualChange < 0 ? "west" : "east"} · G-M angle ${fmtAngle(decl.gmAngle)} · ${decl.model}`],
     ["Contours", `${cfg.contourMinor || 40} ${cfg.contourUnit || "ft"}, index ${cfg.contourMajor || 200} ${cfg.contourUnit || "ft"} · terrain ${cfg.terrainSource || "Copernicus GLO-30"}`],
-    ["Map data", `© OpenStreetMap contributors${cfg.dataDate ? ` · ${cfg.dataDate}` : ""} · printed ${new Date().toISOString().slice(0, 10)} from the Emergency Box, offline`],
+    ["Map data", `© OpenMapTiles © OpenStreetMap contributors${cfg.dataDate ? ` · ${cfg.dataDate}` : ""} · printed ${new Date().toISOString().slice(0, 10)} from the Emergency Box, offline`],
   ];
 
   // Locator map (one small render; the atlas occupies about a third of it)
@@ -813,7 +813,7 @@ function drawBlock(ctx, lay, dpi, opts, g, extra = {}) {
   const lines = [
     `Centre ${g.centerMGRS}  ·  ${opts.center.lat.toFixed(5)}, ${opts.center.lng.toFixed(5)}${extra.pageNote ? "  ·  " + extra.pageNote : ""}`,
     `Contours ${cfg.contourMinor || 40} ${unit}, index ${cfg.contourMajor || 200} ${unit}  ·  Terrain ${cfg.terrainSource || "Copernicus GLO-30"}`,
-    `© OpenStreetMap contributors${cfg.dataDate ? ` · ${cfg.dataDate}` : ""}  ·  Printed ${new Date().toISOString().slice(0, 10)}`,
+    `© OpenMapTiles © OpenStreetMap contributors${cfg.dataDate ? ` · ${cfg.dataDate}` : ""}  ·  Printed ${new Date().toISOString().slice(0, 10)}`,
   ];
   if (g.straddles) lines.push(`UTM zone ${g.zone} grid extended across the zone boundary.`);
   for (const l of lines) { fitText(ctx, l, titleW, `${px(0.075)}px ${FAM}`, 0.7); ctx.fillText(l, bx, y); y += px(0.105); }

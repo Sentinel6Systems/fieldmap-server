@@ -30,6 +30,10 @@
     "topo-print": {
       "style": "topo-print.json",
       "serve_rendered": true
+    },
+    "topo-usgs": {
+      "style": "topo-usgs.json",
+      "serve_rendered": true
     }
   },
   "data": {
