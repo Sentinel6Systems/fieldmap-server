@@ -80,4 +80,22 @@ export function shapeSummary(s, system) {
   return area;
 }
 
+/** The legs that get their own length label: every side of a polygon; a rectangle's width and
+ *  height once each, as a list of choices (south, else north; east, else west) so a printed page
+ *  can use the side that is on it; none for a circle (its radius goes with the area).
+ *  Returns [[{ a, b, metres }, ...choices], ...]. */
+export function shapeLegs(s) {
+  if (s.type === "circle") return [];
+  const ring = shapeRing(s).map(([lng, lat]) => ({ lng, lat }));
+  const legs = [];
+  for (let i = 0; i < ring.length - 1; i++) legs.push({ a: ring[i], b: ring[i + 1], metres: inverse(ring[i].lat, ring[i].lng, ring[i + 1].lat, ring[i + 1].lng).distance });
+  // rect ring: SW-SE (south), SE-NE (east), NE-NW (north), NW-SW (west)
+  return s.type === "rect" ? [[legs[0], legs[2]], [legs[1], legs[3]]] : legs.map((l) => [l]);
+}
+
+/** What goes inside the shape next to its legs: radius and area for a circle, area otherwise. */
+export function shapeInsideText(s, system) {
+  return s.type === "circle" ? shapeSummary(s, system) : fmtArea(ringArea(shapeRing(s)), system);
+}
+
 export const SHAPE_NAMES = { circle: "Circle", rect: "Rectangle", polygon: "Polygon" };

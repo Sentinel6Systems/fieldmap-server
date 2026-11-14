@@ -7,7 +7,7 @@ import { zoomForScale, viewportBounds, inverse, destination, fmtDistance, fmtBea
 import { toMGRS } from "./utm.js";
 import { arrowInfo as arrowInfoFor } from "./features.js";
 import { PALETTE, swatchRow } from "./palette.js";
-import { UNITS, defaultUnit, unitMetres, shapeRing, shapeCenter, shapeSummary, fmtLength, SHAPE_NAMES } from "./shapes.js";
+import { UNITS, defaultUnit, unitMetres, shapeRing, shapeCenter, shapeSummary, shapeLegs, shapeInsideText, fmtLength, SHAPE_NAMES } from "./shapes.js";
 import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groupsOf } from "./layers.js";
 
 const qs = new URLSearchParams(location.search);
@@ -174,6 +174,12 @@ map.on("load", () => {
   map.addLayer({
     id: "shapes-line", type: "line", source: "shapes", filter: ["==", ["geometry-type"], "Polygon"],
     layout: { "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 2.5 },
+  });
+  map.addLayer({
+    id: "shapes-legs", type: "symbol", source: "shapes", filter: ["==", ["geometry-type"], "LineString"],
+    layout: { "symbol-placement": "line-center", "text-field": ["get", "leg"], "text-font": pickFont(), "text-size": 11,
+      "text-allow-overlap": true, "text-keep-upright": true, "text-offset": [0, -0.8] },
+    paint: { "text-color": "#111", "text-halo-color": "#fff", "text-halo-width": 1.6 },
   });
   map.addLayer({
     id: "shapes-label", type: "symbol", source: "shapes", filter: ["==", ["geometry-type"], "Point"],
@@ -425,10 +431,17 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 function shapesFC() {
   const feats = [];
   for (const s of shapes) {
+    const measure = state.shapeMeasure !== false;
     feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [shapeRing(s)] }, properties: { id: s.id, color: s.color } });
     const c = shapeCenter(s);
     feats.push({ type: "Feature", geometry: { type: "Point", coordinates: [c.lng, c.lat] },
-      properties: { id: s.id, label: [s.label, state.shapeMeasure !== false ? shapeSummary(s, state.units) : ""].filter(Boolean).join("\n") } });
+      properties: { id: s.id, label: [s.label, measure ? shapeInsideText(s, state.units) : ""].filter(Boolean).join("\n") } });
+    if (measure) {
+      for (const [leg] of shapeLegs(s)) {
+        feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: [[leg.a.lng, leg.a.lat], [leg.b.lng, leg.b.lat]] },
+          properties: { id: s.id, leg: fmtLength(leg.metres, state.units) } });
+      }
+    }
   }
   return { type: "FeatureCollection", features: feats };
 }

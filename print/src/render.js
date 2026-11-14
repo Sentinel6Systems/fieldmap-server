@@ -6,7 +6,7 @@ import { toUTM, fromUTM, zoneFor, bandFor, squareId, toMGRS } from "./utm.js";
 import { declinationInfo, fmtAngle } from "./declination.js";
 import { arrowInfo } from "./features.js";
 import { colorName } from "./palette.js";
-import { shapeRing, shapeCenter, shapeSummary, SHAPE_NAMES } from "./shapes.js";
+import { shapeRing, shapeCenter, shapeSummary, shapeLegs, shapeInsideText, fmtLength, SHAPE_NAMES } from "./shapes.js";
 
 const BLUE = "#1f5fa8";
 const INK = "#111";
@@ -678,10 +678,61 @@ function drawShapes(ctx, toPage, r, shapes, dpi, units, measure) {
       if (!pointInPolygon(c, vis)) c = polygonCentroid(vis);
       text(s.label, c.x, c.y, true);
     }
-    // The measurement once, along the inside of the lowest visible edge.
-    if (measure) placeAlongBottom(ctx, s, shapeSummary(s, units), pts, vis, r, { fontPx, pad, halo, cx: s.type === "circle" ? toPage(s.center.lng, s.center.lat) : null });
+    if (!measure) continue;
+    // Each leg's length beside the leg, outside the shape (rectangles: south and east sides only).
+    for (const choices of shapeLegs(s)) {
+      for (const leg of choices) {
+        if (drawLegLength(ctx, toPage(leg.a.lng, leg.a.lat), toPage(leg.b.lng, leg.b.lat), fmtLength(leg.metres, units), pts, r, { fontPx, pad, halo })) break;
+      }
+    }
+    // Radius and area (circle) or area once, along the inside of the lowest visible edge.
+    placeAlongBottom(ctx, s, shapeInsideText(s, units), pts, vis, r, { fontPx, pad, halo, cx: s.type === "circle" ? toPage(s.center.lng, s.center.lat) : null });
   }
   ctx.restore();
+}
+
+/** A leg's length centred on the printed part of the leg, along it, just outside the shape; just
+ *  inside when outside would leave the map area. Smaller text when the leg is short; none if tiny.
+ *  Returns true when the length was written. */
+function drawLegLength(ctx, p, q, t, shape, r, o) {
+  const { fontPx, pad, halo } = o;
+  const seg = clipSegment(p, q, { x: r.x + pad, y: r.y + pad, w: r.w - 2 * pad, h: r.h - 2 * pad });
+  if (!seg) return false;
+  const [a, b] = seg[0].x <= seg[1].x ? seg : [seg[1], seg[0]];
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  let fs = fontPx * 0.9;
+  ctx.font = `${fs}px ${FAM}`;
+  let tw = ctx.measureText(t).width;
+  if (tw > len - pad) { fs *= Math.max(0.7, (len - pad) / tw); ctx.font = `${fs}px ${FAM}`; tw = ctx.measureText(t).width; }
+  if (tw > len) return false;
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, ang = Math.atan2(b.y - a.y, b.x - a.x);
+  let n = { x: -Math.sin(ang), y: Math.cos(ang) };
+  if (pointInPolygon({ x: mid.x + n.x * 3, y: mid.y + n.y * 3 }, shape)) n = { x: -n.x, y: -n.y };   // n points out
+  const off = pad * 0.6 + fs * 0.55;
+  const inMap = (c) => c.x - tw / 2 >= r.x && c.x + tw / 2 <= r.x + r.w && c.y - fs >= r.y && c.y + fs <= r.y + r.h;
+  let c = { x: mid.x + n.x * off, y: mid.y + n.y * off };
+  if (!inMap(c)) c = { x: mid.x - n.x * off, y: mid.y - n.y * off };
+  for (const pass of ["stroke", "fill"]) {
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
+    ctx.font = `${fs}px ${FAM}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    if (pass === "stroke") { ctx.lineWidth = halo; ctx.strokeStyle = "#fff"; ctx.strokeText(t, 0, 0); }
+    else { ctx.fillStyle = INK; ctx.fillText(t, 0, 0); }
+    ctx.restore();
+  }
+  return true;
+}
+
+/** Liang-Barsky: the part of segment p-q inside rectangle r, or null. */
+function clipSegment(p, q, r) {
+  let t0 = 0, t1 = 1;
+  const dx = q.x - p.x, dy = q.y - p.y;
+  for (const [pp, qq] of [[-dx, p.x - r.x], [dx, r.x + r.w - p.x], [-dy, p.y - r.y], [dy, r.y + r.h - p.y]]) {
+    if (pp === 0) { if (qq < 0) return null; continue; }
+    const t = qq / pp;
+    if (pp < 0) { if (t > t1) return null; if (t > t0) t0 = t; }
+    else { if (t < t0) return null; if (t < t1) t1 = t; }
+  }
+  return [{ x: p.x + t0 * dx, y: p.y + t0 * dy }, { x: p.x + t1 * dx, y: p.y + t1 * dy }];
 }
 
 /** Write `t` inside the shape along its lowest visible edge: curved along the bottom arc of a circle
