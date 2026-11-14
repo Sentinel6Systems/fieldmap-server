@@ -21,7 +21,7 @@ const LS = {
 
 const $ = (id) => document.getElementById(id);
 const state = Object.assign(
-  { scale: 24000, paper: "letter", orientation: "landscape", dpi: 300, title: "", listPage: false, color: PALETTE[0][0], atlas: 1, binder: false, style: "topo-print", units: "imperial" },
+  { scale: 24000, paper: "letter", orientation: "landscape", dpi: 300, title: "", listPage: false, color: PALETTE[0][0], atlas: 1, binder: false, style: "topo-print", units: "imperial", shapeMeasure: true },
   JSON.parse(localStorage.getItem(LS.settings) || "{}")
 );
 // Settings saved before version 2 always carried binder: true (the old default); start them off.
@@ -117,6 +117,7 @@ $("dpi").value = state.dpi;
 $("title").value = state.title;
 $("list-page").checked = !!state.listPage;
 $("units").value = state.units;
+$("shape-measure").checked = state.shapeMeasure !== false;
 
 function saveSettings() { localStorage.setItem(LS.settings, JSON.stringify(state)); }
 
@@ -427,7 +428,7 @@ function shapesFC() {
     feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [shapeRing(s)] }, properties: { id: s.id, color: s.color } });
     const c = shapeCenter(s);
     feats.push({ type: "Feature", geometry: { type: "Point", coordinates: [c.lng, c.lat] },
-      properties: { id: s.id, label: `${s.label ? s.label + "\n" : ""}${shapeSummary(s, state.units)}` } });
+      properties: { id: s.id, label: [s.label, state.shapeMeasure !== false ? shapeSummary(s, state.units) : ""].filter(Boolean).join("\n") } });
   }
   return { type: "FeatureCollection", features: feats };
 }
@@ -609,6 +610,7 @@ $("clear-all").onclick = () => {
   }
 };
 $("units").onchange = (e) => { state.units = e.target.value; saveSettings(); saveShapes(); };
+$("shape-measure").onchange = (e) => { state.shapeMeasure = e.target.checked; saveSettings(); saveShapes(); };
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") setMode(null);
   if (e.key === "Enter" && mode === "polygon" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) finishPolygon();
@@ -721,7 +723,7 @@ async function makePdf(kind) {
     const c = currentCenter();
     const { pdf, pages } = await renderSheet({
       styleUrl: await printStyle(), center: c, scale: state.scale, paper: state.paper, orientation: state.orientation,
-      dpi: effectiveDpi(), title: state.title.trim(), markers, arrows, shapes, units: state.units, listPage: state.listPage, config,
+      dpi: effectiveDpi(), title: state.title.trim(), markers, arrows, shapes, units: state.units, shapeMeasure: state.shapeMeasure !== false, listPage: state.listPage, config,
       atlas: +state.atlas || 1, binder: state.binder, gridLines: state.layers.grid !== false, ink: state.layers.ink, signal: aborter.signal,
       onStatus: (t) => (status.textContent = t),
     });

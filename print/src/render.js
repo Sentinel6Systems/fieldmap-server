@@ -53,7 +53,8 @@ export function cellFor(cells, lng, lat) {
 /* =====================================================================
  * Entry point. opts:
  *  styleUrl, center {lng,lat}, scale, paper, orientation, dpi, title,
- *  markers, arrows, shapes, units ("imperial" | "metric"), listPage, config, atlas (1|2|3|4|6|8), binder (bool),
+ *  markers, arrows, shapes, units ("imperial" | "metric"), shapeMeasure (bool, default true: radius or sides
+ *  and area next to each shape's name on the map), listPage, config, atlas (1|2|3|4|6|8), binder (bool),
  *  gridLines (bool, default true: false keeps only the edge numbers and ticks),
  *  ink ("colour" | "bw": the grid prints black in bw),
  *  onStatus(text), signal (AbortSignal)
@@ -162,7 +163,7 @@ async function renderMapPage(pdf, lay, opts, atlas, cell, status, pageNo, total)
   status("Drawing grid and margins…");
   const tabs = atlas.n > 1 ? neighbourTabs(lay, dpi, atlas, cell) : [];
   const gridInfo = drawGrid(ctx, bounds, toPage, mapRect, { ...opts, center }, dpi, { avoid: tabs.map((t) => t.rect) });
-  drawShapes(ctx, toPage, mapRect, opts.shapes || [], dpi, opts.units);
+  drawShapes(ctx, toPage, mapRect, opts.shapes || [], dpi, opts.units, opts.shapeMeasure !== false);
   drawArrows(ctx, toPage, mapRect, opts.arrows || [], dpi, opts.center);
   drawMarkers(ctx, toPage, mapRect, opts.markers || [], dpi);
   ctx.strokeStyle = INK; ctx.lineWidth = dpi / 100;
@@ -224,7 +225,7 @@ async function renderIndexPage(lay, opts, atlas, status, total) {
     ctx.lineWidth = dpi / 70; ctx.strokeStyle = "#c0392b";
   }
   ctx.restore();
-  drawShapes(ctx, toPage, mapRect, opts.shapes || [], dpi, opts.units);
+  drawShapes(ctx, toPage, mapRect, opts.shapes || [], dpi, opts.units, opts.shapeMeasure !== false);
   drawArrows(ctx, toPage, mapRect, opts.arrows || [], dpi, opts.center);
   drawMarkers(ctx, toPage, mapRect, opts.markers || [], dpi);
   ctx.strokeStyle = INK; ctx.lineWidth = dpi / 100;
@@ -649,7 +650,7 @@ function strokeSeg(ctx, x0, y0, x1, y1) { ctx.beginPath(); ctx.moveTo(x0, y0); c
 /* =====================================================================
  * Markers and arrows
  * ===================================================================*/
-function drawShapes(ctx, toPage, r, shapes, dpi, units) {
+function drawShapes(ctx, toPage, r, shapes, dpi, units, measure) {
   if (!shapes.length) return;
   ctx.save();
   ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
@@ -662,7 +663,7 @@ function drawShapes(ctx, toPage, r, shapes, dpi, units) {
     path(); ctx.fillStyle = `rgba(${cr},${cg},${cb},0.12)`; ctx.fill();
     for (const [col, lw] of [["#fff", w * 2.4], [s.color || "#d7263d", w]]) { path(); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke(); }
     const c = toPage(shapeCenter(s).lng, shapeCenter(s).lat);
-    const lines = [s.label, shapeSummary(s, units)].filter(Boolean);
+    const lines = [s.label, measure ? shapeSummary(s, units) : ""].filter(Boolean);
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     lines.forEach((t, i) => {
       ctx.font = `${i === 0 && s.label ? "bold " : ""}${fontPx}px ${FAM}`;

@@ -126,7 +126,8 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
   true/magnetic bearing; grid bearing in the side panel. Optional list page with MGRS, lat/lon and bearings.
 - Shapes: circles (tap the centre, tap the edge, then type an exact radius), rectangles (two opposite corners) and
   polygons (tap the corners; finish on the first corner, with Enter or with Finish shape). Each shows its radius or
-  sides and its area, on screen, on every printed page and on the list page. A Units menu switches between imperial
+  sides and its area, on screen, on every printed page and on the list page (a checkbox leaves the measurements off
+  the map; the list page always has them). A Units menu switches between imperial
   (ft, mi, acres) and metric (m, km, ha); the circle's radius can be typed in either unit of the chosen system.
 - Atlas mode: 2×2, 3×3, 4×4, 6×6 or 8×8 pages with 1 cm overlap, rows A… from the north and columns 1… from the west.
   A cover page built from the map data (places, peaks, lakes, rivers inside the atlas, a locator map), an index page
