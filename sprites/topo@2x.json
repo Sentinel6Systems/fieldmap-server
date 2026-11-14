@@ -1713,5 +1713,145 @@
     "width": 24,
     "height": 10,
     "pixelRatio": 2
+  },
+  "us-interstate_1": {
+    "width": 34,
+    "height": 34,
+    "x": 0,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-interstate_2": {
+    "width": 34,
+    "height": 34,
+    "x": 36,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-interstate_3": {
+    "width": 42,
+    "height": 34,
+    "x": 72,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-interstate_4": {
+    "width": 46,
+    "height": 32,
+    "x": 116,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-interstate_5": {
+    "width": 56,
+    "height": 32,
+    "x": 164,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-highway_1": {
+    "width": 34,
+    "height": 34,
+    "x": 222,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-highway_2": {
+    "width": 34,
+    "height": 34,
+    "x": 258,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-highway_3": {
+    "width": 42,
+    "height": 34,
+    "x": 294,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-state_1": {
+    "width": 34,
+    "height": 28,
+    "x": 338,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-state_2": {
+    "width": 44,
+    "height": 28,
+    "x": 374,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-state_3": {
+    "width": 54,
+    "height": 28,
+    "x": 420,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-state_4": {
+    "width": 64,
+    "height": 28,
+    "x": 476,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-state_5": {
+    "width": 74,
+    "height": 28,
+    "x": 542,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "us-state_6": {
+    "width": 84,
+    "height": 28,
+    "x": 618,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "road_1": {
+    "width": 28,
+    "height": 28,
+    "x": 704,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "road_2": {
+    "width": 40,
+    "height": 28,
+    "x": 734,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "road_3": {
+    "width": 52,
+    "height": 28,
+    "x": 776,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "road_4": {
+    "width": 62,
+    "height": 28,
+    "x": 830,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "road_5": {
+    "width": 72,
+    "height": 28,
+    "x": 894,
+    "y": 510,
+    "pixelRatio": 2
+  },
+  "road_6": {
+    "width": 80,
+    "height": 28,
+    "x": 0,
+    "y": 546,
+    "pixelRatio": 2
   }
 }

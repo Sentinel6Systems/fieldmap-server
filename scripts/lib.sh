@@ -4,6 +4,10 @@
 
 TOOLS_IMAGE="tileserver-tools"
 
+# Planetiler release used for the base map. Pinned so a new release cannot change
+# the tiles unnoticed; set PLANETILER_IMAGE to try another one.
+PLANETILER_IMAGE="${PLANETILER_IMAGE:-ghcr.io/onthegomap/planetiler:0.10.2}"
+
 # Free space in whole GB on the drive that holds a directory.
 free_gb() {
     df -BG --output=avail "$1" | tail -1 | tr -dc '0-9'

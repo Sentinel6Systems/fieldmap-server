@@ -131,7 +131,7 @@ run_vector() {
         --user "$(id -u):$(id -g)" \
         -e JAVA_TOOL_OPTIONS="-Xmx$PLANETILER_MEMORY" \
         -v "$REPO_DIR/data":/data \
-        ghcr.io/onthegomap/planetiler:latest \
+        "$PLANETILER_IMAGE" \
         --force \
         --osm-path="/data/sources/$REGION_NAME.osm.pbf" \
         --bounds="$BBOX_CSV" \

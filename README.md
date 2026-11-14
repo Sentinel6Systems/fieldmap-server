@@ -109,7 +109,8 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 
 ### `build-vector.sh <area>`
 
-Builds `data/basemap.mbtiles` with [Planetiler](https://github.com/onthegomap/planetiler).
+Builds `data/basemap.mbtiles` with [Planetiler](https://github.com/onthegomap/planetiler) 0.10.2 (set `PLANETILER_IMAGE` to
+use another release).
 Planetiler downloads the OpenStreetMap extract for the area from Geofabrik.
 The output uses the OpenMapTiles schema.
 The first run downloads about 1.5 GB of shared world data (coastlines, lakes).

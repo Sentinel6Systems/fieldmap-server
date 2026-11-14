@@ -37,7 +37,7 @@ docker run --rm \
     --user "$(id -u):$(id -g)" \
     -e JAVA_TOOL_OPTIONS="-Xmx$MEMORY" \
     -v "$REPO_DIR/data":/data \
-    ghcr.io/onthegomap/planetiler:latest \
+    "$PLANETILER_IMAGE" \
     --download \
     --force \
     --area="$AREA" \
