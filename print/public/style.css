@@ -62,6 +62,14 @@ button:disabled { opacity: .5; cursor: progress; }
 .section-head { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .section-head h2 { flex: 1; }
 .add-buttons { margin-top: 10px; }
+.row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.row3 button { padding: 0 6px; }
+#finish-shape { width: 100%; margin-top: 6px; }
+label.inline { flex-direction: row; align-items: center; gap: 10px; margin-top: 6px; }
+label.inline select { flex: 1; }
+.radius-row { display: grid; grid-template-columns: auto 1fr 72px; gap: 8px; align-items: center; margin: 6px 0 2px 40px; font-size: 12px; color: var(--muted); }
+.radius-row input { height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid #39414b; background: var(--panel-2); color: var(--text); font-size: 14px; width: 100%; }
+.radius-row select { height: 32px; }
 .item { padding: 5px 0; border-bottom: 1px solid #2c333c; }
 .item-row { display: grid; grid-template-columns: 32px 1fr 36px 36px; gap: 8px; align-items: center; }
 .item.selected input[type=text] { border-color: var(--accent); }

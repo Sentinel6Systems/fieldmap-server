@@ -63,25 +63,39 @@
 
   <section class="features">
     <div class="section-head">
-      <h2>Markers &amp; arrows</h2>
+      <h2>Markers, arrows &amp; shapes</h2>
       <button id="clear-all" class="secondary danger compact" title="Remove all markers and arrows">Remove all</button>
     </div>
+    <label class="inline">Units
+      <select id="units">
+        <option value="imperial">Imperial (ft, mi, acres)</option>
+        <option value="metric">Metric (m, km, ha)</option>
+      </select>
+    </label>
     <div class="hint">Colour for new items</div>
     <div id="new-color"></div>
     <div class="row2 add-buttons">
       <button id="add-marker" class="secondary">Add marker</button>
       <button id="add-arrow" class="secondary">Add arrow</button>
     </div>
+    <div class="row3">
+      <button id="add-circle" class="secondary">Circle</button>
+      <button id="add-rect" class="secondary">Rectangle</button>
+      <button id="add-polygon" class="secondary">Polygon</button>
+    </div>
     <div id="mode-hint" class="hint"></div>
+    <button id="finish-shape" class="primary" hidden>Finish shape</button>
     <h3>Markers</h3>
     <div id="marker-list"></div>
     <h3>Arrows</h3>
     <div id="arrow-list"></div>
+    <h3>Shapes</h3>
+    <div id="shape-list"></div>
   </section>
 
   <label class="check">
     <input id="list-page" type="checkbox">
-    <span>Add a list of markers and arrows (one page: after the index in an atlas, or page 2 of a single sheet)</span>
+    <span>Add a list of markers, arrows and shapes (one page: after the index in an atlas, or page 2 of a single sheet)</span>
   </label>
   <label class="check">
     <input id="binder" type="checkbox">

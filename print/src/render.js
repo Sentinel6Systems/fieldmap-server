@@ -6,6 +6,7 @@ import { toUTM, fromUTM, zoneFor, bandFor, squareId, toMGRS } from "./utm.js";
 import { declinationInfo, fmtAngle } from "./declination.js";
 import { arrowInfo } from "./features.js";
 import { colorName } from "./palette.js";
+import { shapeRing, shapeCenter, shapeSummary, SHAPE_NAMES } from "./shapes.js";
 
 const BLUE = "#1f5fa8";
 const INK = "#111";
@@ -52,7 +53,7 @@ export function cellFor(cells, lng, lat) {
 /* =====================================================================
  * Entry point. opts:
  *  styleUrl, center {lng,lat}, scale, paper, orientation, dpi, title,
- *  markers, arrows, listPage, config, atlas (1|2|3|4|6|8), binder (bool),
+ *  markers, arrows, shapes, units ("imperial" | "metric"), listPage, config, atlas (1|2|3|4|6|8), binder (bool),
  *  gridLines (bool, default true: false keeps only the edge numbers and ticks),
  *  ink ("colour" | "bw": the grid prints black in bw),
  *  onStatus(text), signal (AbortSignal)
@@ -74,7 +75,7 @@ export async function renderSheet(opts) {
   const addPage = () => { if (!first) pdf.addPage([lay.page.w, lay.page.h], lay.page.w > lay.page.h ? "landscape" : "portrait"); first = false; };
   const check = () => { if (opts.signal && opts.signal.aborted) throw new Error("Cancelled"); };
 
-  const wantList = !!opts.listPage && ((opts.markers && opts.markers.length) || (opts.arrows && opts.arrows.length));
+  const wantList = !!opts.listPage && [opts.markers, opts.arrows, opts.shapes].some((l) => l && l.length);
   const extra = (n > 1 ? 2 : 0) + (wantList ? 1 : 0);        // cover + index (+ list)
   const total = atlas.cells.length + extra;
   const firstCellPage = 1 + extra;                            // single sheet: 1; atlas: after cover, index (and list)
@@ -161,6 +162,7 @@ async function renderMapPage(pdf, lay, opts, atlas, cell, status, pageNo, total)
   status("Drawing grid and margins…");
   const tabs = atlas.n > 1 ? neighbourTabs(lay, dpi, atlas, cell) : [];
   const gridInfo = drawGrid(ctx, bounds, toPage, mapRect, { ...opts, center }, dpi, { avoid: tabs.map((t) => t.rect) });
+  drawShapes(ctx, toPage, mapRect, opts.shapes || [], dpi, opts.units);
   drawArrows(ctx, toPage, mapRect, opts.arrows || [], dpi, opts.center);
   drawMarkers(ctx, toPage, mapRect, opts.markers || [], dpi);
   ctx.strokeStyle = INK; ctx.lineWidth = dpi / 100;
@@ -222,6 +224,7 @@ async function renderIndexPage(lay, opts, atlas, status, total) {
     ctx.lineWidth = dpi / 70; ctx.strokeStyle = "#c0392b";
   }
   ctx.restore();
+  drawShapes(ctx, toPage, mapRect, opts.shapes || [], dpi, opts.units);
   drawArrows(ctx, toPage, mapRect, opts.arrows || [], dpi, opts.center);
   drawMarkers(ctx, toPage, mapRect, opts.markers || [], dpi);
   ctx.strokeStyle = INK; ctx.lineWidth = dpi / 100;
@@ -646,6 +649,31 @@ function strokeSeg(ctx, x0, y0, x1, y1) { ctx.beginPath(); ctx.moveTo(x0, y0); c
 /* =====================================================================
  * Markers and arrows
  * ===================================================================*/
+function drawShapes(ctx, toPage, r, shapes, dpi, units) {
+  if (!shapes.length) return;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
+  ctx.lineJoin = "round";
+  const w = dpi / 70, fontPx = Math.round(dpi * 0.09);
+  for (const s of shapes) {
+    const pts = shapeRing(s).map(([lng, lat]) => toPage(lng, lat));
+    const path = () => { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath(); };
+    const [cr, cg, cb] = hexRgb(s.color || "#d7263d");
+    path(); ctx.fillStyle = `rgba(${cr},${cg},${cb},0.12)`; ctx.fill();
+    for (const [col, lw] of [["#fff", w * 2.4], [s.color || "#d7263d", w]]) { path(); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke(); }
+    const c = toPage(shapeCenter(s).lng, shapeCenter(s).lat);
+    const lines = [s.label, shapeSummary(s, units)].filter(Boolean);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    lines.forEach((t, i) => {
+      ctx.font = `${i === 0 && s.label ? "bold " : ""}${fontPx}px ${FAM}`;
+      const y = c.y + (i - (lines.length - 1) / 2) * fontPx * 1.25;
+      ctx.lineWidth = dpi / 45; ctx.strokeStyle = "#fff"; ctx.strokeText(t, c.x, y);
+      ctx.fillStyle = INK; ctx.fillText(t, c.x, y);
+    });
+  }
+  ctx.restore();
+}
+
 function drawMarkers(ctx, toPage, r, markers, dpi) {
   if (!markers.length) return;
   ctx.save();
@@ -755,7 +783,7 @@ function addListPage(pdf, lay, opts, g, atlas, total) {
   const where = (lng, lat) => { if (atlas.n < 2) return ""; const c = cellFor(atlas.cells, lng, lat); return c ? `   Page ${c.name}` : "   (off the atlas)"; };
 
   pdf.setFont("helvetica", "bold"); pdf.setFontSize(14); pdf.setTextColor(0);
-  pdf.text(`${opts.title || `${g.gzd} ${g.square}`} — points and arrows${atlas.n > 1 ? `   (page 3 of ${total})` : ""}`, M, y + 0.1); y += 0.3;
+  pdf.text(`${opts.title || `${g.gzd} ${g.square}`} — markers, arrows and shapes${atlas.n > 1 ? `   (page 3 of ${total})` : ""}`, M, y + 0.1); y += 0.3;
   line(`Sheet 1:${opts.scale.toLocaleString("en-US")} · MGRS ${g.gzd} ${g.square} · WGS 84 · Declination ${fmtAngle(decl.declination)} (${decl.asOf.getUTCFullYear()}) · G-M ${fmtAngle(decl.gmAngle)} · Printed ${new Date().toISOString().slice(0, 10)}`, 8, "normal", [80, 80, 80]);
   y += 0.1;
   const swatch = (hex, yy) => { const [r, gg, b] = hexRgb(hex); pdf.setFillColor(r, gg, b); pdf.setDrawColor(0); pdf.setLineWidth(0.005); pdf.rect(M, yy - 0.11, 0.14, 0.14, "FD"); };
@@ -783,6 +811,20 @@ function addListPage(pdf, lay, opts, g, atlas, total) {
       y += 0.17; pdf.setFontSize(8); pdf.setTextColor(60);
       pdf.text(`From  ${toMGRS(a.a.lat, a.a.lng, 5)}  (${a.a.lat.toFixed(5)}, ${a.a.lng.toFixed(5)})     To  ${toMGRS(a.b.lat, a.b.lng, 5)}  (${a.b.lat.toFixed(5)}, ${a.b.lng.toFixed(5)})${where(a.b.lng, a.b.lat)}`, M + 0.22, y);
       y += 0.26;
+    }
+    y += 0.15;
+  }
+  if (opts.shapes && opts.shapes.length) {
+    more(0.6); line("SHAPES", 9, "bold", [60, 60, 60]); rule();
+    for (const s of opts.shapes) {
+      more(0.45); swatch(s.color, y);
+      const c = shapeCenter(s);
+      pdf.setFont("helvetica", "bold"); pdf.setFontSize(10); pdf.setTextColor(0); pdf.text(s.label || "(unnamed)", M + 0.22, y);
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(9);
+      // jsPDF's standard fonts have no superscript 2: write square units out.
+      const summary = shapeSummary(s, opts.units).replace("km²", "sq km");
+      pdf.text(`${SHAPE_NAMES[s.type]}   ${summary}   ${s.type === "circle" ? "Centre" : "Middle"} MGRS ${toMGRS(c.lat, c.lng, 5)}${where(c.lng, c.lat)}`, M + 1.6, y);
+      y += 0.24;
     }
   }
 }

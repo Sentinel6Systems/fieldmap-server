@@ -7,6 +7,7 @@ import { zoomForScale, viewportBounds, inverse, destination, fmtDistance, fmtBea
 import { toMGRS } from "./utm.js";
 import { arrowInfo as arrowInfoFor } from "./features.js";
 import { PALETTE, swatchRow } from "./palette.js";
+import { UNITS, defaultUnit, unitMetres, shapeRing, shapeCenter, shapeSummary, fmtLength, SHAPE_NAMES } from "./shapes.js";
 import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groupsOf } from "./layers.js";
 
 const qs = new URLSearchParams(location.search);
@@ -14,12 +15,13 @@ const qs = new URLSearchParams(location.search);
 const LS = {
   markers: "fieldmap.print.markers",
   arrows: "fieldmap.print.arrows",
+  shapes: "fieldmap.print.shapes",
   settings: "fieldmap.print.settings",
 };
 
 const $ = (id) => document.getElementById(id);
 const state = Object.assign(
-  { scale: 24000, paper: "letter", orientation: "landscape", dpi: 300, title: "", listPage: false, color: PALETTE[0][0], atlas: 1, binder: false, style: "topo-print" },
+  { scale: 24000, paper: "letter", orientation: "landscape", dpi: 300, title: "", listPage: false, color: PALETTE[0][0], atlas: 1, binder: false, style: "topo-print", units: "imperial" },
   JSON.parse(localStorage.getItem(LS.settings) || "{}")
 );
 // Settings saved before version 2 always carried binder: true (the old default); start them off.
@@ -83,10 +85,13 @@ const drawnStyle = () => applyLayers(rawStyle, state.layers);
 
 let markers = JSON.parse(localStorage.getItem(LS.markers) || "[]");
 let arrows = JSON.parse(localStorage.getItem(LS.arrows) || "[]");
+let shapes = JSON.parse(localStorage.getItem(LS.shapes) || "[]");
 let config = {};
-let mode = null;            // null | "marker" | "arrow-start" | "arrow-end"
+// null | "marker" | "arrow-start" | "arrow-end" | "circle-center" | "circle-edge" | "rect-start" | "rect-end" | "polygon"
+let mode = null;
 let pendingArrow = null;    // {a:{lng,lat}} while placing the end
-let selected = null;        // {kind:"marker"|"arrow", id}
+let pendingShape = null;    // {type, center | points} while a shape is being drawn
+let selected = null;        // {kind:"marker"|"arrow"|"shape", id}
 let paletteOpenFor = null;  // id of the row whose swatches are open
 
 fetch("config.json").then((r) => (r.ok ? r.json() : {})).then((c) => (config = c)).catch(() => {});
@@ -111,6 +116,7 @@ $("binder").checked = !!state.binder;
 $("dpi").value = state.dpi;
 $("title").value = state.title;
 $("list-page").checked = !!state.listPage;
+$("units").value = state.units;
 
 function saveSettings() { localStorage.setItem(LS.settings, JSON.stringify(state)); }
 
@@ -158,6 +164,22 @@ map.on("load", () => {
     paint: { "text-color": "#1b5fa8", "text-halo-color": "#fff", "text-halo-width": 1.5 },
   });
 
+  map.addSource("shapes", { type: "geojson", data: shapesFC() });
+  map.addLayer({ id: "shapes-fill", type: "fill", source: "shapes", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ["get", "color"], "fill-opacity": 0.12 } });
+  map.addLayer({
+    id: "shapes-halo", type: "line", source: "shapes", filter: ["==", ["geometry-type"], "Polygon"],
+    layout: { "line-join": "round" }, paint: { "line-color": "#fff", "line-width": 5, "line-opacity": 0.6 },
+  });
+  map.addLayer({
+    id: "shapes-line", type: "line", source: "shapes", filter: ["==", ["geometry-type"], "Polygon"],
+    layout: { "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 2.5 },
+  });
+  map.addLayer({
+    id: "shapes-label", type: "symbol", source: "shapes", filter: ["==", ["geometry-type"], "Point"],
+    layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 12, "text-allow-overlap": true, "text-max-width": 14 },
+    paint: { "text-color": "#111", "text-halo-color": "#fff", "text-halo-width": 1.6 },
+  });
+
   map.addSource("arrows", { type: "geojson", data: arrowsFC() });
   map.addLayer({
     id: "arrows-line", type: "line", source: "arrows", filter: ["match", ["get", "part"], ["line", "head"], true, false],
@@ -198,7 +220,9 @@ map.on("load", () => {
   });
 
   map.addSource("temp", { type: "geojson", data: emptyFC() });
+  map.addLayer({ id: "temp-fill", type: "fill", source: "temp", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": "#333", "fill-opacity": 0.08 } });
   map.addLayer({ id: "temp-line", type: "line", source: "temp", paint: { "line-color": "#333", "line-width": 2, "line-dasharray": [2, 2] } });
+  map.addLayer({ id: "temp-points", type: "circle", source: "temp", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 4, "circle-color": "#fff", "circle-stroke-color": "#333", "circle-stroke-width": 2 } });
 
   footprintCenter = visibleCenter();
   updateFootprint();
@@ -215,10 +239,13 @@ map.on("click", (e) => {
   if (mode === "marker") { addMarker(e.lngLat); return; }
   if (mode === "arrow-start") { pendingArrow = { a: { lng: e.lngLat.lng, lat: e.lngLat.lat } }; setMode("arrow-end"); return; }
   if (mode === "arrow-end") { addArrow(pendingArrow.a, { lng: e.lngLat.lng, lat: e.lngLat.lat }); pendingArrow = null; setMode(null); return; }
+  if (mode && shapeClick(e)) return;
   const hitM = map.queryRenderedFeatures(e.point, { layers: ["markers-circle"] });
   if (hitM.length) { select("marker", hitM[0].properties.id); return; }
   const hitA = map.queryRenderedFeatures(e.point, { layers: ["arrow-ends", "arrows-line"] });
   if (hitA.length) { select("arrow", hitA[0].properties.id); return; }
+  const hitS = map.queryRenderedFeatures(e.point, { layers: ["shapes-line", "shapes-label"] });
+  if (hitS.length) { select("shape", hitS[0].properties.id); return; }
   const inside = map.queryRenderedFeatures(e.point, { layers: ["footprint-fill"] }).length > 0;
   if (!inside) { footprintCenter = { lng: e.lngLat.lng, lat: e.lngLat.lat }; updateFootprint(); }
 });
@@ -246,6 +273,7 @@ function onMove(e) {
     map.getSource("temp").setData(lineFC([pendingArrow.a, { lng: e.lngLat.lng, lat: e.lngLat.lat }]));
     return;
   }
+  if (pendingShape) { previewShape({ lng: e.lngLat.lng, lat: e.lngLat.lat }); return; }
   if (!dragging) return;
   if (dragging.kind === "marker") {
     const m = markers.find((x) => x.id === dragging.id);
@@ -392,6 +420,79 @@ function addArrow(a, b) {
 }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 
+/* ---------- data: shapes ---------- */
+function shapesFC() {
+  const feats = [];
+  for (const s of shapes) {
+    feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [shapeRing(s)] }, properties: { id: s.id, color: s.color } });
+    const c = shapeCenter(s);
+    feats.push({ type: "Feature", geometry: { type: "Point", coordinates: [c.lng, c.lat] },
+      properties: { id: s.id, label: `${s.label ? s.label + "\n" : ""}${shapeSummary(s, state.units)}` } });
+  }
+  return { type: "FeatureCollection", features: feats };
+}
+function saveShapes() {
+  localStorage.setItem(LS.shapes, JSON.stringify(shapes));
+  if (map.getSource("shapes")) map.getSource("shapes").setData(shapesFC());
+  renderLists();
+}
+function addShape(s) {
+  const n = shapes.filter((x) => x.type === s.type).length + 1;
+  const sh = { id: uid(), label: `${{ circle: "C", rect: "R", polygon: "P" }[s.type]}${n}`, color: state.color, ...s };
+  if (sh.type === "circle") sh.unit = defaultUnit(sh.radius, state.units);
+  shapes.push(sh);
+  pendingShape = null;
+  setMode(null);
+  saveShapes();
+  select("shape", sh.id, true);
+}
+const near = (a, b) => { const p = map.project([a.lng, a.lat]), q = map.project([b.lng, b.lat]); return Math.hypot(p.x - q.x, p.y - q.y) < 12; };
+/** Handle a map click while drawing a shape. Returns true when the click was used. */
+function shapeClick(e) {
+  const ll = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+  if (mode === "circle-center") { pendingShape = { type: "circle", center: ll }; setMode("circle-edge"); return true; }
+  if (mode === "circle-edge") {
+    const r = inverse(pendingShape.center.lat, pendingShape.center.lng, ll.lat, ll.lng).distance;
+    if (r > 0) addShape({ type: "circle", center: pendingShape.center, radius: r });
+    return true;
+  }
+  if (mode === "rect-start") { pendingShape = { type: "rect", points: [ll] }; setMode("rect-end"); return true; }
+  if (mode === "rect-end") { addShape({ type: "rect", points: [pendingShape.points[0], ll] }); return true; }
+  if (mode === "polygon") {
+    pendingShape = pendingShape || { type: "polygon", points: [] };
+    const pts = pendingShape.points;
+    if (pts.length >= 3 && near(ll, pts[0])) { finishPolygon(); return true; }
+    pts.push(ll);
+    setMode("polygon");
+    previewShape(ll);
+    return true;
+  }
+  return false;
+}
+function finishPolygon() {
+  if (pendingShape && pendingShape.points.length >= 3) addShape({ type: "polygon", points: pendingShape.points });
+}
+/** The shape being drawn, following the pointer, in the temp source. */
+function previewShape(ll) {
+  const s = pendingShape;
+  let shape = null;
+  if (s.type === "circle") shape = { type: "circle", center: s.center, radius: inverse(s.center.lat, s.center.lng, ll.lat, ll.lng).distance };
+  else if (s.type === "rect") shape = { type: "rect", points: [s.points[0], ll] };
+  const feats = [];
+  if (shape && (shape.type !== "circle" || shape.radius > 0)) {
+    feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [shapeRing(shape)] }, properties: {} });
+    $("mode-hint").textContent = shape.type === "circle"
+      ? `Radius ${fmtLength(shape.radius, state.units)}: tap to set it. You can type an exact radius afterwards.`
+      : `${shapeSummary(shape, state.units)}: tap the opposite corner.`;
+  }
+  if (s.type === "polygon") {
+    const pts = [...s.points, ll].map((p) => [p.lng, p.lat]);
+    feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: pts }, properties: {} });
+    for (const p of s.points) feats.push({ type: "Feature", geometry: { type: "Point", coordinates: [p.lng, p.lat] }, properties: {} });
+  }
+  map.getSource("temp").setData({ type: "FeatureCollection", features: feats });
+}
+
 /* ---------- lists ---------- */
 function select(kind, id, focus = false) {
   selected = { kind, id };
@@ -407,6 +508,29 @@ function renderLists() {
     const i = arrowInfo(a);
     return `${fmtDistance(i.distance)} · ${fmtBearing(i.trueBearing)} T · ${fmtBearing(i.gridBearing)} G · ${fmtBearing(i.magBearing)} M`;
   });
+  renderList($("shape-list"), shapes, "shape", "No shapes yet.", (s) => `${SHAPE_NAMES[s.type]} · ${shapeSummary(s, state.units)}`);
+}
+/** Radius field and unit menu for a circle. The radius is kept in metres; the menu offers
+ *  the units of the system chosen in Units (ft/mi or m/km). */
+function radiusEditor(s) {
+  const row = document.createElement("div");
+  row.className = "radius-row";
+  row.innerHTML = `<span>Radius</span><input type="number" min="0" step="any" inputmode="decimal" aria-label="Radius"><select aria-label="Radius unit"></select>`;
+  const [input, sel] = row.querySelectorAll("input,select");
+  const units = UNITS[state.units];
+  if (!units.some(([n]) => n === s.unit)) s.unit = defaultUnit(s.radius, state.units);
+  for (const [n] of units) sel.add(new Option(n, n));
+  sel.value = s.unit;
+  const show = () => { input.value = +(s.radius / unitMetres(s.unit)).toFixed(s.unit === "ft" || s.unit === "m" ? 0 : 3); };
+  show();
+  input.onchange = () => {
+    const v = parseFloat(input.value);
+    if (!(v > 0)) { show(); return; }
+    s.radius = v * unitMetres(s.unit);
+    persist("shape", true);
+  };
+  sel.onchange = () => { s.unit = sel.value; show(); persist("shape"); };
+  return row;
 }
 function renderList(list, items, kind, emptyText, detail) {
   list.innerHTML = "";
@@ -427,12 +551,15 @@ function renderList(list, items, kind, emptyText, detail) {
     dot.onclick = (e) => { e.stopPropagation(); paletteOpenFor = paletteOpenFor === it.id ? null : it.id; renderLists(); };
     text.oninput = () => { it.label = text.value; persist(kind); };
     text.onfocus = () => { selected = { kind, id: it.id }; };
-    go.onclick = () => { const c = kind === "marker" ? it : it.a; map.flyTo({ center: [c.lng, c.lat] }); };
+    go.onclick = () => { const c = kind === "marker" ? it : kind === "arrow" ? it.a : shapeCenter(it); map.flyTo({ center: [c.lng, c.lat] }); };
     del.onclick = () => {
-      if (kind === "marker") markers = markers.filter((x) => x.id !== it.id); else arrows = arrows.filter((x) => x.id !== it.id);
+      if (kind === "marker") markers = markers.filter((x) => x.id !== it.id);
+      else if (kind === "arrow") arrows = arrows.filter((x) => x.id !== it.id);
+      else shapes = shapes.filter((x) => x.id !== it.id);
       if (selected && selected.id === it.id) selected = null;
       persist(kind, true);
     };
+    if (kind === "shape" && it.type === "circle") row.appendChild(radiusEditor(it));
     if (paletteOpenFor === it.id) {
       row.appendChild(swatchRow(it.color, (hex) => { it.color = hex; paletteOpenFor = null; persist(kind, true); }));
     }
@@ -441,29 +568,51 @@ function renderList(list, items, kind, emptyText, detail) {
 }
 function persist(kind, rerender = false) {
   if (kind === "marker") { localStorage.setItem(LS.markers, JSON.stringify(markers)); map.getSource("markers").setData(markersFC()); }
-  else { localStorage.setItem(LS.arrows, JSON.stringify(arrows)); map.getSource("arrows").setData(arrowsFC()); }
+  else if (kind === "arrow") { localStorage.setItem(LS.arrows, JSON.stringify(arrows)); map.getSource("arrows").setData(arrowsFC()); }
+  else { localStorage.setItem(LS.shapes, JSON.stringify(shapes)); map.getSource("shapes").setData(shapesFC()); }
   if (rerender) renderLists();
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
 /* ---------- modes and buttons ---------- */
+const SHAPE_MODES = { circle: ["circle-center", "circle-edge"], rect: ["rect-start", "rect-end"], polygon: ["polygon"] };
 function setMode(m) {
   mode = m;
-  if (m !== "arrow-end") { pendingArrow = null; if (map.getSource("temp")) map.getSource("temp").setData(emptyFC()); }
+  if (m !== "arrow-end") pendingArrow = null;
+  if (!m || !Object.values(SHAPE_MODES).flat().includes(m)) pendingShape = null;
+  if (map.getSource("temp") && !pendingArrow && !pendingShape) map.getSource("temp").setData(emptyFC());
   $("add-marker").classList.toggle("active", m === "marker");
   $("add-arrow").classList.toggle("active", m === "arrow-start" || m === "arrow-end");
+  for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).classList.toggle("active", modes.includes(m));
   map.getCanvas().style.cursor = m ? "crosshair" : "";
+  // Double-click zoom would swallow the taps that place corners.
+  if (m) map.doubleClickZoom.disable(); else map.doubleClickZoom.enable();
+  const corners = pendingShape && pendingShape.points ? pendingShape.points.length : 0;
   $("mode-hint").textContent =
     m === "marker" ? "Tap the map to place the marker." :
     m === "arrow-start" ? "Tap the map at the arrow's start." :
-    m === "arrow-end" ? "Now tap where the arrow ends." : "";
+    m === "arrow-end" ? "Now tap where the arrow ends." :
+    m === "circle-center" ? "Tap the centre of the circle." :
+    m === "circle-edge" ? "Tap the edge to set the radius. You can type an exact radius afterwards." :
+    m === "rect-start" ? "Tap one corner of the rectangle." :
+    m === "rect-end" ? "Tap the opposite corner." :
+    m === "polygon" ? (corners < 3 ? `Tap the corners of the polygon (${corners} so far).` : `${corners} corners. Tap the first corner, press Enter or use Finish shape.`) : "";
+  $("finish-shape").hidden = !(m === "polygon" && corners >= 3);
 }
 $("add-marker").onclick = () => setMode(mode === "marker" ? null : "marker");
 $("add-arrow").onclick = () => setMode(mode ? null : "arrow-start");
+for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).onclick = () => setMode(modes.includes(mode) ? null : modes[0]);
+$("finish-shape").onclick = finishPolygon;
 $("clear-all").onclick = () => {
-  if ((markers.length || arrows.length) && confirm("Remove all markers and arrows?")) { markers = []; arrows = []; saveMarkers(); saveArrows(); }
+  if ((markers.length || arrows.length || shapes.length) && confirm("Remove all markers, arrows and shapes?")) {
+    markers = []; arrows = []; shapes = []; saveMarkers(); saveArrows(); saveShapes();
+  }
 };
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") setMode(null); });
+$("units").onchange = (e) => { state.units = e.target.value; saveSettings(); saveShapes(); };
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setMode(null);
+  if (e.key === "Enter" && mode === "polygon" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) finishPolygon();
+});
 
 // New-item colour swatches
 const newColorBox = $("new-color");
@@ -475,7 +624,7 @@ renderNewColor();
 
 scaleSel.onchange = () => { state.scale = +scaleSel.value; saveSettings(); updateFootprint(); };
 // Switch the map style in place: the sheet outline, markers and arrows are carried over.
-const OWN_SOURCES = ["footprint", "arrows", "markers", "temp"];
+const OWN_SOURCES = ["footprint", "shapes", "arrows", "markers", "temp"];
 function redraw(diff = true) {
   map.setStyle(drawnStyle(), {
     diff,
@@ -572,7 +721,7 @@ async function makePdf(kind) {
     const c = currentCenter();
     const { pdf, pages } = await renderSheet({
       styleUrl: await printStyle(), center: c, scale: state.scale, paper: state.paper, orientation: state.orientation,
-      dpi: effectiveDpi(), title: state.title.trim(), markers, arrows, listPage: state.listPage, config,
+      dpi: effectiveDpi(), title: state.title.trim(), markers, arrows, shapes, units: state.units, listPage: state.listPage, config,
       atlas: +state.atlas || 1, binder: state.binder, gridLines: state.layers.grid !== false, ink: state.layers.ink, signal: aborter.signal,
       onStatus: (t) => (status.textContent = t),
     });
