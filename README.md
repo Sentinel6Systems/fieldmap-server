@@ -64,8 +64,8 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | Path | What it is |
 |---|---|
 | `docker-compose.yml`, `.env.example` | The two services: `tileserver` and `web` (print tool + proxy) |
-| `config.json`, `config-basic.json` | TileServer GL configs: all five styles, or `osm`+`overlay` with only a base map |
-| `styles/`, `fonts/`, `sprites/` | The five styles and every asset they need, all local |
+| `config.json`, `config-basic.json` | TileServer GL configs: all six styles, or `osm`+`overlay` with only a base map |
+| `styles/`, `fonts/`, `sprites/` | The six styles and every asset they need, all local |
 | `scripts/`, `regions/`, `tools/` | Data builders (Planetiler, GDAL, Tippecanoe, Osmium in a tool container) |
 | `print/` | The print tool: `src/`, `public/`, `build.mjs` (esbuild). Built inside the `web` image |
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
