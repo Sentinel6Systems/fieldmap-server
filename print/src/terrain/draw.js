@@ -143,8 +143,8 @@ export function drawOverlay(ctx, result, t, bw, toPage, clip, dpi) {
 /** A legend swatch at (x, y), w × h pixels. */
 export function drawSwatch(ctx, x, y, w, h, style, bw, unit) {
   ctx.save();
+  ctx.fillStyle = "#fff"; ctx.fillRect(x, y, w, h);     // as on paper
   if (style) {
-    if (bw) { ctx.fillStyle = "#fff"; ctx.fillRect(x, y, w, h); }
     ctx.fillStyle = fillFor(ctx, style, bw, unit);
     ctx.fillRect(x, y, w, h);
   }
@@ -246,7 +246,7 @@ export function drawProfile(ctx, prof, rect, o) {
     ctx.beginPath(); ctx.moveTo(X(d * du), T); ctx.lineTo(X(d * du), B); ctx.stroke();
     ctx.fillText(`${+d.toFixed(3)}`, X(d * du), B + fp * 0.3);
   }
-  ctx.fillText(`Distance from A (${u === "metric" ? "km" : "mi"}) · heights in ${u === "metric" ? "metres" : "feet"} above sea level, earth curvature (k ${fmtK(o.k)}) drawn as a bulge`, (L + R) / 2, B + fp * 1.45);
+  ctx.fillText(`Distance from A (${u === "metric" ? "km" : "mi"}) · height above sea level (${u === "metric" ? "m" : "ft"}) · earth bulge for k ${fmtK(o.k)}`, (L + R) / 2, B + fp * 1.45);
   // Terrain
   ctx.beginPath(); ctx.moveTo(X(0), B);
   for (const p of s) if (Number.isFinite(p.terrain)) ctx.lineTo(X(p.d), Y(p.terrain));

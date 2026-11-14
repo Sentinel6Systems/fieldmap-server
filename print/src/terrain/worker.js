@@ -15,6 +15,11 @@ let canvas = null;
 
 class Cancelled extends Error {}
 
+// Give queued messages (a cancel) a turn. A message on a channel comes back at once, where
+// setTimeout is held back to once a second while the page is in the background.
+const channel = new MessageChannel();
+const yieldOnce = () => new Promise((r) => { channel.port1.onmessage = () => r(); channel.port2.postMessage(0); });
+
 function tileUrl(src, z, x, y) {
   return src.tiles[0].replace("{z}", z).replace("{x}", x).replace("{y}", y);
 }
@@ -61,14 +66,13 @@ async function loadTiles(src, z, list, progress) {
 
 async function run(id, job, src) {
   let lastYield = 0;
-  // Every 50 ms: report progress and let a cancel message in (setTimeout is slow to come
-  // back, so it is not awaited more often than that).
+  // Every 50 ms: report progress and let a cancel message in.
   const step = (lo, hi, text) => async (f) => {
     const now = Date.now();
     if (now - lastYield < 50) return;
     lastYield = now;
     postMessage({ type: "progress", id, frac: lo + (hi - lo) * f, text });
-    await new Promise((r) => setTimeout(r, 0));
+    await yieldOnce();
     if (cancelled.has(id)) throw new Cancelled();
   };
 

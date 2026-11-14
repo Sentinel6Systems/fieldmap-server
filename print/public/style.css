@@ -83,11 +83,11 @@ label.check { flex-direction: row; align-items: center; gap: 10px; font-size: 12
 label.check input { flex: 0 0 18px; width: 18px; height: 18px; min-height: 0; margin: 0; padding: 0; }
 
 details.layers { border-top: 1px solid #2c333c; border-bottom: 1px solid #2c333c; padding: 6px 0; }
-details.layers summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 30px; list-style: none; }
-details.layers summary::-webkit-details-marker { display: none; }
-details.layers summary::before { content: "▸"; color: var(--muted); font-size: 12px; }
-details.layers[open] summary::before { content: "▾"; }
-details.layers summary h2 { flex: 0 0 auto; }
+details.layers > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 30px; list-style: none; }
+details.layers > summary::-webkit-details-marker { display: none; }
+details.layers > summary::before { content: "▸"; color: var(--muted); font-size: 12px; }
+details.layers[open] > summary::before { content: "▾"; }
+details.layers > summary h2 { flex: 0 0 auto; }
 #layer-controls { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 8px; }
 .seg-row { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .seg { display: flex; gap: 4px; }
@@ -118,7 +118,7 @@ label.switch input:focus-visible { outline: 2px solid var(--accent); outline-off
 .terrain-point { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 12px; }
 .terrain-point-label { color: var(--muted); }
 .terrain-point-pos { color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-details.terrain-more summary { cursor: pointer; font-size: 12px; color: var(--muted); min-height: 28px; display: flex; align-items: center; }
+details.terrain-more > summary { cursor: pointer; font-size: 12px; color: var(--muted); min-height: 28px; display: flex; align-items: center; }
 details.terrain-more[open] { display: flex; flex-direction: column; gap: 6px; }
 .terrain-legend { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
 .terrain-legend:empty, .terrain-profile:empty { display: none; }

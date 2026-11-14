@@ -341,8 +341,8 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
     const box = body.querySelector(".terrain-profile");
     if (!box) return;
     box.innerHTML = "";
-    if (t.mode === "off" || t.kind !== "line" || !line || !line.prof || !sameLine()) return;
-    const w = Math.max(240, box.clientWidth || 360), hh = Math.round(w * 0.55), dpr = window.devicePixelRatio || 1;
+    if (t.mode === "off" || t.kind !== "line" || !line || !line.prof || !sameLine() || !root.open) return;
+    const w = Math.max(240, body.clientWidth || 360), hh = Math.round(w * 0.55), dpr = window.devicePixelRatio || 1;
     const c = h("canvas", { class: "terrain-chart" });
     c.width = Math.round(w * dpr); c.height = Math.round(hh * dpr); c.style.width = "100%";
     const g = c.getContext("2d");
@@ -355,6 +355,11 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
   }
 
   /* ---------------- public ---------------- */
+  // The chart is drawn at the panel's width, which is only known while the section is open.
+  root.addEventListener("toggle", () => { if (root.open) renderProfile(); });
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderProfile, 200); });
+  window.__terrain = { t, get area() { return area; }, get line() { return line; } };   // for debugging in the console
   render();
   if (t.mode !== "off") schedule(0);
 
