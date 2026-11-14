@@ -73,6 +73,25 @@ button:disabled { opacity: .5; cursor: progress; }
 label.check { flex-direction: row; align-items: center; gap: 10px; font-size: 12px; color: var(--text); margin-top: 4px; }
 label.check input { flex: 0 0 18px; width: 18px; height: 18px; min-height: 0; margin: 0; padding: 0; }
 
+details.layers { border-top: 1px solid #2c333c; border-bottom: 1px solid #2c333c; padding: 6px 0; }
+details.layers summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 30px; list-style: none; }
+details.layers summary::-webkit-details-marker { display: none; }
+details.layers summary::before { content: "▸"; color: var(--muted); font-size: 12px; }
+details.layers[open] summary::before { content: "▾"; }
+details.layers summary h2 { flex: 0 0 auto; }
+#layer-controls { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 8px; }
+.seg-row { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.seg { display: flex; gap: 4px; }
+.seg button { flex: 1; height: 32px; min-height: 32px; padding: 0 6px; font-size: 13px; border-color: #39414b; }
+.seg button.on { background: var(--accent); }
+label.switch { flex-direction: row; justify-content: space-between; align-items: center; min-height: 34px; font-size: 13px; color: var(--text); }
+label.switch input { appearance: none; -webkit-appearance: none; width: 40px; height: 22px; min-height: 0; margin: 0; padding: 0; border-radius: 11px; background: #39414b; position: relative; cursor: pointer; flex: 0 0 40px; }
+label.switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #c9d0d8; transition: left .12s; }
+label.switch input:checked { background: var(--accent); }
+label.switch input:checked::after { left: 21px; background: #fff; }
+label.switch input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#layers-reset { width: 100%; margin-bottom: 4px; }
+
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 2px; }
 .actions button { height: 40px; }
 .status { min-height: 16px; font-size: 12px; color: var(--muted); }

@@ -93,7 +93,8 @@ python3 tools/make-topo-usgs.py     # styles/topo-usgs.json
 ```
 
 Line widths in the generator are millimetres on paper at 1:24,000 and scale gently with zoom. Every layer carries a
-`fieldmap:group` in its metadata (roads, trails, contours, parks, pois, ...), ready for per-group switches. Its fonts
+`fieldmap:group` in its metadata (roads, trails, contours, parks, pois, ...), which the print tool's **Layers** panel
+switches. Its fonts
 are Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License, texts in `fonts/`).
 
 ## The print tool
@@ -114,6 +115,12 @@ are Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License, text
 - Buildings at 1:24k/25k: tiles below z14 carry only large buildings, so the tool draws the building layer again from
   the z14 tiles. For a basemap that has houses at z13 as well, add `--building-merge-z13=false --min-feature-size=0.25`
   to the Planetiler arguments in `scripts/build-vector.sh` / `build-region.sh`.
+- Layers panel: switch groups of layers off (woodland, roads, trails, place names, ...), print in colour or black and
+  white, hillshade off/soft/sharp, contours off/index lines only/all, MGRS grid lines on or off (the edge numbers
+  stay). The switches apply on screen and to every printed page, including atlas, index and cover pages, and are
+  remembered with the other settings. Both print styles carry the groups: `topo-usgs` from its generator, `topo-print`
+  from `tools/tag-print-groups.py` (run it again after editing that style by hand). In black and white, raster icons
+  and area patterns keep their colours.
 - Contour interval and data date shown in the margin come from `print/public/config.json`.
 - Development: `cd print && npm install && npm run build`; `npm run serve` serves `dist/` on :8090
   (`http://localhost:8090/?tiles=http://localhost:8080`).

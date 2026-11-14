@@ -7,6 +7,7 @@ import { zoomForScale, viewportBounds, inverse, destination, fmtDistance, fmtBea
 import { toMGRS } from "./utm.js";
 import { arrowInfo as arrowInfoFor } from "./features.js";
 import { PALETTE, swatchRow } from "./palette.js";
+import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groupsOf } from "./layers.js";
 
 const qs = new URLSearchParams(location.search);
 
@@ -21,6 +22,7 @@ const state = Object.assign(
   { scale: 24000, paper: "letter", orientation: "landscape", dpi: 300, title: "", listPage: false, color: PALETTE[0][0], atlas: 1, binder: true, style: "topo-print" },
   JSON.parse(localStorage.getItem(LS.settings) || "{}")
 );
+state.layers = { ...LAYER_DEFAULTS, ...(state.layers || {}) };
 
 // Print styles, in menu order. Only the ones the tile server actually has are offered.
 // ?style=<id> forces any style on the server for this visit.
@@ -48,6 +50,23 @@ async function availableStyles() {
 const styles = await availableStyles();
 let STYLE = qs.get("style") || (styles.some(([id]) => id === state.style) ? state.style : PRINT_STYLES[0][0]);
 let styleUrl = styleUrlFor(STYLE);
+
+// The style as served, with relative sprite, glyph and source URLs made absolute so the
+// style can be handed to MapLibre as an object (the layer switches rewrite it).
+async function fetchStyle(url) {
+  const st = await (await fetch(url, { cache: "no-store" })).json();
+  const abs = (u) => (typeof u !== "string" || /^[a-z][a-z0-9+.-]*:/i.test(u)) ? u
+    : u.startsWith("/") ? new URL(url).origin + u : url.replace(/[^/]*$/, "") + u;
+  if (st.sprite) st.sprite = Array.isArray(st.sprite) ? st.sprite.map((s) => ({ ...s, url: abs(s.url) })) : abs(st.sprite);
+  if (st.glyphs) st.glyphs = abs(st.glyphs);
+  for (const src of Object.values(st.sources || {})) {
+    if (src.url) src.url = abs(src.url);
+    if (src.tiles) src.tiles = src.tiles.map(abs);
+  }
+  return st;
+}
+let rawStyle = await fetchStyle(styleUrl).catch((e) => { console.error("style:", e); return { version: 8, sources: {}, layers: [] }; });
+const drawnStyle = () => applyLayers(rawStyle, state.layers);
 
 let markers = JSON.parse(localStorage.getItem(LS.markers) || "[]");
 let arrows = JSON.parse(localStorage.getItem(LS.arrows) || "[]");
@@ -86,7 +105,7 @@ function saveSettings() { localStorage.setItem(LS.settings, JSON.stringify(state
 const start = location.hash.match(/^#(\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)/);
 const map = new maplibregl.Map({
   container: "map",
-  style: styleUrl,
+  style: drawnStyle(),
   center: start ? [+start[3], +start[2]] : undefined,
   zoom: start ? +start[1] : undefined,
   hash: true,
@@ -444,18 +463,77 @@ renderNewColor();
 scaleSel.onchange = () => { state.scale = +scaleSel.value; saveSettings(); updateFootprint(); };
 // Switch the map style in place: the sheet outline, markers and arrows are carried over.
 const OWN_SOURCES = ["footprint", "arrows", "markers", "temp"];
-styleSel.onchange = () => {
-  STYLE = state.style = styleSel.value; saveSettings();
-  styleUrl = styleUrlFor(STYLE);
-  map.setStyle(styleUrl, {
-    diff: false,
+function redraw(diff = true) {
+  map.setStyle(drawnStyle(), {
+    diff,
     transformStyle: (prev, next) => !prev ? next : {
       ...next,
       sources: { ...next.sources, ...Object.fromEntries(OWN_SOURCES.filter((k) => prev.sources[k]).map((k) => [k, prev.sources[k]])) },
       layers: [...next.layers, ...prev.layers.filter((l) => OWN_SOURCES.includes(l.source))],
     },
   });
+}
+styleSel.onchange = async () => {
+  STYLE = state.style = styleSel.value; saveSettings();
+  styleUrl = styleUrlFor(STYLE);
+  rawStyle = await fetchStyle(styleUrl);
+  redraw(false);
+  renderLayerPanel();
 };
+
+/* ---------- layer switches ---------- */
+function setLayers(patch) { Object.assign(state.layers, patch); saveSettings(); redraw(); renderLayerPanel(); }
+function segmented(label, key, options) {
+  const row = document.createElement("div");
+  row.className = "seg-row";
+  row.innerHTML = `<span>${label}</span><div class="seg"></div>`;
+  for (const [value, text] of options) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = text;
+    b.className = state.layers[key] === value ? "on" : "";
+    b.setAttribute("aria-pressed", state.layers[key] === value);
+    b.onclick = () => setLayers({ [key]: value });
+    row.lastChild.appendChild(b);
+  }
+  return row;
+}
+function toggle(text, checked, onchange) {
+  const l = document.createElement("label");
+  l.className = "switch";
+  l.innerHTML = `<span>${text}</span><input type="checkbox" role="switch">`;
+  const box = l.querySelector("input");
+  box.checked = checked;
+  box.onchange = () => onchange(box.checked);
+  return l;
+}
+function renderLayerPanel() {
+  const box = $("layer-controls");
+  box.innerHTML = "";
+  const have = groupsOf(rawStyle);
+  box.appendChild(segmented("Ink", "ink", [["colour", "Colour"], ["bw", "B&W"]]));
+  if (have.has("hillshade")) box.appendChild(segmented("Hillshade", "hillshade", [["off", "Off"], ["soft", "Soft"], ["sharp", "Sharp"]]));
+  if (have.has("contours")) box.appendChild(segmented("Contours", "contours", [["off", "Off"], ["index", "Index"], ["all", "All"]]));
+  const off = new Set(state.layers.off);
+  const sections = SECTIONS.map(([title, groups]) => [title, groups.filter(([g]) => have.has(g))]);
+  const other = [...have].filter((g) => !OWN_CONTROLS.has(g) && !SECTIONS.some(([, gs]) => gs.some(([x]) => x === g)));
+  if (other.length) sections.push(["Other", other.map((g) => [g, g.replace(/-/g, " ")])]);
+  for (const [title, groups] of sections) {
+    if (!groups.length) continue;
+    const h = document.createElement("h3"); h.textContent = title; box.appendChild(h);
+    for (const [g, text] of groups) {
+      box.appendChild(toggle(text, !off.has(g), (on) => {
+        const s = new Set(state.layers.off); on ? s.delete(g) : s.add(g);
+        setLayers({ off: [...s] });
+      }));
+    }
+  }
+  const h = document.createElement("h3"); h.textContent = "Grid"; box.appendChild(h);
+  box.appendChild(toggle("MGRS grid lines (edge numbers stay)", state.layers.grid !== false, (on) => { state.layers.grid = on; saveSettings(); }));
+  const hidden = state.layers.off.filter((g) => have.has(g)).length;
+  $("layers-summary").textContent = hidden ? `${hidden} hidden` : "";
+}
+$("layers-reset").onclick = () => { state.layers = { ...LAYER_DEFAULTS }; saveSettings(); redraw(); renderLayerPanel(); };
+renderLayerPanel();
 paperSel.onchange = () => { state.paper = paperSel.value; saveSettings(); updateFootprint(); };
 $("orientation").onchange = (e) => { state.orientation = e.target.value; saveSettings(); updateFootprint(); };
 atlasSel.onchange = () => { state.atlas = +atlasSel.value; saveSettings(); updateFootprint(); };
@@ -480,9 +558,9 @@ async function makePdf(kind) {
   try {
     const c = currentCenter();
     const { pdf, pages } = await renderSheet({
-      styleUrl, center: c, scale: state.scale, paper: state.paper, orientation: state.orientation,
+      styleUrl: drawnStyle(), center: c, scale: state.scale, paper: state.paper, orientation: state.orientation,
       dpi: effectiveDpi(), title: state.title.trim(), markers, arrows, listPage: state.listPage, config,
-      atlas: +state.atlas || 1, binder: state.binder, signal: aborter.signal,
+      atlas: +state.atlas || 1, binder: state.binder, gridLines: state.layers.grid !== false, ink: state.layers.ink, signal: aborter.signal,
       onStatus: (t) => (status.textContent = t),
     });
     const base = (state.title.trim() || toMGRS(c.lat, c.lng, 3)).replace(/[^\w-]+/g, "_");

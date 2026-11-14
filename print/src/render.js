@@ -53,6 +53,8 @@ export function cellFor(cells, lng, lat) {
  * Entry point. opts:
  *  styleUrl, center {lng,lat}, scale, paper, orientation, dpi, title,
  *  markers, arrows, listPage, config, atlas (1|2|3|4|6|8), binder (bool),
+ *  gridLines (bool, default true: false keeps only the edge numbers and ticks),
+ *  ink ("colour" | "bw": the grid prints black in bw),
  *  onStatus(text), signal (AbortSignal)
  * Resolves to { pdf, pages }.
  * ===================================================================*/
@@ -549,13 +551,14 @@ function drawGrid(ctx, bounds, toPage, r, opts, dpi, gopts = {}) {
     return hits;
   };
 
+  const GRID = opts.ink === "bw" ? INK : BLUE;
   ctx.save();
   ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
-  ctx.strokeStyle = BLUE;
+  ctx.strokeStyle = GRID;
   const line = (isEasting, v) => {
     const pts = sample(isEasting, v);
     ctx.lineWidth = heavyEvery && v % heavyEvery === 0 ? heavy : thin;
-    ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke();
+    if (opts.gridLines !== false) { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke(); }
     for (const h of edgeHits(pts)) labels.push({ ...h, v, isEasting });
   };
   for (let e = Math.ceil(minE / step) * step; e <= maxE; e += step) line(true, e);
@@ -563,7 +566,7 @@ function drawGrid(ctx, bounds, toPage, r, opts, dpi, gopts = {}) {
   ctx.restore();
 
   if (tickStep) {
-    ctx.save(); ctx.strokeStyle = BLUE; ctx.lineWidth = thin;
+    ctx.save(); ctx.strokeStyle = GRID; ctx.lineWidth = thin;
     const tick = dpi * 0.06;
     const tickLine = (isEasting, v) => {
       for (const q of edgeHits(sample(isEasting, v))) {
@@ -583,7 +586,7 @@ function drawGrid(ctx, bounds, toPage, r, opts, dpi, gopts = {}) {
   const avoid = gopts.avoid || [];
   const blocked = (x, y) => avoid.some((a) => x >= a.x - dpi * 0.12 && x <= a.x + a.w + dpi * 0.12 && y >= a.y - dpi * 0.12 && y <= a.y + a.h + dpi * 0.12);
   ctx.save();
-  ctx.fillStyle = BLUE; ctx.textBaseline = "middle";
+  ctx.fillStyle = GRID; ctx.textBaseline = "middle";
   const pad = dpi * 0.04;
   const seen = new Set();
   const unit = step >= 100000 ? 100000 : step >= 10000 ? 10000 : 1000;
