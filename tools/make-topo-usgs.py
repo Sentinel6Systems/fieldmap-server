@@ -337,7 +337,12 @@ sym("flow-arrow", "flow-arrows", "waterway",
     ["all", LINE, PERENNIAL, ["!=", BRUNNEL, "tunnel"],
      ["any", cls("river", "canal"), ["all", ["has", "name"], [">=", ["zoom"], 12]], [">=", ["zoom"], 13]]],
     {"symbol-placement": "line", "symbol-spacing": ["interpolate", ["linear"], ["zoom"], 11, 35, 13.25, 40, 15, 60],
-     "icon-image": "sym_flow", "icon-size": ["match", ["get", "class"], ["river", "canal"], 1.35, 1.1],
+     "icon-image": "sym_flow",
+     # Full size from 1:24k (z13.25), smaller at 1:50k (z12.2) and 1:100k (z11.2).
+     "icon-size": ["interpolate", ["linear"], ["zoom"],
+                   11.2, ["match", ["get", "class"], ["river", "canal"], 0.6, 0.5],
+                   12.2, ["match", ["get", "class"], ["river", "canal"], 0.8, 0.65],
+                   13.25, ["match", ["get", "class"], ["river", "canal"], 1.35, 1.1]],
      "icon-rotation-alignment": "map", "icon-allow-overlap": True, "icon-ignore-placement": True}, {}, minzoom=11)
 
 # US data labels come first in the symbol list, so OSM labels win any collision.

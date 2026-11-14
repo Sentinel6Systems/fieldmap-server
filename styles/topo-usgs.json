@@ -13496,17 +13496,55 @@
         ],
         "icon-image": "sym_flow",
         "icon-size": [
-          "match",
+          "interpolate",
           [
-            "get",
-            "class"
+            "linear"
           ],
           [
-            "river",
-            "canal"
+            "zoom"
           ],
-          1.35,
-          1.1
+          11.2,
+          [
+            "match",
+            [
+              "get",
+              "class"
+            ],
+            [
+              "river",
+              "canal"
+            ],
+            0.6,
+            0.5
+          ],
+          12.2,
+          [
+            "match",
+            [
+              "get",
+              "class"
+            ],
+            [
+              "river",
+              "canal"
+            ],
+            0.8,
+            0.65
+          ],
+          13.25,
+          [
+            "match",
+            [
+              "get",
+              "class"
+            ],
+            [
+              "river",
+              "canal"
+            ],
+            1.35,
+            1.1
+          ]
         ],
         "icon-rotation-alignment": "map",
         "icon-allow-overlap": true,

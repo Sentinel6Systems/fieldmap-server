@@ -9537,17 +9537,41 @@
         "symbol-spacing": 37.678,
         "icon-image": "sym_flow",
         "icon-size": [
-          "match",
+          "+",
           [
-            "get",
-            "class"
+            "*",
+            [
+              "match",
+              [
+                "get",
+                "class"
+              ],
+              [
+                "river",
+                "canal"
+              ],
+              0.8,
+              0.65
+            ],
+            0.9953
           ],
           [
-            "river",
-            "canal"
-          ],
-          1.35,
-          1.1
+            "*",
+            [
+              "match",
+              [
+                "get",
+                "class"
+              ],
+              [
+                "river",
+                "canal"
+              ],
+              1.35,
+              1.1
+            ],
+            0.0047
+          ]
         ],
         "icon-rotation-alignment": "map",
         "icon-allow-overlap": true,
