@@ -4,7 +4,15 @@
 # See regions/mid-atlantic.env for an example.
 #
 # Usage:
-#   ./scripts/build-region.sh <region-file> [step ...]
+#   ./scripts/build-region.sh [--world] [--language <code>] <region-file> [step ...]
+#
+# Options (or set WORLD=yes / LANGUAGE=<code> in the region file; a flag wins):
+#   --world            zoom 0-8 for the whole world, the region only from zoom 9.
+#                      The world layer is built once by build-world.sh (about
+#                      96 GB to download the first time) and reused.
+#   --language <code>  keep map labels in one language only, to save space:
+#                      en zh hi es ar fr bn pt ru id (the ten most spoken).
+#                      Without it every language is kept.
 #
 # Steps (default: all three, in this order):
 #   vector     download and merge the OSM extracts, then run Planetiler
@@ -22,10 +30,20 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO_DIR/scripts/lib.sh"
 trap 'disk_full_hint "$REPO_DIR/data"' ERR
 
-if [ $# -lt 1 ]; then
-    echo "Usage: $0 <region-file> [vector] [contours] [hillshade]" >&2
+usage() {
+    echo "Usage: $0 [--world] [--language <code>] <region-file> [vector] [contours] [hillshade]" >&2
     exit 1
-fi
+}
+OPT_WORLD="" OPT_LANGUAGE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --world) OPT_WORLD=yes; shift ;;
+        --language) [ $# -ge 2 ] || usage; OPT_LANGUAGE="$2"; shift 2 ;;
+        -*) usage ;;
+        *) break ;;
+    esac
+done
+[ $# -ge 1 ] || usage
 
 REGION_FILE="$1"
 shift
@@ -36,6 +54,9 @@ fi
 
 # shellcheck source=/dev/null
 source "$REGION_FILE"
+WORLD="${OPT_WORLD:-${WORLD:-no}}"
+LANGUAGE="${OPT_LANGUAGE:-${LANGUAGE:-}}"
+check_language
 
 : "${REGION_NAME:?REGION_NAME is not set in $REGION_FILE}"
 : "${GEOFABRIK_AREAS:?GEOFABRIK_AREAS is not set in $REGION_FILE}"
@@ -70,20 +91,11 @@ run_vector() {
     # mirrors, so Planetiler itself makes no network calls.
     fetch_shared_sources "$REPO_DIR/data/sources"
 
-    echo "Planetiler: build data/basemap.mbtiles (Java heap $PLANETILER_MEMORY)"
+    echo "Planetiler: build data/basemap.mbtiles (Java heap $PLANETILER_MEMORY${LANGUAGE:+, language $LANGUAGE}$([ "$WORLD" = yes ] && echo ", world layer for zoom 0-8"))"
     # --bounds limits the output to the region box. Without it Planetiler
     # takes the bounds from the merged OSM data, which can be far larger
     # (extracts include complete ways and relations that reach outside).
-    docker run --rm \
-        --user "$(id -u):$(id -g)" \
-        -e JAVA_TOOL_OPTIONS="-Xmx$PLANETILER_MEMORY" \
-        -v "$REPO_DIR/data":/data \
-        "$PLANETILER_IMAGE" \
-        --force \
-        --osm-path="/data/sources/$REGION_NAME.osm.pbf" \
-        --bounds="$BBOX_CSV" \
-        --tmpdir=/data/tmp \
-        --output=/data/basemap.mbtiles
+    build_basemap "$REGION_NAME.osm.pbf" "$PLANETILER_MEMORY" --bounds="$BBOX_CSV"
 }
 
 run_contours() {
@@ -94,7 +106,7 @@ run_hillshade() {
     "$REPO_DIR/scripts/build-hillshade.sh" "${BBOX_ARGS[@]}"
 }
 
-echo "Region: $REGION_NAME"
+echo "Region: $REGION_NAME${LANGUAGE:+ (labels: $LANGUAGE)}$([ "$WORLD" = yes ] && echo ' (world layer for zoom 0-8)')"
 echo "Steps:  ${STEPS[*]}"
 mkdir -p "$REPO_DIR/data"
 echo "Free disk space: $(free_gb "$REPO_DIR/data") GB on the drive that holds $REPO_DIR/data"

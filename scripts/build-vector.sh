@@ -5,28 +5,42 @@
 # The output file is data/basemap.mbtiles.
 #
 # Usage:
-#   ./scripts/build-vector.sh <area>
+#   ./scripts/build-vector.sh [--world] [--language <code>] <area>
 #
 # <area> is a Geofabrik path, such as europe/switzerland or
 # north-america/us/delaware, or just its last part (switzerland), which is
 # looked up in Geofabrik's index. Find areas at https://download.geofabrik.de
+#
+# --world and --language work as in build-region.sh: zoom 0-8 from the world
+# layer (build-world.sh), and labels in one language only
+# (en zh hi es ar fr bn pt ru id).
 #
 # Large areas need more memory. Set PLANETILER_MEMORY to change the Java
 # heap size. Example: PLANETILER_MEMORY=8g ./scripts/build-vector.sh germany
 
 set -euo pipefail
 
-if [ $# -ne 1 ]; then
-    echo "Usage: $0 <geofabrik-path-or-area>" >&2
-    exit 1
-fi
-
-AREA="$1"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-MEMORY="${PLANETILER_MEMORY:-2g}"
-
+MEMORY="${PLANETILER_MEMORY:-4g}"
 # shellcheck source=lib.sh
 source "$REPO_DIR/scripts/lib.sh"
+
+usage() {
+    echo "Usage: $0 [--world] [--language <code>] <geofabrik-path-or-area>" >&2
+    exit 1
+}
+WORLD=no LANGUAGE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --world) WORLD=yes; shift ;;
+        --language) [ $# -ge 2 ] || usage; LANGUAGE="$2"; shift 2 ;;
+        -*) usage ;;
+        *) break ;;
+    esac
+done
+[ $# -eq 1 ] || usage
+AREA="$1"
+check_language
 mkdir -p "$REPO_DIR/data"
 trap 'disk_full_hint "$REPO_DIR/data"' ERR
 # The extract size is unknown until it is downloaded. Ask for a
@@ -62,14 +76,8 @@ NAME="$(basename "$AREA_PATH")"
 # mirrors, so Planetiler itself makes no network calls.
 fetch_shared_sources "$REPO_DIR/data/sources"
 
-docker run --rm \
-    --user "$(id -u):$(id -g)" \
-    -e JAVA_TOOL_OPTIONS="-Xmx$MEMORY" \
-    -v "$REPO_DIR/data":/data \
-    "$PLANETILER_IMAGE" \
-    --force \
-    --osm-path="/data/sources/$NAME.osm.pbf" \
-    --tmpdir=/data/tmp \
-    --output=/data/basemap.mbtiles
+# Take the bounds from the data: some mirrors' files have none in their header,
+# and Planetiler would then build the whole world.
+build_basemap "$NAME.osm.pbf" "$MEMORY" --osm_parse_node_bounds=true
 
 echo "Done. Output: $REPO_DIR/data/basemap.mbtiles"

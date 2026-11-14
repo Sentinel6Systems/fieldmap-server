@@ -107,13 +107,14 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 
 ## Build scripts
 
-### `build-vector.sh <area>`
+### `build-vector.sh [--world] [--language <code>] <area>`
 
 Builds `data/basemap.mbtiles` with [Planetiler](https://github.com/onthegomap/planetiler) 0.10.2 (set `PLANETILER_IMAGE` to
 use another release).
 `<area>` is a Geofabrik path such as `europe/switzerland`, or just its last part (`switzerland`), which is looked
 up in Geofabrik's index. The OpenStreetMap extract comes from the fastest mirror (see
 [OpenStreetMap download mirrors](#openstreetmap-download-mirrors)).
+For `--world` and `--language`, see [World layer and label language](#world-layer-and-label-language).
 The output uses the OpenMapTiles schema.
 The first run downloads about 1.5 GB of shared world data (coastlines, lakes).
 This data stays in `data/sources` for the next runs.
@@ -136,7 +137,7 @@ Builds `data/hillshade.mbtiles` from the same elevation data.
 The terrain scripts build a small tool container (GDAL + Tippecanoe) on first run.
 Downloaded elevation tiles stay in `data/cache/dem` for reuse.
 
-### `build-region.sh <region-file> [vector] [contours] [hillshade]`
+### `build-region.sh [--world] [--language <code>] <region-file> [vector] [contours] [hillshade]`
 
 Builds all three data files for a region described in a region file.
 A region can cover several Geofabrik extracts, for example several US states.
@@ -163,6 +164,8 @@ A region file sets these values (see `regions/mid-atlantic.env`):
 | `BBOX` | Terrain box: `min-lon min-lat max-lon max-lat` |
 | `CONTOUR_UNITS` | `ft` or `m` (default `ft`) |
 | `PLANETILER_MEMORY` | Java heap for Planetiler (default `8g`) |
+| `WORLD` | `yes`: the whole world at zoom 0-8, the region from zoom 9 (same as `--world`) |
+| `LANGUAGE` | Keep labels in one language only (same as `--language`) |
 
 Planetiler output is limited to the region's `BBOX`.
 
@@ -170,7 +173,7 @@ Planetiler also needs three shared inputs (water polygons, Natural Earth,
 lake centerlines). The script downloads them to `data/sources` before it runs
 Planetiler, so Planetiler itself makes no network calls. Each URL gets several
 attempts. If the primary source still fails, the script tries the next URL in
-the `SHARED_SOURCES` list at the top of `build-region.sh`. The water polygons
+the `SHARED_SOURCES` list in `scripts/lib.sh`. The water polygons
 fall back to the North America mirror at `www.osmdata.org`. Files that are
 already present are reused. Add more mirrors to that list if a source is
 unreliable.
@@ -179,6 +182,32 @@ unreliable.
 
 Downloads Geofabrik extracts to `data/sources/extracts` and merges them into
 `data/sources/<output-name>.osm.pbf`. `build-region.sh` and `build-vector.sh` call it for you.
+
+### World layer and label language
+
+Two options work the same for `build-region.sh` and `build-vector.sh` (in a region file: `WORLD=yes`,
+`LANGUAGE=<code>`; a flag on the command line wins):
+
+- `--world`: the map covers the whole world from zoom 0 to 8, and your region from zoom 9 up. Zooming out past your
+  region shows continents, countries, cities, major roads, borders and water everywhere, instead of empty space.
+  The world part comes from `build-world.sh`, which runs on its own the first time: it downloads the whole
+  OpenStreetMap planet (about 96 GB, from the fastest fresh planet mirror; an interrupted download resumes),
+  keeps only what shows at zoom 0-8 with `osmium tags-filter`, deletes the planet file and builds
+  `data/world-z0-8.mbtiles`. Allow several hours and about 160 GB of free disk for that first run. Later regions
+  reuse the world layer; delete `data/world-z0-8*.mbtiles` and `data/sources/planet-z0-8.osm.pbf` to rebuild it from
+  a newer planet. The region is built at zoom 9-14 and the world tiles are copied into the same `basemap.mbtiles`,
+  so nothing else changes for the tile server or the print tool. Contours and hillshade stay region-only.
+- `--language <code>`: keep map labels in one language only, to save space. The codes are the ten most spoken
+  languages by total speakers (Ethnologue 2025): `en` English, `zh` Chinese, `hi` Hindi, `es` Spanish, `ar` Arabic,
+  `fr` French, `bn` Bengali, `pt` Portuguese, `ru` Russian, `id` Indonesian. Without it every language is kept.
+  The styles show the chosen language where a name exists in it and the local name otherwise. With all languages
+  kept, they show English. The topo styles label places with their local names either way, like a printed topo
+  map. A world layer is built per language (`world-z0-8-<code>.mbtiles`).
+
+```bash
+./scripts/build-region.sh --world --language es regions/mid-atlantic.env
+./scripts/build-vector.sh --world europe/switzerland
+```
 
 ### OpenStreetMap download mirrors
 

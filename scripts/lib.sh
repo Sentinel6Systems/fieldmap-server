@@ -8,6 +8,117 @@ TOOLS_IMAGE="tileserver-tools"
 # the tiles unnoticed; set PLANETILER_IMAGE to try another one.
 PLANETILER_IMAGE="${PLANETILER_IMAGE:-ghcr.io/onthegomap/planetiler:0.10.2}"
 
+# Languages a build can keep labels for (LANGUAGE / --language): the ten most
+# spoken by total speakers, Ethnologue 2025. Without a choice every language is
+# kept. The styles try these in this order, then the local name.
+BUILD_LANGUAGES="en zh hi es ar fr bn pt ru id"
+
+# Stop unless LANGUAGE is empty or one of BUILD_LANGUAGES.
+check_language() {
+    [ -z "${LANGUAGE:-}" ] && return 0
+    case " $BUILD_LANGUAGES " in
+        *" $LANGUAGE "*) return 0 ;;
+    esac
+    echo "Error: unknown language '$LANGUAGE'. Use one of: $BUILD_LANGUAGES" >&2
+    exit 1
+}
+
+# The world layer for the current LANGUAGE, relative to data/.
+world_file() {
+    echo "world-z0-8${LANGUAGE:+-$LANGUAGE}.mbtiles"
+}
+
+# Run Planetiler (OpenMapTiles profile) on one OSM file from data/sources.
+# Planetiler makes no network calls: fetch_shared_sources must run first.
+# Arguments: OSM_FILE_NAME OUTPUT_NAME MEMORY [more Planetiler arguments ...]
+run_planetiler() {
+    local osm="$1" out="$2" memory="$3"
+    shift 3
+    local lang=()
+    [ -n "${LANGUAGE:-}" ] && lang=(--languages="$LANGUAGE")
+    docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        -e JAVA_TOOL_OPTIONS="-Xmx$memory" \
+        -v "$REPO_DIR/data":/data \
+        "$PLANETILER_IMAGE" \
+        --force \
+        --osm-path="/data/sources/$osm" \
+        --tmpdir=/data/tmp \
+        --output="/data/$out" \
+        "${lang[@]}" \
+        "$@"
+}
+
+# Build data/basemap.mbtiles from one OSM file in data/sources.
+# With WORLD=yes, the region is built at zoom 9-14 only and the world layer
+# (built first if missing) supplies zoom 0-8 everywhere.
+# Arguments: OSM_FILE_NAME MEMORY [more Planetiler arguments ...]
+build_basemap() {
+    local osm="$1" memory="$2"
+    shift 2
+    if [ "${WORLD:-no}" != yes ]; then
+        run_planetiler "$osm" basemap.mbtiles "$memory" "$@"
+        return
+    fi
+    local world
+    world="$(world_file)"
+    if [ ! -s "$REPO_DIR/data/$world" ]; then
+        echo "No world layer yet ($world): building it first."
+        LANGUAGE="${LANGUAGE:-}" "$REPO_DIR/scripts/build-world.sh"
+    else
+        echo "World layer: reusing data/$world (delete it to rebuild)"
+    fi
+    run_planetiler "$osm" region-z9-14.mbtiles "$memory" --minzoom=9 "$@"
+    merge_world_tiles "$REPO_DIR/data/$world" "$REPO_DIR/data/region-z9-14.mbtiles" \
+        "$REPO_DIR/data/basemap.mbtiles"
+    rm -f "$REPO_DIR/data/region-z9-14.mbtiles"
+}
+
+# Combine the world layer (zoom 0-8) and a region file (zoom 9 and up) into
+# one MBTiles file. Tiles are copied as they are, not re-encoded.
+# Arguments: WORLD_FILE REGION_FILE OUTPUT_FILE
+merge_world_tiles() {
+    echo "Merging the world layer (zoom 0-8) with the region (zoom 9+) into $(basename "$3")"
+    python3 - "$1" "$2" "$3" <<'PY'
+import json, os, shutil, sqlite3, sys
+world, region, out = sys.argv[1:]
+tmp = out + ".tmp"
+shutil.copyfile(region, tmp)
+db = sqlite3.connect(tmp)
+db.execute("ATTACH DATABASE ? AS w", (world,))
+names = {r[0] for r in db.execute("SELECT name FROM sqlite_master")}
+compact = {"tiles_shallow", "tiles_data"} <= names   # Planetiler's deduplicated layout
+rows = db.execute("SELECT zoom_level, tile_column, tile_row, tile_data FROM w.tiles WHERE zoom_level <= 8").fetchall()
+for z, x, y, data in rows:
+    if compact:
+        cur = db.execute("INSERT INTO tiles_data (tile_data) VALUES (?)", (data,))
+        db.execute("INSERT INTO tiles_shallow (zoom_level, tile_column, tile_row, tile_data_id) VALUES (?, ?, ?, ?)",
+                   (z, x, y, cur.lastrowid))
+    else:
+        db.execute("INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?, ?, ?, ?)", (z, x, y, data))
+meta = dict(db.execute("SELECT name, value FROM main.metadata"))
+wmeta = dict(db.execute("SELECT name, value FROM w.metadata"))
+meta["minzoom"] = "0"
+meta["bounds"] = "-180,-85.05113,180,85.05113"
+if "json" in meta and "json" in wmeta:
+    rj, wj = json.loads(meta["json"]), json.loads(wmeta["json"])
+    layers = {l["id"]: l for l in rj.get("vector_layers", [])}
+    for l in wj.get("vector_layers", []):
+        r = layers.setdefault(l["id"], l)
+        r["minzoom"] = min(r.get("minzoom", 0), l.get("minzoom", 0))
+        r.setdefault("fields", {}).update(l.get("fields", {}))
+    rj["vector_layers"] = list(layers.values())
+    meta["json"] = json.dumps(rj)
+db.execute("DELETE FROM main.metadata")
+db.executemany("INSERT INTO main.metadata (name, value) VALUES (?, ?)", meta.items())
+db.commit()
+db.execute("DETACH DATABASE w")
+db.close()
+os.replace(tmp, out)
+print(f"  {len(rows)} world tiles added")
+PY
+}
+
 # Free space in whole GB on the drive that holds a directory.
 free_gb() {
     df -BG --output=avail "$1" | tail -1 | tr -dc '0-9'
@@ -147,6 +258,14 @@ OSM_MIRRORS=(
     "movisda https://osm.download.movisda.io/{path}-latest.osm.pbf"
     "geo2day https://geo2day.com/{path_}.pbf"
 )
+# Mirrors of the whole OpenStreetMap planet, for the world layer (build-world.sh).
+# The OSM Foundation asks for big downloads to come from mirrors.
+# shellcheck disable=SC2034  # used by filter-planet.sh
+PLANET_MIRRORS=(
+    "your.org https://ftpmirror.your.org/pub/openstreetmap/pbf/planet-latest.osm.pbf"
+    "fau.de https://ftp.fau.de/osm-planet/pbf/planet-latest.osm.pbf"
+    "init7 https://mirror.init7.net/openstreetmap/pbf/planet-latest.osm.pbf"
+)
 # A copy older than this many days is never downloaded.
 OSM_MAX_AGE_DAYS="${OSM_MAX_AGE_DAYS:-30}"
 # Size of the speed test download from each mirror.
@@ -163,13 +282,17 @@ osm_mirror_url() {
     echo "${template//\{path\}/$path}"
 }
 
-# Age in whole days of the file behind a URL, from its Last-Modified header.
-# Prints nothing when the file is missing or the server gives no date.
+# Last-Modified header of the file behind a URL; nothing if there is none.
 # Argument: URL
+osm_last_modified() {
+    curl -sfIL --connect-timeout 15 -m 30 "$1" 2>/dev/null \
+        | tr -d '\r' | awk -F': ' 'tolower($1)=="last-modified" {d=$2} END {print d}'
+}
+
+# Age in whole days of a Last-Modified date. Prints nothing for no date.
+# Argument: LAST_MODIFIED
 osm_age_days() {
-    local modified
-    modified="$(curl -sfIL --connect-timeout 15 -m 30 "$1" 2>/dev/null \
-        | tr -d '\r' | awk -F': ' 'tolower($1)=="last-modified" {d=$2} END {print d}')"
+    local modified="$1"
     [ -n "$modified" ] || return 0
     local then_s now_s
     then_s="$(date -d "$modified" +%s 2>/dev/null)" || return 0
@@ -212,13 +335,14 @@ rank_osm_mirrors() {
 # OSM_MAX_AGE_DAYS old. Call rank_osm_mirrors first.
 # Arguments: GEOFABRIK_PATH DEST_FILE
 download_osm_extract() {
-    local path="$1" dest="$2" name entry template url age
+    local path="$1" dest="$2" name entry template url age modified
     for name in "${OSM_MIRROR_ORDER[@]}"; do
         for entry in "${OSM_MIRRORS[@]}"; do
             [ "${entry%% *}" = "$name" ] && template="${entry#* }"
         done
         url="$(osm_mirror_url "$template" "$path")"
-        age="$(osm_age_days "$url")"
+        modified="$(osm_last_modified "$url")"
+        age="$(osm_age_days "$modified")"
         if [ -z "$age" ]; then
             echo "  $name: not available (missing, or no date given), skipped"
             continue
@@ -228,16 +352,21 @@ download_osm_extract() {
             continue
         fi
         echo "download: $path from $name ($age day$([ "$age" -eq 1 ] || echo s) old)"
-        # Start from scratch on each mirror: their copies differ, so a
-        # partial file must not be resumed from another one.
-        rm -f "$dest.part"
-        if curl -fSL --retry 3 --retry-delay 10 --connect-timeout 30 -o "$dest.part" "$url"; then
+        # A partial download is resumed only from the same copy (same URL
+        # and date); copies on different mirrors differ.
+        if [ "$(cat "$dest.part.from" 2>/dev/null)" != "$url $modified" ]; then
+            rm -f "$dest.part"
+            echo "$url $modified" > "$dest.part.from"
+        elif [ -s "$dest.part" ]; then
+            echo "  resuming the partial download"
+        fi
+        if curl -fSL --retry 3 --retry-delay 10 --connect-timeout 30 -C - -o "$dest.part" "$url"; then
             mv "$dest.part" "$dest"
+            rm -f "$dest.part.from"
             return 0
         fi
         echo "  $name: download failed"
     done
-    rm -f "$dest.part"
     echo "Error: no mirror has $path at most $OSM_MAX_AGE_DAYS days old." >&2
     echo "Check the path at https://download.geofabrik.de, or raise OSM_MAX_AGE_DAYS." >&2
     return 1
