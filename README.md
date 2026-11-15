@@ -444,8 +444,8 @@ Add step names to run only some steps:
 
 #### Region files
 
-A region file is a short shell file. Write your own for your area, or start from one of the two examples in
-`regions/`: `mid-atlantic.env` (an example of several US states) and `us-lower48.env` (an example of a whole
+A region file is a short shell file. Write your own for your area, or start from one of the examples in
+`regions/`: `mid-atlantic.env` (an example of several US states), `us-all.env` (all 50 states, see below) and `us-lower48.env` (an example of a whole
 country on top of the world layer; its comments list sizes). A region file sets these values:
 
 | Variable | Meaning |
@@ -463,6 +463,35 @@ country on top of the world layer; its comments list sizes). A region file sets 
 | `US_STATES` | Two-letter state codes for `build-usdata.sh` (default: the US states in `GEOFABRIK_AREAS`) |
 
 Planetiler output is limited to the region's `BBOX` (for a box across the 180° line, its wider side).
+
+#### Example: a full set for the whole world at low zoom and all of the US
+
+`regions/us-all.env` covers all 50 states and Washington DC (Puerto Rico and the other territories are not in the
+Geofabrik `north-america/us` extract) on top of the world layer: the whole world at zoom 0-8, the US at zoom 9-14.
+These commands build every file the styles and the print tool read:
+
+```bash
+# Base map (world layer zoom 0-8 plus the US to zoom 14), contours, hillshade,
+# elevation and extras, in that order. Prints the outline and a size and time
+# estimate for the terrain steps first.
+./scripts/build-region.sh regions/us-all.env
+
+# US federal data for topo-usgs: obstacles, names, survey marks, public land.
+./scripts/build-usdata.sh regions/us-all.env
+# Optional: FEMA flood zones (very slow for the whole country; see build-usdata.sh).
+./scripts/build-usdata.sh regions/us-all.env flood
+
+# Load the new files.
+docker restart tileserver
+```
+
+The world layer is built once (about 96 GB to download and about 160 GB of free disk the first time) and reused.
+The box crosses the 180° line, so the terrain covers Alaska's Aleutians on both sides of it, while the base map,
+extras and US data stop at 180°. Geofabrik's US outline takes in a wide band of sea, so the first estimate is high
+(it counts about 3,700 one-degree cells); cells of open sea have no elevation file and are recorded on the first
+download, which makes later estimates closer. A build this size takes several days on a fast machine with 32 GB
+of RAM, most of it for the contours. A failed or stopped step can be run again on its own, for example
+`./scripts/build-region.sh regions/us-all.env contours`.
 
 Planetiler also needs three shared inputs (water polygons, Natural Earth,
 lake centerlines). The script downloads them to `data/sources` before it runs
@@ -619,7 +648,8 @@ See [systemd/README.md](systemd/README.md).
 
 - Terrain builds follow the region's Geofabrik outlines instead of its box (no neighbouring countries), skip
   known open-sea cells, handle the 180° line, print size and time estimates first, and write hillshade as lossy
-  WebP by default.
+  WebP by default. `regions/us-all.env` builds the whole world at low zoom plus all 50 states; `build-usdata.sh`
+  takes the wider side of a box across the 180° line.
 - Terrain analysis in the print tool: viewshed and VHF/UHF radio coverage from a point, point-to-point profiles,
   printed on sheets and atlases with a collar strip and an optional profile page; `build-elevation.sh` writes the
   elevation tiles it uses.

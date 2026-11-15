@@ -52,7 +52,16 @@ if [ -z "$US_STATES" ]; then
     echo "Error: no US states found. Set US_STATES=\"NJ PA ...\" in $REGION_FILE." >&2
     exit 1
 fi
-echo "US data for $REGION_FILE: states $US_STATES, box $BBOX"
+# A box whose min-lon is larger than its max-lon crosses the 180° line: take its wider
+# side, as the base map does.
 # shellcheck disable=SC2086
-python3 "$REPO_DIR/tools/us-data.py" "$@" --bbox $BBOX --states $US_STATES
+read -r W S E N <<<"$(python3 -c "
+import sys
+w, s, e, n = map(float, sys.argv[1:])
+if w > e:
+    w, e = (w, 180.0) if 180 - w > e + 180 else (-180.0, e)
+print(f'{w:g} {s:g} {e:g} {n:g}')" $BBOX)"
+echo "US data for $REGION_FILE: states $US_STATES, box $W $S $E $N"
+# shellcheck disable=SC2086
+python3 "$REPO_DIR/tools/us-data.py" "$@" --bbox "$W" "$S" "$E" "$N" --states $US_STATES
 echo "Restart the tile server to load it: docker restart tileserver"
