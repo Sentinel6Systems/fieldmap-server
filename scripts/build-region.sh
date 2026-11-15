@@ -15,8 +15,10 @@
 #                      Without it every language is kept.
 #   --staged           write the new files to data/incoming and move them into data/
 #                      together when every step has finished. Until then, and when a
-#                      step fails, the files in data/ stay as they were. (Without it
-#                      each step replaces its file as soon as it is done.)
+#                      step fails, the files in data/ stay as they were, and the steps
+#                      that finished are kept: the same build run again carries on
+#                      from there. (Without it each step replaces its file as soon as
+#                      it is done.)
 #
 # Steps (default: all five, in this order):
 #   vector     download and merge the OSM extracts, then run Planetiler
@@ -166,9 +168,16 @@ if [ -n "$STAGED" ]; then
     export FIELDMAP_STAGE="incoming"
     # shellcheck disable=SC2034
     OUT_DIR="$REPO_DIR/data/$FIELDMAP_STAGE" OUT_SUB="$FIELDMAP_STAGE/"
-    rm -rf "$OUT_DIR"
+    # A staged build that stops keeps the steps it finished in data/incoming. The same build
+    # (same region file and settings) run again carries on from there; any other starts
+    # afresh. The key is what the files depend on.
+    KEY="$( { cat "$REGION_FILE"; echo "$DEM_SOURCE $HILLSHADE_FORMAT $HILLSHADE_MAXZOOM $ELEVATION_MAXZOOM $CONTOUR_UNITS $WORLD $LANGUAGE"; } | sha1sum | cut -c1-16)"
+    if [ "$(cat "$OUT_DIR/.key" 2>/dev/null)" != "$KEY" ]; then
+        rm -rf "$OUT_DIR"
+    fi
     mkdir -p "$OUT_DIR"
-    trap 'if [ -d "$OUT_DIR" ]; then rm -rf "$OUT_DIR"; echo; echo "The build did not finish: the map files in data/ were not changed."; fi' EXIT
+    echo "$KEY" > "$OUT_DIR/.key"
+    trap 'if [ -d "$OUT_DIR" ]; then echo; echo "The build did not finish: the map files in data/ were not changed."; echo "The steps that finished are kept: run the same build again to carry on from where it stopped."; fi' EXIT
 fi
 
 echo "Region: $REGION_NAME${LANGUAGE:+ (labels: $LANGUAGE)}$([ "$WORLD" = yes ] && echo ' (world layer for zoom 0-8)')"
@@ -189,8 +198,13 @@ for step in "${STEPS[@]}"; do
     start=$(date +%s)
     echo
     echo "=== $step ==="
+    if [ -n "$STAGED" ] && grep -qx "$step" "$OUT_DIR/.done" 2>/dev/null; then
+        echo "=== $step finished in an earlier run of this build: kept ==="
+        continue
+    fi
     "run_$step"
     end=$(date +%s)
+    [ -z "$STAGED" ] || echo "$step" >> "$OUT_DIR/.done"
     echo "=== $step finished in $(( (end - start) / 60 )) min ==="
 done
 
@@ -200,6 +214,7 @@ if [ -n "$STAGED" ]; then
     for f in "$OUT_DIR"/*.mbtiles; do
         mv -f "$f" "$REPO_DIR/data/"
     done
+    rm -f "$OUT_DIR/.key" "$OUT_DIR/.done"
     rmdir "$OUT_DIR"
 fi
 

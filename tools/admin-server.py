@@ -68,7 +68,8 @@ LAYERS = {"basemap": ("vector", "basemap.mbtiles"), "contours": ("contours", "co
           "elevation": ("elevation", "elevation.mbtiles"),
           "extras": ("extras", "extras.mbtiles"), "usdata": ("usdata", "usdata.mbtiles")}
 ORDER = ["basemap", "contours", "hillshade", "detail", "elevation", "extras", "usdata"]
-DETAIL_KM = (10, 20, 30, 50, 100)   # sides of the 1 m area the page offers; build-detail.sh allows 10000 km2
+DETAIL_KM = (10, 20, 30, 50, 100)   # sides of the 1 m area the page offers
+DETAIL_MAX_KM2 = int(os.environ.get("DETAIL_MAX_KM2") or 10000)    # as build-detail.sh
 LANGUAGES = ["en", "zh", "hi", "es", "ar", "fr", "bn", "pt", "ru", "id"]
 US_STATES = ("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY "
              "NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY")
@@ -148,6 +149,10 @@ def check_selection(body):
         if "hillshade" not in layers and not layers_status()["hillshade"]["present"]:
             raise BadRequest("The very sharp area goes on top of the hillshade. Tick Hillshade as well.")
         options["detail"] = {"lon": round(lon, 5), "lat": round(lat, 5), "km": km}
+        w, s, e, n = detail_bbox(options["detail"])
+        area = (e - w) * (n - s) * 111.32 ** 2 * math.cos(math.radians((s + n) / 2))
+        if area > DETAIL_MAX_KM2 * 1.01:
+            raise BadRequest(f"The very sharp area is {area:,.0f} km²; the most this device allows is {DETAIL_MAX_KM2:,} km².")
         layers = [k for k in ORDER if k in layers or k == "detail"]
     return regions, layers, options
 
@@ -375,7 +380,8 @@ def run_job():
         ids = docker("ps", "-q", "--filter", f"label={LABEL}").stdout.split()
         if ids:
             docker("kill", *ids)
-        finish("cancelled", "The build was stopped. The maps on this device were not changed.")
+        finish("cancelled", "The build was stopped. The maps on this device were not changed. "
+                            "The parts that were finished are kept: start the same build again to carry on.")
 
     def finish(state, message):
         job.update(state=state, message=message, finished=int(time.time()))
@@ -408,7 +414,8 @@ def run_job():
         swapped.append(True)
     else:
         finish("failed", "The build stopped with an error. The maps on this device were not changed. "
-                         "The details below say what went wrong.")
+                         "The details below say what went wrong. The parts that were finished are kept: "
+                         "once the problem is solved, start the same build again to carry on from there.")
     state = read_json(STATE, {})
     for k in request["layers"]:
         state[k] = {"regions": request["regions"], "names": request["names"], "built": int(time.time()),

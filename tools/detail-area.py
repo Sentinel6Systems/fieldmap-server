@@ -59,7 +59,9 @@ def find(a):
     if not (-180 <= w < e <= 180 and -90 <= s < n <= 90):
         sys.exit("Error: the detail area must be min-lon min-lat max-lon max-lat, and not across the 180° line.")
     area = km2(w, s, e, n)
-    if area > a.max_km2:
+    # 1 % of room: a square of exactly the limit (50 x 50 km for 2500 km²) comes out a
+    # little larger once its corners are rounded to degrees.
+    if area > a.max_km2 * 1.01:
         sys.exit(f"Error: the detail area is {area:,.0f} km²; the most is {a.max_km2:,.0f} km² "
                  f"(about {math.sqrt(a.max_km2):.0f} x {math.sqrt(a.max_km2):.0f} km). At 1 m, every 100 km² is a download "
                  "of up to 500 MB and thousands of tiles. Set DETAIL_MAX_KM2 to allow more.")
