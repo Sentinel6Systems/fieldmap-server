@@ -67,7 +67,7 @@ If you would rather click than write a region file, start the map builder and op
 
 ```bash
 ./scripts/admin.sh
-#   Map builder: http://<this device's address>:8090/
+#   Map builder: http://<this device's address>:8730/
 #   PIN: ......
 ```
 
@@ -95,7 +95,7 @@ What a build from the page does (`tools/admin-server.py`):
 
 The page asks for a PIN, printed when `admin.sh` starts and kept in `data/admin/pin`, because whoever can open it
 can replace the maps and fill the disk. `ADMIN_PIN=<your own>` sets one, `ADMIN_PIN=off` turns it off (only on a
-network you trust), `ADMIN_HOST=127.0.0.1` keeps the page to the device itself, `ADMIN_PORT` moves it from 8090.
+network you trust), `ADMIN_HOST=127.0.0.1` keeps the page to the device itself, `ADMIN_PORT` moves it from 8730.
 It runs on the device itself with Python's standard library, not in a container, because it starts the build
 scripts. `systemd/fieldmap-admin.service` keeps it running across reboots. The page needs no internet to open; the
 builds do.
@@ -206,8 +206,8 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
   and text size fixed at its value for that scale (at 40°N). The print tool uses the band nearest the sheet's
   scale when the server has it, so a 1:24,000 sheet has the same line weights at any latitude; the screen map keeps
   the zoom-based `topo-usgs`. The band styles are listed with `serve_rendered: false` (no raster rendering).
-- Development: `cd print && npm install && npm run build`; `npm run serve` serves `dist/` on :8090
-  (`http://localhost:8090/?tiles=http://localhost:8080`).
+- Development: `cd print && npm install && npm run build`; `npm run serve` serves `dist/` on :8731
+  (`http://localhost:8731/?tiles=http://localhost:8080`).
 
 ### Terrain analysis: viewshed and radio coverage
 

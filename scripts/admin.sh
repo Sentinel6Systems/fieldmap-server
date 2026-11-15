@@ -6,10 +6,10 @@
 # Usage:
 #   ./scripts/admin.sh
 #
-# Then open http://<this device's address>:8090/ in a browser and enter the PIN this
+# Then open http://<this device's address>:8730/ in a browser and enter the PIN this
 # script prints. Stop it with Ctrl-C; a build that is running carries on.
 #
-# ADMIN_PORT   port to listen on (default 8090)
+# ADMIN_PORT   port to listen on (default 8730)
 # ADMIN_HOST   address to listen on (default 0.0.0.0: every network the device is on;
 #              127.0.0.1 for this device only)
 # ADMIN_PIN    a PIN of your own, or "off" for none (only on a network you trust: whoever

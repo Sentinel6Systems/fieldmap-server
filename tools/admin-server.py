@@ -551,7 +551,7 @@ LOCK = threading.Lock()
 
 
 def serve():
-    host, port = os.environ.get("ADMIN_HOST", "0.0.0.0"), int(os.environ.get("ADMIN_PORT") or os.environ.get("PORT") or 8090)
+    host, port = os.environ.get("ADMIN_HOST", "0.0.0.0"), int(os.environ.get("ADMIN_PORT") or os.environ.get("PORT") or 8730)
     code = pin()
     server = ThreadingHTTPServer((host, port), Handler)
     print(f"Map builder: http://<this device's address>:{port}/", flush=True)

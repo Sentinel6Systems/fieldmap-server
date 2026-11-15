@@ -4,7 +4,7 @@
   "description": "",
   "scripts": {
     "build": "node build.mjs",
-    "serve": "python3 -m http.server 8090 -d dist",
+    "serve": "python3 -m http.server 8731 -d dist",
     "test": "node --test test/*.test.mjs"
   },
   "keywords": [],
