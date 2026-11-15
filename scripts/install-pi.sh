@@ -88,12 +88,22 @@ command -v node >/dev/null || { echo "Node.js is not installed. IIAB installs it
 OWNER="${SUDO_USER:-$(id -un)}"
 ( cd print && sudo -u "$OWNER" npm ci --no-audit --no-fund --silent && sudo -u "$OWNER" node build.mjs )
 
+echo "== Magnetic model service"
+# tools/wmm-update.py serve: the print tool's "Update magnetic model" button. Runs as the
+# repository's owner and may write only data/wmm.
+command -v python3 >/dev/null || apt-get install -y python3
+sudo -u "$OWNER" mkdir -p data/wmm
+sed -e "s#/opt/fieldmap-server/#$REPO/#g" -e "s#^User=.*#User=$OWNER#" pi/systemd/fieldmap-wmm.service > /etc/systemd/system/fieldmap-wmm.service
+systemctl daemon-reload
+systemctl enable -q fieldmap-wmm.service
+systemctl restart fieldmap-wmm.service
+
 echo "== nginx"
 # Older versions served the map printer at /print/; drop that file (only if it is ours) so /print/ is free for CUPS.
 if [ -f /etc/nginx/conf.d/print-nginx.conf ] && grep -q 'fieldmap-server' /etc/nginx/conf.d/print-nginx.conf; then
   rm /etc/nginx/conf.d/print-nginx.conf
 fi
-sed "s#/opt/fieldmap-server/print/dist/#$REPO/print/dist/#" pi/nginx/mapprinter-nginx.conf > /etc/nginx/conf.d/mapprinter-nginx.conf
+sed "s#/opt/fieldmap-server/#$REPO/#" pi/nginx/mapprinter-nginx.conf > /etc/nginx/conf.d/mapprinter-nginx.conf
 install -m 644 pi/nginx/maps-nginx.conf /etc/nginx/conf.d/maps-nginx.conf
 nginx -t && systemctl reload nginx
 

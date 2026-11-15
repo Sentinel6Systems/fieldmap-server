@@ -26,5 +26,22 @@ services:
     restart: unless-stopped
     depends_on:
       - tileserver
+      - wmm
     ports:
       - "${WEB_PORT:-80}:80"
+    volumes:
+      - ./data/wmm:/usr/share/nginx/wmm:ro
+
+  # Downloads a newer World Magnetic Model when the print tool's "Update magnetic model"
+  # button asks for one (tools/wmm-update.py). Reached only through the web container.
+  wmm:
+    image: ${WMM_IMAGE:-python:3.12-alpine}
+    container_name: fieldmap-wmm
+    restart: unless-stopped
+    volumes:
+      - ./tools:/app/tools:ro
+      - ./data/wmm:/app/data/wmm
+    environment:
+      WMM_HOST: 0.0.0.0
+      WMM_DIR: /app/data/wmm
+    command: python3 /app/tools/wmm-update.py serve

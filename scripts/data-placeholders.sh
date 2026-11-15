@@ -9,7 +9,7 @@
 # Usage: ./scripts/data-placeholders.sh
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-mkdir -p "$REPO_DIR/data"
+mkdir -p "$REPO_DIR/data/wmm"   # data/wmm: the magnetic model from tools/wmm-update.py
 
 # Arguments: NAME BUILDER (pbf LAYER ... | raster FORMAT ENCODING)
 placeholder() {

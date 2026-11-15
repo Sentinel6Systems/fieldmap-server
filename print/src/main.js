@@ -10,6 +10,7 @@ import { PALETTE, swatchRow } from "./palette.js";
 import { UNITS, defaultUnit, unitMetres, shapeRing, shapeCenter, shapeSummary, shapeLegs, shapeInsideText, fmtLength, SHAPE_NAMES } from "./shapes.js";
 import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groupsOf } from "./layers.js";
 import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
+import { initWmmNotice } from "./wmm.js";
 
 const qs = new URLSearchParams(location.search);
 
@@ -242,6 +243,9 @@ map.on("load", () => {
   map.on("mouseup", onUp); map.on("touchend", onUp);
 });
 
+
+// Magnetic model: load a newer one from the server if it has one; warn before it runs out.
+initWmmNotice($("wmm-notice"));
 
 // Terrain analysis (viewshed, radio): only when the tile server has elevation tiles.
 let terrain = null;

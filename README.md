@@ -8,10 +8,11 @@ that prints exact-scale map sheets and atlases. One `docker compose up` on any L
 - **Build scripts** that make the data from public sources: OpenStreetMap extracts (Geofabrik or a mirror) via Planetiler,
   contours, hillshade and elevation tiles from Copernicus GLO-30 elevation data. Build once; nothing needs the internet afterwards.
 - **The print tool** at `/mapprinter/`: Letter, Legal, Tabloid, Super B or Arch C sheets at 1:12k–1:100k, with an MGRS/USNG
-  1 km grid, a true-angle declination diagram (WMM2025, computed offline), scale bars, markers and arrows with range and
+  1 km grid, a true-angle declination diagram (World Magnetic Model, computed offline), scale bars, markers and arrows with range and
   true/grid/magnetic bearing, an optional list page, and **atlas mode**: 2×2 to 8×8 overlapping pages with a cover,
   an index page and neighbour tabs, ready for a binder; and **terrain analysis** (viewshed and VHF/UHF radio coverage)
-  when the elevation tiles are built. Everything renders in the browser; the server only serves files.
+  when the elevation tiles are built. Everything renders in the browser; the server serves files, plus a small
+  service that downloads a new magnetic model when you ask it to.
 
 It runs on a laptop, a home server, or a Raspberry Pi 4 behind Internet-in-a-Box (see `pi/`). It was built for an
 emergency box that people reach over its own Wi-Fi with no internet connection, so there are no CDN calls, no web
@@ -78,7 +79,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 
 | Path | What it is |
 |---|---|
-| `docker-compose.yml`, `.env.example` | The two services: `tileserver` and `web` (print tool + proxy) |
+| `docker-compose.yml`, `.env.example` | The services: `tileserver`, `web` (print tool + proxy) and `wmm` (magnetic model updates) |
 | `config.json`, `config-basic.json` | TileServer GL configs: all six styles and the `topo-usgs` scale bands, or `osm`+`overlay` with only a base map |
 | `styles/`, `fonts/`, `sprites/` | The styles and every asset they need, all local |
 | `planetiler/` | Custom Planetiler schema for the extras layers |
@@ -123,8 +124,8 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
   1/100 inch on paper, so print zooms are 1:12k ≈ z14.2, 1:24k/25k ≈ z13.2, 1:50k ≈ z12.2, 1:100k ≈ z11.2.
 - MGRS/USNG grid of the sheet's UTM zone, 1 km lines with blue principal digits in the margin, 100 m ticks at 1:12k,
   10 km lines bold at 1:100k, extended across a zone boundary when a sheet straddles one.
-- Declination from the World Magnetic Model (bundled coefficients, no network): TN, GN and MN drawn at true angles,
-  the G-M angle, and which way magnetic north moves each year.
+- Declination from the World Magnetic Model for the print date (no network needed): TN, GN and MN drawn at true
+  angles, the G-M angle, and which way magnetic north moves each year. See "Magnetic model updates" below.
 - Markers (12-colour palette, draggable) and arrows (tap start, tap end, drag the ends) labelled with name, range and
   true/magnetic bearing; grid bearing in the side panel. Optional list page with MGRS, lat/lon and bearings.
 - Shapes: circles (tap the centre, tap the edge, then type an exact radius), rectangles (two opposite corners) and
@@ -223,6 +224,35 @@ interpolate differently. Built from the tiles instead of the source, the agreeme
 repeat it: `tools/viewshed-compare.py` (in the tool container) and `print/test/compare-viewshed.mjs`. A radio profile
 across a ridge checked by hand from the source elevation data: diffraction loss 10.5 dB by hand, 10.4 dB in the tool
 (the difference is the tiles' 30 m resampling).
+
+### Magnetic model updates
+
+The print tool has the World Magnetic Model built in (WMM-2025, valid to November 2029) and works out declination
+for the day you print, so the angles move with time on their own. A model is published every five years. From
+180 days before the model in use runs out, a notice at the top of the panel says so, with an **Update magnetic
+model** button. The button asks the server's update service (`tools/wmm-update.py serve`; the `wmm` container, or
+`fieldmap-wmm.service` on the Pi) to download a newer model. It tries these sources in order:
+
+1. NOAA NCEI, the publisher: the coefficient file and NOAA's official test values
+2. PyPI, the `pygeomag` package: a copy of NOAA's coefficient file
+3. npm, the `geomagnetism` package: the coefficients as JSON
+
+A downloaded model must pass NOAA's test values (when the download has them) and agree with the model it replaces,
+then it is written to `data/wmm/wmm.json`, which the print tool loads at start-up. No rebuild is needed. If NOAA
+answers with nothing newer, nothing changes. Without Internet, or when no source answers, the model you have stays
+in use, even past its end date: declination is then carried forward at the model's last rate of change, and the
+sheet's collar says the model has expired.
+
+From the command line on the server (Docker: `docker exec fieldmap-wmm python3 /app/tools/wmm-update.py update`):
+
+```bash
+python3 tools/wmm-update.py status      # model in use, its dates, the last check
+python3 tools/wmm-update.py update      # download a newer model if there is one
+```
+
+The service has no settings and answers only `GET /status` and `POST /update` (behind nginx at
+`/mapprinter/wmm-api/`). It is meant for a private network; put the server behind your own access control if
+others can reach it.
 
 ### Contour interval
 
@@ -560,6 +590,8 @@ See [systemd/README.md](systemd/README.md).
 - Print styles: `topo-usgs` (USGS-quadrangle look, generated by `tools/make-topo-usgs.py`) with print-scale bands,
   English-only labels in both print styles, and a Map style menu in the print tool.
 - Print tool: circles with an exact radius, rectangles and polygons, with imperial or metric units.
+- Magnetic model updates: a notice before the model runs out, an update button, and `tools/wmm-update.py` with
+  NOAA plus two mirrors; the model now loads from `data/wmm/` without a rebuild.
 - Print tool: Layers panel (group switches, black-and-white ink, hillshade and contour controls, grid lines),
   credit line built from the data sets in use; moved from `/print/` to `/mapprinter/`.
 - Extra data: `build-extras.sh`, part of the default build (OSM power, pipelines, barriers, towers, landmarks, large buildings, exits,
@@ -587,6 +619,7 @@ See [systemd/README.md](systemd/README.md).
   Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved.
 - Optional US layers (public domain, US federal government): FAA Digital Obstacle File, USGS GNIS, NOAA National
   Geodetic Survey, USGS PAD-US, FEMA National Flood Hazard Layer
+- World Magnetic Model: NOAA NCEI and the British Geological Survey for the US NGA and UK DGC (public domain)
 - Fonts for the print styles: Roboto Condensed and Atkinson Hyperlegible Mono (SIL Open Font License)
 - Fonts: [Open Sans](https://fonts.google.com/specimen/Open+Sans) (Apache License 2.0)
 - Server: [TileServer GL](https://github.com/maptiler/tileserver-gl) (BSD)

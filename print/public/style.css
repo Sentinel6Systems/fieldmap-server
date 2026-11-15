@@ -45,6 +45,9 @@ select, input[type=text] {
 #mode-hint:empty { display: none; }
 .warning { font-size: 12px; line-height: 1.3; color: #ffd166; background: #3a2f12; border: 1px solid #6b5a1e; border-radius: 8px; padding: 6px 8px; }
 .warning:empty { display: none; }
+.wmm-notice { display: flex; flex-direction: column; gap: 6px; }
+.wmm-notice[hidden], .wmm-notice [hidden] { display: none; }
+.wmm-result:empty, .wmm-text:empty { display: none; }
 #mode-hint { color: var(--accent); font-weight: 600; }
 
 button {

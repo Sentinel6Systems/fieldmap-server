@@ -1330,5 +1330,7 @@ function drawDeclination(ctx, x, y, dpi, d, blockHin) {
   ctx.font = `${px(0.075)}px ${FAM}`; ctx.fillStyle = INK;
   ctx.fillText(`MN moves ${ch}° ${dirWord(d.annualChange).toUpperCase()} each year (declination ${Math.sign(d.annualChange) === Math.sign(d.declination) ? "increasing" : "decreasing"}).`, tx, ty); ty += px(0.1);
   ctx.font = `${px(0.065)}px ${FAM}`; ctx.fillStyle = "#555";
-  ctx.fillText(`${d.model}${d.validThrough ? ` valid to ${d.validThrough}` : ""} · angles drawn true · local anomalies not modelled`, tx, ty);
+  // An expired model is carried forward at its last rate of change; say so in place of "angles drawn true" to keep the line short.
+  const valid = d.expired ? ` expired ${d.validThrough} · extrapolated` : `${d.validThrough ? ` valid to ${d.validThrough}` : ""} · angles drawn true`;
+  ctx.fillText(`${d.model}${valid} · local anomalies not modelled`, tx, ty);
 }

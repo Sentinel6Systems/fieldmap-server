@@ -40,6 +40,9 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
 4. **Print tool.** `cd print && npm ci && node build.mjs` on the Pi; nginx serves `print/dist` from the clone.
    (`scripts/deploy-print-pi.sh <user>@<pi-host> <repo-dir>` does the same build on a workstation and rsyncs the
    result, handy while developing.) Open `http://<pi-host>/mapprinter/`. `/print/` is left free, for example for CUPS.
+5. **Magnetic model service.** `systemd/fieldmap-wmm.service` runs `tools/wmm-update.py serve` on `127.0.0.1:8091`
+   as the repository's owner, allowed to write only `data/wmm/`; nginx passes `/mapprinter/wmm-api/` to it. It backs
+   the print tool's "Update magnetic model" button (see "Magnetic model updates" in the main README).
 
 ## Notes
 
