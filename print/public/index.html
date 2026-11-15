@@ -75,7 +75,7 @@
   <section class="features">
     <div class="section-head">
       <h2>Markers, arrows &amp; shapes</h2>
-      <button id="clear-all" class="secondary danger compact" title="Remove all markers and arrows">Remove all</button>
+      <button id="clear-all" class="secondary danger compact" title="Remove all markers, arrows and shapes">Remove all</button>
     </div>
     <label class="inline">Units
       <select id="units">
@@ -106,6 +106,12 @@
       <input id="shape-measure" type="checkbox">
       <span>Show measurements on the map: side lengths, circle radius, area</span>
     </label>
+    <div class="row2 file-buttons">
+      <button id="save-drawings" class="secondary" title="Save the markers, arrows and shapes to a file on this device">Save to a file</button>
+      <button id="load-drawings" class="secondary" title="Add the markers, arrows and shapes from a saved file to the map">Load from a file</button>
+    </div>
+    <input id="load-file" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
+    <div id="file-hint" class="hint">They are kept in this browser only. Save them to a file to keep them safe, or to open them on another device. Loading a file adds its items to the ones already on the map.</div>
   </section>
 
   <label class="check">

@@ -7,6 +7,7 @@ import { zoomForScale, viewportBounds, inverse, destination, fmtDistance, fmtBea
 import { toMGRS } from "./utm.js";
 import { arrowInfo as arrowInfoFor } from "./features.js";
 import { PALETTE, swatchRow } from "./palette.js";
+import { toGeoJSON, fromGeoJSON, fileName } from "./drawings.js";
 import { UNITS, defaultUnit, unitMetres, shapeRing, shapeCenter, shapeSummary, shapeLegs, shapeInsideText, fmtLength, SHAPE_NAMES } from "./shapes.js";
 import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groupsOf } from "./layers.js";
 import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
@@ -638,6 +639,59 @@ $("clear-all").onclick = () => {
     markers = []; arrows = []; shapes = []; saveMarkers(); saveArrows(); saveShapes();
   }
 };
+// Save to a file, and load one: GeoJSON (src/drawings.js).
+$("save-drawings").onclick = () => {
+  if (!markers.length && !arrows.length && !shapes.length) { fileHint("There is nothing to save yet: add a marker, arrow or shape first."); return; }
+  const data = toGeoJSON(markers, arrows, shapes, { title: state.title || "", saved: new Date().toISOString() });
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/geo+json" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: fileName(state.title) });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  fileHint(`Saved ${countText(markers.length, arrows.length, shapes.length)} as ${a.download}.`);
+};
+$("load-drawings").onclick = () => $("load-file").click();
+$("load-file").onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";                 // the same file can be chosen again
+  if (!file) return;
+  let got;
+  try {
+    if (file.size > 20 * 1024 * 1024) throw new Error("This file is too large to be a drawing file (over 20 MB).");
+    got = fromGeoJSON(await file.text(), state.color);
+  } catch (err) { fileHint(err.message, true); return; }
+  const total = got.markers.length + got.arrows.length + got.shapes.length;
+  if (!total) { fileHint(`Nothing in ${file.name} could be loaded${got.skipped ? ` (${got.skipped} item${got.skipped === 1 ? "" : "s"} of a kind this tool does not draw)` : ""}.`, true); return; }
+  for (const m of got.markers) markers.push({ ...m, id: uid() });
+  for (const a of got.arrows) arrows.push({ ...a, id: uid() });
+  for (const s of got.shapes) {
+    const sh = { ...s, id: uid() };
+    if (sh.type === "circle" && !sh.unit) sh.unit = defaultUnit(sh.radius, state.units);
+    if (sh.unit === undefined) delete sh.unit;
+    shapes.push(sh);
+  }
+  saveMarkers(); saveArrows(); saveShapes();
+  // Show what was loaded.
+  const pts = [...got.markers, ...got.arrows.flatMap((a) => [a.a, a.b]),
+    ...got.shapes.flatMap((s) => shapeRing(s).map(([lng, lat]) => ({ lng, lat })))];
+  const lngs = pts.map((p) => p.lng), lats = pts.map((p) => p.lat);
+  map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 80, maxZoom: 15, duration: 0 });
+  fileHint(`Loaded ${countText(got.markers.length, got.arrows.length, got.shapes.length)} from ${file.name}` +
+    (got.skipped ? `. ${got.skipped} item${got.skipped === 1 ? " was" : "s were"} left out: this tool draws points, two-point lines and areas only.` : "."));
+};
+function countText(m, a, s) {
+  const part = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
+  return [m && part(m, "marker"), a && part(a, "arrow"), s && part(s, "shape")].filter(Boolean).join(", ");
+}
+const FILE_HINT = $("file-hint").textContent;
+function fileHint(text, error = false) {
+  const el = $("file-hint");
+  el.textContent = text;
+  el.classList.toggle("error", error);
+  clearTimeout(fileHint.timer);
+  fileHint.timer = setTimeout(() => { el.textContent = FILE_HINT; el.classList.remove("error"); }, 12000);
+}
 $("units").onchange = (e) => { state.units = e.target.value; saveSettings(); saveShapes(); if (terrain) terrain.refresh(); };
 $("shape-measure").onchange = (e) => { state.shapeMeasure = e.target.checked; saveSettings(); saveShapes(); };
 document.addEventListener("keydown", (e) => {

@@ -42,6 +42,7 @@ select, input[type=text] {
 .info dt { color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: .04em; align-self: center; }
 .info dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .hint { font-size: 11px; color: var(--muted); line-height: 1.3; }
+.hint.error { color: var(--danger); font-weight: 600; }
 #mode-hint:empty { display: none; }
 .warning { font-size: 12px; line-height: 1.3; color: #ffd166; background: #3a2f12; border: 1px solid #6b5a1e; border-radius: 8px; padding: 6px 8px; }
 .warning:empty { display: none; }

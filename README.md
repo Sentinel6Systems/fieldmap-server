@@ -194,6 +194,12 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
   follows the printed part of the outline, and a rectangle uses its north or west side when the south or east side
   is off the sheet. A Units menu switches between imperial
   (ft, mi, acres) and metric (m, km, ha); the circle's radius can be typed in either unit of the chosen system.
+- Save to a file / Load from a file: markers, arrows and shapes are kept in the browser only, so the panel saves them
+  to a GeoJSON file (`<title>-<date>.geojson`) and loads one again, on this device or another. Loading adds the
+  items to those on the map. The file keeps everything exactly (a circle's centre and radius, a rectangle's corners,
+  names and colours) and is plain GeoJSON for other map software too; files from such software load as well: points
+  as markers, two-point lines as arrows, polygons as polygon shapes (anything else is left out, and the panel says
+  how much). See `print/src/drawings.js`.
 - Atlas mode: 2×2, 3×3, 4×4, 6×6 or 8×8 pages with 1 cm overlap, rows A… from the north and columns 1… from the west.
   A cover page built from the map data (places, peaks, lakes, rivers inside the atlas, a locator map), an index page
   with the page grid, neighbour tabs on every page, optional binder margin. Rendering is sequential with progress and
@@ -788,6 +794,9 @@ See [systemd/README.md](systemd/README.md).
 ## Changelog
 
 ### Since v1.0.0
+
+- Print tool: save the markers, arrows and shapes to a GeoJSON file and load them again (also from other map
+  software).
 
 - Terrain builds follow the region's Geofabrik outlines instead of its box (no neighbouring countries), skip
   known open-sea cells, handle the 180° line, print size and time estimates first, and write hillshade as lossy
