@@ -82,7 +82,7 @@ asks whether you want all of it or to choose among its parts, so several US stat
 are a few taps. You choose the regions, tick the layers to build (base map, contour lines,
 hillshade, elevation, extras, and the US government data for regions in the United States), choose how detailed
 the terrain is (standard; the 10 m USGS data in the United States; or that plus one small area of 1 m hillshade
-that you place on the map, 10 to 50 km across), and the page shows how
+that you place on the map, 10 to 100 km across), and the page shows how
 much disk space and time the build needs next to what the device has free. It will not start a build that does not
 fit. One button then starts the build; the page shows its progress and can be closed meanwhile.
 
@@ -414,11 +414,12 @@ of the 10 m layer, so it is built for one small area only:
 or `DETAIL_BBOX="<min-lon> <min-lat> <max-lon> <max-lat>"` in a region file, which makes `build-region.sh` run it
 as its `detail` step after the hillshade.
 
-- The area is limited to 2,500 km² (about 50 × 50 km); `DETAIL_MAX_KM2` moves the limit. Each 10 × 10 km of it is
-  a download of up to 500 MB, kept in `data/cache/dem-usgs1m`, and about 3,000 tiles (17 MB as lossy WebP on the
-  test area, 103 km²).
-- The script asks The National Map for the 1 m tiles that touch the area, takes the newest survey where several
-  overlap, and shades them the same way as the rest (`tools/detail-area.py`, `tools/hillshade-raster.py`). Where
+- The area is limited to 10,000 km² (100 × 100 km); `DETAIL_MAX_KM2` moves the limit. Each 10 × 10 km of it is a
+  download of 0.3 to 1.5 GB (1 GB and 4 GB on the two test areas of about 100 km² each: more where several surveys
+  overlap), kept in `data/cache/dem-usgs1m`, and about 3,000 tiles (10 to 17 MB as lossy WebP on the test areas).
+  A 100 × 100 km area is therefore 30 to 150 GB of downloads and a few hours of work.
+- The script asks The National Map for the 1 m tiles that touch the area, every survey's, lays them on top of each
+  other with the newest on top (a survey's tile holds only what it flew), and shades them the same way as the rest (`tools/detail-area.py`, `tools/hillshade-raster.py`). Where
   no 1 m survey has been published, the area keeps the hillshade it had.
 - The result is a tile set of its own, `data/hillshade-detail.mbtiles`: the zooms above the hillshade's own, up to
   `DETAIL_MAXZOOM` (default 17), inside the area only. The topo styles draw it over the hillshade. (It cannot be
@@ -595,7 +596,7 @@ country on top of the world layer; its comments list sizes). A region file sets 
 | `CONTOUR_UNITS` | `ft` or `m` (default `ft`) |
 | `HILLSHADE_FORMAT` | `webp` (default, lossy), `webp-lossless` or `png` |
 | `DEM_SOURCE` | Elevation data for contours, hillshade and elevation: `copernicus` (default, 30 m, the surface) or `usgs` (10 m, bare ground, United States; see "Higher-resolution elevation") |
-| `DETAIL_BBOX` | A small area (at most 2,500 km²) of 1 m hillshade from USGS lidar: `min-lon min-lat max-lon max-lat` (see "A small area of 1 m hillshade") |
+| `DETAIL_BBOX` | A small area (at most 10,000 km²) of 1 m hillshade from USGS lidar: `min-lon min-lat max-lon max-lat` (see "A small area of 1 m hillshade") |
 | `HILLSHADE_MAXZOOM` | Highest zoom of `hillshade.mbtiles` (default 12; 14 with `DEM_SOURCE="usgs"`) |
 | `ELEVATION_MAXZOOM` | Highest zoom of `elevation.mbtiles`: 12 (default, about 30 m) or 11 (about 60 m, a quarter of the size); 13 by default with `DEM_SOURCE="usgs"` |
 | `PLANETILER_MEMORY` | Java heap for Planetiler (default `8g`) |

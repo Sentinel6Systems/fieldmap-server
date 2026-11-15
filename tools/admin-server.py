@@ -64,7 +64,7 @@ LAYERS = {"basemap": ("vector", "basemap.mbtiles"), "contours": ("contours", "co
           "elevation": ("elevation", "elevation.mbtiles"),
           "extras": ("extras", "extras.mbtiles"), "usdata": ("usdata", "usdata.mbtiles")}
 ORDER = ["basemap", "contours", "hillshade", "detail", "elevation", "extras", "usdata"]
-DETAIL_KM = (10, 20, 30, 50)        # sides of the 1 m area the page offers; build-detail.sh allows 2500 km2
+DETAIL_KM = (10, 20, 30, 50, 100)   # sides of the 1 m area the page offers; build-detail.sh allows 10000 km2
 LANGUAGES = ["en", "zh", "hi", "es", "ar", "fr", "bn", "pt", "ru", "id"]
 US_STATES = ("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY "
              "NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY")
@@ -200,7 +200,8 @@ def estimate(regions, layers, options):
             (land - us_land + us_land * 16) / 1000 * 0.5 * slow / 3600)
     if "detail" in layers:
         # 10 km tiles of up to 500 MB (they are kept), often from two or three overlapping
-        # surveys; the hillshade raster and the finished tiles as measured on a test area.
+        # surveys; the hillshade raster and the finished tiles as measured on two test areas
+        # (100 km2: 1 and 4 GB of downloads, under 2 minutes).
         km = options["detail"]["km"]
         add("detail", "Very sharp terrain area", (km // 10 + 1) ** 2 * 1.0 + km * km * 0.0002,
             km * km * 0.0015, 0.05 + km * km / 2500 * slow)

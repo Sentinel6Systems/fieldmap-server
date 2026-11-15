@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Helper for scripts/build-detail.sh: a small area of 1 m hillshade from USGS lidar.
 
-    detail-area.py find --bbox W S E N --out DIR [--max-km2 2500] [--zoom 17]
+    detail-area.py find --bbox W S E N --out DIR [--max-km2 10000] [--zoom 17]
 
 Checks the size of the box, asks The National Map (https://tnmaccess.nationalmap.gov) for the
 USGS 3DEP 1 m elevation tiles that touch it, and writes in DIR
@@ -93,7 +93,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("find")
     f.add_argument("--out", required=True)
-    f.add_argument("--max-km2", type=float, default=2500)
+    f.add_argument("--max-km2", type=float, default=10000)
     f.add_argument("--zoom", type=int, default=17)
     f.add_argument("--bbox", nargs=4, type=float, required=True)
     find(ap.parse_args())

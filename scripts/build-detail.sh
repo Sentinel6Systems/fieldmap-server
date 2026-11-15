@@ -6,8 +6,9 @@
 # Usage:
 #   ./scripts/build-detail.sh <min-lon> <min-lat> <max-lon> <max-lat>
 #
-# The area is limited to DETAIL_MAX_KM2 (default 2500 km², about 50 x 50 km): at 1 m,
-# every 100 km² is a download of up to 500 MB and about 3,000 tiles. A region file sets
+# The area is limited to DETAIL_MAX_KM2 (default 10000 km², 100 x 100 km): at 1 m, every
+# 100 km² is a download of 0.3 to 1.5 GB (more where several surveys overlap) and about
+# 3,000 tiles, and 100 x 100 km takes some hours. A region file sets
 # the area as DETAIL_BBOX and build-region.sh then runs this script as its "detail" step.
 #
 # The tiles are a layer of their own, drawn over the hillshade: zooms above the
@@ -27,7 +28,7 @@ if [ $# -ne 4 ]; then
     echo "Usage: $0 <min-lon> <min-lat> <max-lon> <max-lat>" >&2
     exit 1
 fi
-export DETAIL_MAX_KM2="${DETAIL_MAX_KM2:-2500}" DETAIL_MAXZOOM="${DETAIL_MAXZOOM:-17}"
+export DETAIL_MAX_KM2="${DETAIL_MAX_KM2:-10000}" DETAIL_MAXZOOM="${DETAIL_MAXZOOM:-17}"
 export HILLSHADE_FORMAT="${HILLSHADE_FORMAT:-webp}"
 
 reexec_in_tools "$@"
