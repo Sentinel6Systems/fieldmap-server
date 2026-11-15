@@ -45,7 +45,7 @@ OSM_GB="$(du -BG "$REPO_DIR/data/sources/$OSM" | cut -f1 | tr -dc '0-9')"
 require_free_space "$REPO_DIR/data" "$(( OSM_GB * 3 + 2 ))" "the extras build"
 
 echo "Planetiler: build data/extras.mbtiles from $OSM (Java heap $MEMORY)"
-docker run --rm \
+docker run --rm --label "$BUILD_LABEL" \
     --user "$(id -u):$(id -g)" \
     -e JAVA_TOOL_OPTIONS="-Xmx$MEMORY" \
     -v "$REPO_DIR/data":/data \
@@ -58,7 +58,7 @@ docker run --rm \
     --output=/data/extras.tmp.mbtiles \
     --force \
     "${BOUNDS[@]}"
-mv "$REPO_DIR/data/extras.tmp.mbtiles" "$REPO_DIR/data/extras.mbtiles"
+mv "$REPO_DIR/data/extras.tmp.mbtiles" "$OUT_DIR/extras.mbtiles"
 rm -f "$REPO_DIR/data/extras.tmp.mbtiles.layerstats.tsv.gz"
-echo "Done. Output: $REPO_DIR/data/extras.mbtiles ($(du -h "$REPO_DIR/data/extras.mbtiles" | cut -f1))"
+echo "Done. Output: $OUT_DIR/extras.mbtiles ($(du -h "$OUT_DIR/extras.mbtiles" | cut -f1))"
 echo "Restart the tile server to load it: docker restart tileserver"

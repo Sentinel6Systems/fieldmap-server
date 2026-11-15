@@ -20,6 +20,10 @@
     "hillshade": {
       "type": "raster",
       "url": "mbtiles://hillshade"
+    },
+    "hillshade-detail": {
+      "type": "raster",
+      "url": "mbtiles://hillshade-detail"
     }
   },
   "sprite": "/sprites/topo",
@@ -474,6 +478,21 @@
       "id": "hillshade",
       "type": "raster",
       "source": "hillshade",
+      "minzoom": 5,
+      "maxzoom": 20,
+      "paint": {
+        "raster-opacity": 0.1,
+        "raster-brightness-min": 0,
+        "raster-brightness-max": 1.0,
+        "raster-saturation": 0,
+        "raster-contrast": 0.7,
+        "raster-resampling": "linear"
+      }
+    },
+    {
+      "id": "hillshade-detail",
+      "type": "raster",
+      "source": "hillshade-detail",
       "minzoom": 5,
       "maxzoom": 20,
       "paint": {

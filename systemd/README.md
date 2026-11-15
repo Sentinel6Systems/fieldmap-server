@@ -29,3 +29,15 @@ sudo systemctl status tileserver
 sudo journalctl -u tileserver -f
 docker logs -f tileserver
 ```
+
+## The map builder page (optional)
+
+`fieldmap-admin.service` keeps the map builder page (`scripts/admin.sh`, see the main README)
+running across reboots. Copy it to `/etc/systemd/system/`, set `WorkingDirectory`, `User` and
+the path in `ExecStart` to your clone and its owner, then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now fieldmap-admin
+cat data/admin/pin        # the PIN the page asks for
+```

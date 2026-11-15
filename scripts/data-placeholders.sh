@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Make sure the optional data files exist: data/extras.mbtiles (build-extras.sh),
-# data/usdata.mbtiles (build-usdata.sh) and data/elevation.mbtiles (build-elevation.sh).
+# data/usdata.mbtiles (build-usdata.sh), data/elevation.mbtiles (build-elevation.sh) and
+# data/hillshade-detail.mbtiles (build-detail.sh).
 # config.json lists them and the print styles read them, and TileServer GL stops at
 # start-up when a listed file is missing. A missing one is written empty: its layers are
 # then simply not drawn, and the print tool hides its Terrain section.
@@ -43,3 +44,4 @@ PY
 placeholder extras build-extras.sh pbf power pipeline barrier tower landmark building_large exit runway
 placeholder usdata build-usdata.sh pbf obstacle gnis survey_mark protected flood
 placeholder elevation build-elevation.sh raster webp mapbox
+placeholder hillshade-detail build-detail.sh raster webp ""

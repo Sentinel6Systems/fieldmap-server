@@ -31,6 +31,10 @@
       "type": "raster",
       "url": "mbtiles://hillshade"
     },
+    "hillshade-detail": {
+      "type": "raster",
+      "url": "mbtiles://hillshade-detail"
+    },
     "extras": {
       "type": "vector",
       "url": "mbtiles://extras"
@@ -60,6 +64,24 @@
         "fieldmap:group": "hillshade"
       },
       "source": "hillshade",
+      "minzoom": 5,
+      "maxzoom": 18,
+      "paint": {
+        "raster-opacity": 0.55,
+        "raster-brightness-min": 0.15,
+        "raster-brightness-max": 0.85,
+        "raster-saturation": 0.0,
+        "raster-contrast": 0.5,
+        "raster-resampling": "linear"
+      }
+    },
+    {
+      "id": "hillshade-detail",
+      "type": "raster",
+      "metadata": {
+        "fieldmap:group": "hillshade"
+      },
+      "source": "hillshade-detail",
       "minzoom": 5,
       "maxzoom": 18,
       "paint": {

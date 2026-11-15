@@ -1,0 +1,27 @@
+# Systemd unit for the map builder page (scripts/admin.sh). Optional.
+# It keeps the page available after a reboot. Without it, start the page by hand
+# with ./scripts/admin.sh whenever you want to build or change the maps.
+#
+# Install steps:
+# 1. Copy this file to /etc/systemd/system/fieldmap-admin.service
+# 2. Edit WorkingDirectory and User. Set them to your clone of this repository and to
+#    the user who owns it (a member of the docker group).
+# 3. Run: sudo systemctl daemon-reload
+# 4. Run: sudo systemctl enable --now fieldmap-admin
+# 5. The PIN: cat <your clone>/data/admin/pin
+
+[Unit]
+Description=fieldmap-server map builder page
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/tileserver
+User=tileserver
+ExecStart=/opt/tileserver/scripts/admin.sh
+Restart=on-failure
+# A running build is its own process: stopping the page does not stop it.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

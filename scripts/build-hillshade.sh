@@ -88,8 +88,8 @@ echo "Step 3/3: write the raster tiles (zoom $MINZOOM-$HILLSHADE_MAXZOOM, $HILLS
 python3 "$REPO_DIR/tools/hillshade-tiles.py" --outline "$WORK_DIR/outline/outline.geojson" \
     --minzoom "$MINZOOM" --maxzoom "$HILLSHADE_MAXZOOM" --format "$HILLSHADE_FORMAT" \
     --attribution "$ATTRIBUTION" \
-    "${HILLSHADES[@]}" "$REPO_DIR/data/hillshade.mbtiles"
+    "${HILLSHADES[@]}" "$OUT_DIR/hillshade.mbtiles"
 
-report_work_space "$WORK_DIR" "$REPO_DIR/data/hillshade.mbtiles"
+report_work_space "$WORK_DIR" "$OUT_DIR/hillshade.mbtiles"
 rm -rf "$WORK_DIR"
 echo "Done. Output: data/hillshade.mbtiles"

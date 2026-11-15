@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hillshade raster of one part of a region outline, computed in chunks.
 
-    python3 tools/hillshade-raster.py [--jobs N] <dem.vrt> <outline-part.geojson> <out.tif> \
+    python3 tools/hillshade-raster.py [--jobs N] <dem.vrt | @list.txt> <outline-part.geojson> <out.tif> \
         <xmin> <ymin> <xmax> <ymax> <res>
 
 build-hillshade.sh runs this once per line of <work>/outline/mosaics.txt (see
@@ -14,6 +14,10 @@ reprojected in memory with one more pixel on every side (the hillshade of a pixe
 eight neighbours), shaded, and its inner part written to the output, several chunks in
 parallel: the same pixels as shading the whole grid in one piece. So the reprojected elevation data is never written to disk, and chunks of sea or
 outside the outline are not computed or stored (the GeoTIFF is sparse there).
+
+@list.txt in place of the mosaic: a file of raster paths, one a line, in any projections
+(build-detail.sh passes the USGS 1 m tiles, which are in UTM). Each chunk then reads only the
+rasters that touch it; where several have data, the one listed last shows.
 """
 import argparse
 import math
@@ -38,6 +42,19 @@ def lonlat(x, y):
     return x / o * 180, math.degrees(math.atan(math.sinh(y / o * math.pi)))
 
 
+def mercator_bounds(path):
+    """Bounds of a raster in Web Mercator, from its corners (a little generous)."""
+    ds = gdal.Open(path)
+    gt, w, h = ds.GetGeoTransform(), ds.RasterXSize, ds.RasterYSize
+    src, dst = ds.GetSpatialRef().Clone(), osr.SpatialReference()
+    dst.ImportFromEPSG(3857)
+    for r in (src, dst):
+        r.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    tr = osr.CoordinateTransformation(src, dst)
+    pts = [tr.TransformPoint(gt[0] + px * gt[1], gt[3] + py * gt[5])[:2] for px, py in ((0, 0), (w, 0), (0, h), (w, h))]
+    return min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)
+
+
 def shade(job):
     """Hillshade of one chunk: (xoff, yoff, byte array) or None when it has no data."""
     xoff, yoff, w, h = job
@@ -49,7 +66,13 @@ def shade(job):
     x0, y1 = a.xmin + (xoff - left) * a.res, a.ymax - (yoff - top) * a.res
     bounds = (x0, y1 - (h + top + bottom) * a.res, x0 + (w + left + right) * a.res, y1)
     # errorThreshold=0: exact positions, so neighbouring chunks agree on their shared pixels.
-    dem = gdal.Warp("", a.dem, format="MEM", dstSRS="EPSG:3857", outputBounds=bounds, xRes=a.res, yRes=a.res,
+    dems = a.dem
+    if _cfg.get("rasters"):
+        dems = [p for p, (rx0, ry0, rx1, ry1) in _cfg["rasters"]
+                if rx0 < bounds[2] and rx1 > bounds[0] and ry0 < bounds[3] and ry1 > bounds[1]]
+        if not dems:
+            return None
+    dem = gdal.Warp("", dems, format="MEM", dstSRS="EPSG:3857", outputBounds=bounds, xRes=a.res, yRes=a.res,
                     resampleAlg="bilinear", cutlineDSName=a.outline, dstNodata=NODATA,
                     outputType=gdal.GDT_Float32, errorThreshold=0, multithread=False)
     if not (dem.GetRasterBand(1).ReadAsArray() > NODATA + 1).any():
@@ -69,6 +92,9 @@ def main():
     ap.add_argument("--jobs", type=int, default=tilewriter.default_jobs())
     a = ap.parse_args()
     _cfg["args"] = a
+    if a.dem.startswith("@"):
+        with open(a.dem[1:]) as f:
+            _cfg["rasters"] = [(p, mercator_bounds(p)) for p in (ln.strip() for ln in f) if p]
     xs, ys = int((a.xmax - a.xmin) / a.res + 0.5), int((a.ymax - a.ymin) / a.res + 0.5)
     _cfg.update(xs=xs, ys=ys)
     out = gdal.GetDriverByName("GTiff").Create(a.out, xs, ys, 1, gdal.GDT_Byte, options=[

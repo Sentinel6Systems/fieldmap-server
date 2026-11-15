@@ -4,6 +4,16 @@
 
 TOOLS_IMAGE="tileserver-tools"
 
+# Where the finished .mbtiles files go: data/, or data/$FIELDMAP_STAGE when a build stages
+# its files there to swap them in together at the end (build-region.sh --staged).
+# OUT_SUB is the same place relative to data/, for the containers that mount data/.
+OUT_DIR="$REPO_DIR/data${FIELDMAP_STAGE:+/$FIELDMAP_STAGE}"
+OUT_SUB="${FIELDMAP_STAGE:+$FIELDMAP_STAGE/}"
+
+# Label on every container a build starts, so that a build can be stopped from outside
+# (docker kill $(docker ps -q --filter label=fieldmap-build)).
+BUILD_LABEL="fieldmap-build"
+
 # Planetiler release used for the base map. Pinned so a new release cannot change
 # the tiles unnoticed; set PLANETILER_IMAGE to try another one.
 PLANETILER_IMAGE="${PLANETILER_IMAGE:-ghcr.io/onthegomap/planetiler:0.10.2}"
@@ -36,7 +46,7 @@ run_planetiler() {
     shift 3
     local lang=()
     [ -n "${LANGUAGE:-}" ] && lang=(--languages="$LANGUAGE")
-    docker run --rm \
+    docker run --rm --label "$BUILD_LABEL" \
         --user "$(id -u):$(id -g)" \
         -e JAVA_TOOL_OPTIONS="-Xmx$memory" \
         -v "$REPO_DIR/data":/data \
@@ -57,7 +67,7 @@ build_basemap() {
     local osm="$1" memory="$2"
     shift 2
     if [ "${WORLD:-no}" != yes ]; then
-        run_planetiler "$osm" basemap.mbtiles "$memory" "$@"
+        run_planetiler "$osm" "${OUT_SUB}basemap.mbtiles" "$memory" "$@"
         return
     fi
     local world
@@ -70,7 +80,7 @@ build_basemap() {
     fi
     run_planetiler "$osm" region-z9-14.mbtiles "$memory" --minzoom=9 "$@"
     merge_world_tiles "$REPO_DIR/data/$world" "$REPO_DIR/data/region-z9-14.mbtiles" \
-        "$REPO_DIR/data/basemap.mbtiles"
+        "$OUT_DIR/basemap.mbtiles"
     rm -f "$REPO_DIR/data/region-z9-14.mbtiles"
 }
 
@@ -382,13 +392,15 @@ reexec_in_tools() {
     docker build -q -t "$TOOLS_IMAGE" "$REPO_DIR/tools"
     # Run as the calling user so that files under data/ are not owned by
     # root. Host-side steps (curl, rm) must be able to write there too.
-    exec docker run --rm \
+    exec docker run --rm --label "$BUILD_LABEL" \
         --user "$(id -u):$(id -g)" \
         -e HOME=/tmp \
         -e IN_TOOLS=1 \
+        -e FIELDMAP_STAGE \
         -e OSM_MAX_AGE_DAYS \
         -e ELEVATION_MAXZOOM -e ELEVATION_ENCODING -e ELEVATION_FORMAT \
         -e HILLSHADE_MAXZOOM -e HILLSHADE_FORMAT -e CONTOUR_JOBS -e DEM_SOURCE \
+        -e DETAIL_MAX_KM2 -e DETAIL_MAXZOOM \
         -v "$REPO_DIR":/work \
         -w /work \
         "$TOOLS_IMAGE" \

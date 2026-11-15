@@ -4,7 +4,7 @@
 # See regions/mid-atlantic.env for an example region file.
 #
 # Usage:
-#   ./scripts/build-region.sh [--world] [--language <code>] <region-file> [step ...]
+#   ./scripts/build-region.sh [--world] [--language <code>] [--staged] <region-file> [step ...]
 #
 # Options (or set WORLD=yes / LANGUAGE=<code> in the region file; a flag wins):
 #   --world            zoom 0-8 for the whole world, the region only from zoom 9.
@@ -13,6 +13,10 @@
 #   --language <code>  keep map labels in one language only, to save space:
 #                      en zh hi es ar fr bn pt ru id (the ten most spoken).
 #                      Without it every language is kept.
+#   --staged           write the new files to data/incoming and move them into data/
+#                      together when every step has finished. Until then, and when a
+#                      step fails, the files in data/ stay as they were. (Without it
+#                      each step replaces its file as soon as it is done.)
 #
 # Steps (default: all five, in this order):
 #   vector     download and merge the OSM extracts, then run Planetiler
@@ -27,6 +31,12 @@
 #              springs and other landmarks for the print styles
 #              -> data/extras.mbtiles (build-extras.sh; reuses the merged
 #              OSM file from the vector step)
+#   detail     only when the region file sets DETAIL_BBOX: very sharp hillshade of
+#              that small area from the USGS 1 m lidar data, after the hillshade
+#              step -> data/hillshade-detail.mbtiles (build-detail.sh)
+# Only when named:
+#   usdata     US federal data for the print styles (build-usdata.sh; the region
+#              file must be inside this folder) -> data/usdata.mbtiles
 #
 # Rebuild only the contours:
 #   ./scripts/build-region.sh <region-file> contours
@@ -39,14 +49,15 @@ source "$REPO_DIR/scripts/lib.sh"
 trap 'disk_full_hint "$REPO_DIR/data"' ERR
 
 usage() {
-    echo "Usage: $0 [--world] [--language <code>] <region-file> [vector] [contours] [hillshade] [elevation] [extras]" >&2
+    echo "Usage: $0 [--world] [--language <code>] [--staged] <region-file> [vector] [contours] [hillshade] [detail] [elevation] [extras] [usdata]" >&2
     exit 1
 }
-OPT_WORLD="" OPT_LANGUAGE=""
+OPT_WORLD="" OPT_LANGUAGE="" STAGED=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --world) OPT_WORLD=yes; shift ;;
         --language) [ $# -ge 2 ] || usage; OPT_LANGUAGE="$2"; shift 2 ;;
+        --staged) STAGED=yes; shift ;;
         -*) usage ;;
         *) break ;;
     esac
@@ -96,11 +107,12 @@ AREAS_LIST="$(printf '%s ' $GEOFABRIK_AREAS)"
 
 STEPS=("$@")
 if [ ${#STEPS[@]} -eq 0 ]; then
-    STEPS=(vector contours hillshade elevation extras)
+    STEPS=(vector contours hillshade ${DETAIL_BBOX:+detail} elevation extras)
 fi
 for step in "${STEPS[@]}"; do
     case "$step" in
-        vector|contours|hillshade|elevation|extras) ;;
+        vector|contours|hillshade|elevation|extras|usdata) ;;
+        detail) : "${DETAIL_BBOX:?the detail step needs DETAIL_BBOX in $REGION_FILE}" ;;
         *) echo "Error: unknown step '$step'" >&2; exit 1 ;;
     esac
 done
@@ -140,6 +152,25 @@ run_extras() {
     PLANETILER_MEMORY="$PLANETILER_MEMORY" "$REPO_DIR/scripts/build-extras.sh" --bounds="$BBOX_CSV" "$REGION_NAME.osm.pbf"
 }
 
+run_detail() {
+    # shellcheck disable=SC2086
+    "$REPO_DIR/scripts/build-detail.sh" $DETAIL_BBOX
+}
+
+run_usdata() {
+    "$REPO_DIR/scripts/build-usdata.sh" "$REGION_FILE"
+}
+
+if [ -n "$STAGED" ]; then
+    # The build scripts read FIELDMAP_STAGE (see OUT_DIR in lib.sh).
+    export FIELDMAP_STAGE="incoming"
+    # shellcheck disable=SC2034
+    OUT_DIR="$REPO_DIR/data/$FIELDMAP_STAGE" OUT_SUB="$FIELDMAP_STAGE/"
+    rm -rf "$OUT_DIR"
+    mkdir -p "$OUT_DIR"
+    trap 'if [ -d "$OUT_DIR" ]; then rm -rf "$OUT_DIR"; echo; echo "The build did not finish: the map files in data/ were not changed."; fi' EXIT
+fi
+
 echo "Region: $REGION_NAME${LANGUAGE:+ (labels: $LANGUAGE)}$([ "$WORLD" = yes ] && echo ' (world layer for zoom 0-8)')"
 echo "Steps:  ${STEPS[*]}"
 mkdir -p "$REPO_DIR/data"
@@ -162,6 +193,15 @@ for step in "${STEPS[@]}"; do
     end=$(date +%s)
     echo "=== $step finished in $(( (end - start) / 60 )) min ==="
 done
+
+if [ -n "$STAGED" ]; then
+    echo
+    echo "Every step finished: putting the new files in place."
+    for f in "$OUT_DIR"/*.mbtiles; do
+        mv -f "$f" "$REPO_DIR/data/"
+    done
+    rmdir "$OUT_DIR"
+fi
 
 # The print styles read data/extras.mbtiles and data/usdata.mbtiles, the print tool
 # data/elevation.mbtiles; without the extras or elevation step or build-usdata.sh they

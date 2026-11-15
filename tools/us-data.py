@@ -34,7 +34,8 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORK = os.path.join(ROOT, "data", "cache", "usdata")
-OUT = os.path.join(ROOT, "data", "usdata.mbtiles")
+# FIELDMAP_STAGE: a build that swaps its files in together at the end (see scripts/lib.sh).
+OUT = os.path.join(ROOT, "data", os.environ.get("FIELDMAP_STAGE", ""), "usdata.mbtiles")
 UA = {"User-Agent": "fieldmap-server us-data build"}
 
 # Short names for the print collar: FAA Digital Obstacle File, USGS Geographic Names

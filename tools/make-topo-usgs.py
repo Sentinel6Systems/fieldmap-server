@@ -82,9 +82,12 @@ PERENNIAL = ["!=", ["get", "intermittent"], 1]
 # ------------------------------------------------------------------ ground
 
 add("paper", "background", "base", paint={"background-color": C["paper"]})
-add("hillshade", "raster", "hillshade", source="hillshade", minzoom=5, maxzoom=18,
-    paint={"raster-opacity": 0.55, "raster-brightness-min": 0.15, "raster-brightness-max": 0.85,
-           "raster-saturation": 0.0, "raster-contrast": 0.5, "raster-resampling": "linear"})
+HILLSHADE = {"raster-opacity": 0.55, "raster-brightness-min": 0.15, "raster-brightness-max": 0.85,
+             "raster-saturation": 0.0, "raster-contrast": 0.5, "raster-resampling": "linear"}
+add("hillshade", "raster", "hillshade", source="hillshade", minzoom=5, maxzoom=18, paint=HILLSHADE)
+# The optional small area of 1 m hillshade (build-detail.sh): zooms above the hillshade's own,
+# drawn over it. An empty file elsewhere.
+add("hillshade-detail", "raster", "hillshade", source="hillshade-detail", minzoom=5, maxzoom=18, paint=dict(HILLSHADE))
 
 add("built-up", "fill", "landuse", OMT, "landuse", ["match", ["get", "class"], ["residential", "suburb", "neighbourhood"], True, False],
     maxzoom=13, paint={"fill-color": C["built"], "fill-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0.8, 13, 0.0]})
@@ -537,6 +540,7 @@ style = {
         "openmaptiles": {"type": "vector", "url": "mbtiles://basemap"},
         "terrain": {"type": "vector", "url": "mbtiles://contours"},
         "hillshade": {"type": "raster", "url": "mbtiles://hillshade"},
+        "hillshade-detail": {"type": "raster", "url": "mbtiles://hillshade-detail"},
         "extras": {"type": "vector", "url": "mbtiles://extras"},
         "usdata": {"type": "vector", "url": "mbtiles://usdata"},
     },

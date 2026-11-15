@@ -17,7 +17,7 @@ PATH = "styles/topo-print.json"
 # First match wins: (group, layer id pattern).
 RULES = [
     ("base", r"^background$"),
-    ("hillshade", r"^hillshade$"),
+    ("hillshade", r"^hillshade(-detail)?$"),
     ("contours", r"^contours"),
     ("woodland", r"^landcover-wood$"),
     ("ground", r"^landcover-"),

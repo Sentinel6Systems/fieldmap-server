@@ -144,8 +144,8 @@ if [ ${#JOIN[@]} -eq 0 ]; then
 fi
 # -pk: no size limit here. Each layer was already kept under tippecanoe's 500 kB a tile;
 # without it tile-join leaves out every tile where the two together are larger.
-tile-join -q -pk -f -o "$REPO_DIR/data/contours.mbtiles" -n "Contours ($UNITS)" "${JOIN[@]}"
+tile-join -q -pk -f -o "$OUT_DIR/contours.mbtiles" -n "Contours ($UNITS)" "${JOIN[@]}"
 
-report_work_space "$CELLS_DIR" "$REPO_DIR/data/contours.mbtiles"
+report_work_space "$CELLS_DIR" "$OUT_DIR/contours.mbtiles"
 rm -rf "$WORK_DIR" "$CELLS_ROOT"
 echo "Done. Output: data/contours.mbtiles (units: $UNITS)"

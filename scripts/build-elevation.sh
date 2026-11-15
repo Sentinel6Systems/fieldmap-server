@@ -85,8 +85,8 @@ python3 "$REPO_DIR/tools/elevation-tiles.py" --outline "$WORK_DIR/outline/outlin
     --minzoom "$MINZOOM" --maxzoom "$MAXZOOM" \
     --encoding "$ELEVATION_ENCODING" --format "$ELEVATION_FORMAT" \
     --source "$SOURCE" --source-date "$SOURCE_DATE" --attribution "$ATTRIBUTION" \
-    "${DEMS[@]}" "$REPO_DIR/data/elevation.mbtiles"
+    "${DEMS[@]}" "$OUT_DIR/elevation.mbtiles"
 
-report_work_space "$WORK_DIR" "$REPO_DIR/data/elevation.mbtiles"
+report_work_space "$WORK_DIR" "$OUT_DIR/elevation.mbtiles"
 rm -rf "$WORK_DIR"
 echo "Done. Output: data/elevation.mbtiles (zoom $MINZOOM-$MAXZOOM)"

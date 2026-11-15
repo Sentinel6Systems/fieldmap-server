@@ -46,7 +46,7 @@ cd fieldmap-server
 ./scripts/build-elevation.sh --areas <geofabrik-area> <min-lon> <min-lat> <max-lon> <max-lat>   # optional: terrain analysis
 
 # 2. Start the server
-./scripts/data-placeholders.sh   # empty extras/usdata/elevation files unless you built them (needed after updating, too)
+./scripts/data-placeholders.sh   # empty extras/usdata/elevation/hillshade-detail files unless you built them (needed after updating, too)
 cp .env.example .env          # optional: ports, config file, image
 ./scripts/mem-limit.sh        # memory cap from this machine's RAM (see "Use with TAK clients")
 docker compose up -d --build
@@ -60,6 +60,48 @@ docker compose up -d --build
 The web front (nginx) serves the print tool at `/mapprinter/` and proxies everything else to TileServer GL, so the print
 tool finds its tiles on the same host automatically. It also looks under `/maps/` (the Internet-in-a-Box layout) and on
 port 8080, or you can point it anywhere with `?tiles=http://host:8080`.
+
+### Map builder page (optional)
+
+If you would rather click than write a region file, start the map builder and open it in a browser:
+
+```bash
+./scripts/admin.sh
+#   Map builder: http://<this device's address>:8090/
+#   PIN: ......
+```
+
+The page shows a map of the world divided into regions (Geofabrik's extracts: continents, countries, and states or
+provinces of the larger countries). You choose the regions, tick the layers to build (base map, contour lines,
+hillshade, elevation, extras, and the US government data for regions in the United States), choose how detailed
+the terrain is (standard; the 10 m USGS data in the United States; or that plus one small area of 1 m hillshade
+that you place on the map, 10 to 50 km across), and the page shows how
+much disk space and time the build needs next to what the device has free. It will not start a build that does not
+fit. One button then starts the build; the page shows its progress and can be closed meanwhile.
+
+What a build from the page does (`tools/admin-server.py`):
+
+- It writes a region file, `data/admin/region.env`, and runs `build-region.sh --staged` with it: the same scripts
+  as by hand.
+- **New files replace the old ones; they are not merged into them.** A device that holds one country and builds
+  another then holds only the other, so the page says this before the build starts. Layers that are not ticked stay
+  as they are.
+- The new files are written to `data/incoming` and moved into `data/` together when every step has finished, and
+  the tile server is then restarted (or started, the first time). Until then, and if a step fails or the build is
+  stopped, the maps in use stay untouched.
+- The estimate is made before anything is downloaded, from the bundled list of regions (`admin/regions.json`:
+  size of each OpenStreetMap extract, number of 1° elevation cells with land, land area) and the same rates as the
+  build scripts' own checks. It is on the safe side; the build scripts still run their own checks at each step.
+
+The page asks for a PIN, printed when `admin.sh` starts and kept in `data/admin/pin`, because whoever can open it
+can replace the maps and fill the disk. `ADMIN_PIN=<your own>` sets one, `ADMIN_PIN=off` turns it off (only on a
+network you trust), `ADMIN_HOST=127.0.0.1` keeps the page to the device itself, `ADMIN_PORT` moves it from 8090.
+It runs on the device itself with Python's standard library, not in a container, because it starts the build
+scripts. `systemd/fieldmap-admin.service` keeps it running across reboots. The page needs no internet to open; the
+builds do.
+
+`tools/make-admin-regions.py` (run in the tool container) writes `admin/regions.json`, `admin/land.json` and
+`admin/places.json` again, to pick up new extracts and current download sizes.
 
 ### Disk space
 
@@ -86,10 +128,11 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `styles/`, `fonts/`, `sprites/` | The styles and every asset they need, all local |
 | `planetiler/` | Custom Planetiler schema for the extras layers |
 | `scripts/`, `regions/`, `tools/` | Data builders (Planetiler, GDAL, Tippecanoe, Osmium in a tool container) |
+| `admin/`, `scripts/admin.sh` | The optional map builder page: choose regions and layers on a map, check the disk space, start the build |
 | `print/` | The print tool: `src/`, `public/`, `build.mjs` (esbuild). Built inside the `web` image |
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
 | `pi/` | Raspberry Pi + Internet-in-a-Box deployment: compose file, nginx snippets, notes |
-| `systemd/` | Start the compose stack at boot |
+| `systemd/` | Start the compose stack, and optionally the map builder page, at boot |
 | `data/` | Your mbtiles files (not in git) |
 
 ## The styles
@@ -329,7 +372,8 @@ tiles from it:
 - Where a USGS cell meets a Copernicus cell the two surfaces differ, by the height of the trees for one thing: the
   hillshade shows a faint line there and the contour lines do not join. Inside the USGS data everything joins.
 - The USGS tiles are in NAD 83 and NAVD 88 heights, Copernicus in WGS 84 and EGM2008 heights. Both differences are
-  about a metre or less and are not corrected. The 1 m lidar layer is not used: it is hundreds of times larger.
+  about a metre or less and are not corrected. The 1 m lidar layer is far too large to build a region from; it
+  can be used for one small area (next section).
 - The tiles are large: 90 to 480 MB for each cell of land, kept in `data/cache/dem-usgs` (delete the folder after
   the build to get the space back; a rebuild downloads them again).
 
@@ -345,6 +389,34 @@ The first test area of the table above (12,134 km², six cells), both ways:
 For a large region count on about 350 MB of download per cell of land, and let the estimate that each build prints
 first tell the rest. The disk checks allow 0.5 GB of working space per cell for the contours and 0.2 GB for the
 hillshade.
+
+### A small area of 1 m hillshade (`build-detail.sh`, `DETAIL_BBOX`)
+
+USGS also publishes lidar elevation at 1 m, survey by survey, for much of the United States. At that detail the
+hillshade shows single ditches, tracks, terraces and building platforms. It is also about a hundred times the data
+of the 10 m layer, so it is built for one small area only:
+
+```bash
+./scripts/build-detail.sh <min-lon> <min-lat> <max-lon> <max-lat>
+```
+
+or `DETAIL_BBOX="<min-lon> <min-lat> <max-lon> <max-lat>"` in a region file, which makes `build-region.sh` run it
+as its `detail` step after the hillshade.
+
+- The area is limited to 2,500 km² (about 50 × 50 km); `DETAIL_MAX_KM2` moves the limit. Each 10 × 10 km of it is
+  a download of up to 500 MB, kept in `data/cache/dem-usgs1m`, and about 3,000 tiles (17 MB as lossy WebP on the
+  test area, 103 km²).
+- The script asks The National Map for the 1 m tiles that touch the area, takes the newest survey where several
+  overlap, and shades them the same way as the rest (`tools/detail-area.py`, `tools/hillshade-raster.py`). Where
+  no 1 m survey has been published, the area keeps the hillshade it had.
+- The result is a tile set of its own, `data/hillshade-detail.mbtiles`: the zooms above the hillshade's own, up to
+  `DETAIL_MAXZOOM` (default 17), inside the area only. The topo styles draw it over the hillshade. (It cannot be
+  part of `hillshade.mbtiles`: a tile set has one highest zoom, and outside the area there would be nothing to
+  show at the higher ones.) One file holds one area; a new one replaces the old.
+- The hillshade itself must exist first. Contours and the elevation tiles are not changed.
+
+`config.json` lists `hillshade-detail.mbtiles`; `scripts/data-placeholders.sh` writes an empty one when there is
+none, as it does for the other optional files.
 
 ### `build-contours.sh [--areas "<geofabrik paths>"] <min-lon> <min-lat> <max-lon> <max-lat> [m|ft]`
 
@@ -512,6 +584,7 @@ country on top of the world layer; its comments list sizes). A region file sets 
 | `CONTOUR_UNITS` | `ft` or `m` (default `ft`) |
 | `HILLSHADE_FORMAT` | `webp` (default, lossy), `webp-lossless` or `png` |
 | `DEM_SOURCE` | Elevation data for contours, hillshade and elevation: `copernicus` (default, 30 m, the surface) or `usgs` (10 m, bare ground, United States; see "Higher-resolution elevation") |
+| `DETAIL_BBOX` | A small area (at most 2,500 km²) of 1 m hillshade from USGS lidar: `min-lon min-lat max-lon max-lat` (see "A small area of 1 m hillshade") |
 | `HILLSHADE_MAXZOOM` | Highest zoom of `hillshade.mbtiles` (default 12; 14 with `DEM_SOURCE="usgs"`) |
 | `ELEVATION_MAXZOOM` | Highest zoom of `elevation.mbtiles`: 12 (default, about 30 m) or 11 (about 60 m, a quarter of the size); 13 by default with `DEM_SOURCE="usgs"` |
 | `PLANETILER_MEMORY` | Java heap for Planetiler (default `8g`) |
@@ -615,6 +688,7 @@ Put your own files in `data/` with these names:
 | `data/basemap.mbtiles` | vector | OpenMapTiles schema base map |
 | `data/contours.mbtiles` | vector | layers `contours_major` and `contours_minor`, attribute `elev_ft` (feet) or `elev_m` (meters) |
 | `data/hillshade.mbtiles` | raster | gray hillshade tiles, WebP or PNG |
+| `data/hillshade-detail.mbtiles` | raster | optional: gray hillshade tiles of a small area at higher zooms (`build-detail.sh`), drawn over the hillshade; empty from `data-placeholders.sh` |
 | `data/extras.mbtiles` | vector | the layers of `planetiler/extras.yml` (built by default); `./scripts/data-placeholders.sh` writes an empty one |
 | `data/usdata.mbtiles` | vector | optional: layers `obstacle`, `gnis`, `survey_mark`, `protected`, `flood` (see `tools/us-data.py`); empty from the same script |
 | `data/elevation.mbtiles` | raster | optional: heights in metres as Mapbox terrain-RGB or Terrarium (metadata `encoding`), PNG or WebP, 256 px tiles; empty from the same script |
@@ -690,7 +764,7 @@ git pull                                # if you edited files on the Pi: git sta
 sudo ./scripts/install-pi.sh            # placeholders, print tool, nginx, and a tile server restart when needed
 ```
 
-New or rebuilt data files (any of `basemap`, `contours`, `hillshade`, `elevation`, `extras`, `usdata`):
+New or rebuilt data files (any of `basemap`, `contours`, `hillshade`, `hillshade-detail`, `elevation`, `extras`, `usdata`):
 
 ```bash
 scp data/<name>.mbtiles <user>@<pi-host>:<repo-dir>/data/
@@ -710,8 +784,12 @@ See [systemd/README.md](systemd/README.md).
   WebP by default. `regions/us-all.env` builds the whole world at low zoom plus all 50 states; `build-usdata.sh`
   takes the wider side of a box across the 180° line. The terrain disk checks run after the elevation download
   and count only cells with land.
+- Map builder page (`scripts/admin.sh`): choose regions on a world map, tick the layers, see the disk space and time
+  the build needs, and start it from the browser. `build-region.sh --staged` (which the page uses) swaps all new
+  files in together at the end and leaves the old ones in place if the build fails.
 - `DEM_SOURCE="usgs"`: contours, hillshade and elevation tiles from the USGS 3DEP 10 m bare-ground data in the
-  United States, with Copernicus wherever USGS has none.
+  United States, with Copernicus wherever USGS has none. `build-detail.sh` / `DETAIL_BBOX`: one small area of
+  hillshade from the USGS 1 m lidar data, as its own tile set (`hillshade-detail.mbtiles`) over the hillshade.
 - Contours are computed one elevation cell at a time, in parallel, and a stopped build resumes (the tiling too):
   under half the time and about a third of the working space of the earlier whole-region pass, with the same lines.
   Hillshade is shaded in chunks in memory: the same pixels with a third of the working space.
@@ -748,8 +826,10 @@ See [systemd/README.md](systemd/README.md).
 - Elevation data: © ESA, [Copernicus DEM GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model).
   Contours, hillshade and elevation tiles are produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus
   Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved.
-- Optional higher-resolution elevation data for the United States (`DEM_SOURCE=usgs`): USGS 3D Elevation Program,
-  1/3 arc-second DEM, courtesy of the U.S. Geological Survey (public domain)
+- Optional higher-resolution elevation data for the United States (`DEM_SOURCE=usgs`, `build-detail.sh`): USGS 3D
+  Elevation Program, 1/3 arc-second and 1 m DEMs, courtesy of the U.S. Geological Survey (public domain)
+- Map builder page: region outlines from [Geofabrik](https://download.geofabrik.de/)'s extract index (derived from
+  OpenStreetMap, ODbL); coastlines and town names from [Natural Earth](https://www.naturalearthdata.com/) (public domain)
 - Optional US layers (public domain, US federal government): FAA Digital Obstacle File, USGS GNIS, NOAA National
   Geodetic Survey, USGS PAD-US, FEMA National Flood Hazard Layer
 - World Magnetic Model: NOAA NCEI and the British Geological Survey for the US NGA and UK DGC (public domain)

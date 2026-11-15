@@ -63,6 +63,10 @@
       "mbtiles": "hillshade.mbtiles",
       "sparse": false
     },
+    "hillshade-detail": {
+      "mbtiles": "hillshade-detail.mbtiles",
+      "sparse": false
+    },
     "extras": {
       "mbtiles": "extras.mbtiles"
     },
