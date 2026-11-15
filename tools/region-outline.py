@@ -246,10 +246,10 @@ def mosaic(a):
 
 # Measured on test builds (see the README's "Terrain outline"): output kB per km² of land
 # (low = flat, high = rugged; at zoom 12 and 40 ft contours) and seconds per 1000 km² on
-# 8 CPUs. Elevation and hillshade tiles are written in parallel and scale with the CPUs;
-# the contour lines are mostly one process.
+# 8 CPUs. Contour lines (one cell per process, then tippecanoe) and elevation tiles are made
+# in parallel and scale with the CPUs.
 RATES = {
-    "contours":  {"kb": (1.5, 5.5), "secs": 9.0, "parallel": False},
+    "contours":  {"kb": (1.5, 5.5), "secs": 4.5, "parallel": True},
     "hillshade": {"kb": {"webp": (0.1, 0.25), "webp-lossless": (0.4, 0.9), "png": (0.5, 1.0)},
                   "secs": 1.0, "parallel": False},
     "elevation": {"kb": (0.5, 1.4), "secs": 1.0, "parallel": True},

@@ -388,7 +388,7 @@ reexec_in_tools() {
         -e IN_TOOLS=1 \
         -e OSM_MAX_AGE_DAYS \
         -e ELEVATION_MAXZOOM -e ELEVATION_ENCODING -e ELEVATION_FORMAT \
-        -e HILLSHADE_MAXZOOM -e HILLSHADE_FORMAT \
+        -e HILLSHADE_MAXZOOM -e HILLSHADE_FORMAT -e CONTOUR_JOBS \
         -v "$REPO_DIR":/work \
         -w /work \
         "$TOOLS_IMAGE" \

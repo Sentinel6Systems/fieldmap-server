@@ -10,6 +10,11 @@
 # those areas' outlines inside the box; without it, the whole box. A box whose min-lon is
 # larger than its max-lon crosses the 180° line. See tools/region-outline.py.
 #
+# The lines are computed one 1° elevation cell at a time, CONTOUR_JOBS cells in parallel
+# (default: one fewer than the CPUs), and kept in data/cache/contour-cells until the build
+# is complete: run the same command again after a stop and it carries on with the
+# missing cells. See tools/contour-cells.py.
+#
 # The last argument selects the units:
 #   m  = meters. Minor interval 20 m, major interval 100 m. This is the default.
 #   ft = feet. Minor interval 40 ft, major interval 200 ft.
@@ -45,8 +50,8 @@ MIN_LON="$1" MIN_LAT="$2" MAX_LON="$3" MAX_LAT="$4"
 UNITS="${5:-m}"
 
 case "$UNITS" in
-    m)  MINOR=20; MAJOR=100; ELEV_ATTR="elev_m" ;;
-    ft) MINOR=40; MAJOR=200; ELEV_ATTR="elev_ft" ;;
+    m)  MINOR=20; ELEV_ATTR="elev_m"; ELEV_TYPE=float ;;
+    ft) MINOR=40; ELEV_ATTR="elev_ft"; ELEV_TYPE=int ;;
     *)  echo "Error: units must be 'm' or 'ft'." >&2; exit 1 ;;
 esac
 
@@ -59,65 +64,55 @@ mkdir -p "$WORK_DIR"
 terrain_outline "$WORK_DIR" "$MIN_LON" "$MIN_LAT" "$MAX_LON" "$MAX_LAT" $AREAS
 terrain_estimate "$WORK_DIR" contours
 
-echo "Step 1/5: download elevation tiles"
+echo "Step 1/3: download elevation tiles"
 download_dem "$WORK_DIR"
 CELLS="$(terrain_land_cells "$WORK_DIR")"
-# Disk estimate: the feet-converted copy, the contour lines, and the tile build
-# each take space, scaling with the land area (checked after the download, so
-# cells of open sea are not counted).
-NEED_GB="$(python3 -c "print(max(8, int($CELLS * 0.6 + 5)))")"
+# Disk estimate (checked after the download, so cells of open sea are not counted):
+# the lines of every cell, then tippecanoe's temporary files and the tiles beside them.
+# Measured on rugged mountains: 26 kB per km², about 0.2 GB for a whole cell.
+NEED_GB="$(python3 -c "print(max(4, int($CELLS * 0.25 + 3)))")"
 require_free_space "$REPO_DIR/data" "$NEED_GB" "contours for $CELLS one-degree cells with land"
 
-# One mosaic per outline part, with no data outside the outline (see
-# tools/region-outline.py), so the lines stop at the outline.
-MAJOR_FILES=() MINOR_FILES=()
-while read -r part _raw masked _cut <&3; do
-    echo "Step 2/5: part $part: elevation data masked to the outline"
-    DEM_INPUT="$masked"
-    if [ "$UNITS" = "ft" ]; then
-        echo "Step 2b: convert elevation values to feet"
-        # Float32 halves the file size (gdal_calc defaults to Float64).
-        # BIGTIFF=YES lifts the 4 GB TIFF limit, which large regions exceed.
-        # TILED=YES is essential: gdal_calc writes in square blocks, and with
-        # a strip-based TIFF each partial strip write appends a new compressed
-        # copy of the strip, so the file grows to many times its real size.
-        gdal_calc.py -A "$masked" --calc="A*3.28084" --NoDataValue=-32768 \
-            --outfile="$WORK_DIR/dem_ft-$part.tif" --type=Float32 \
-            --co COMPRESS=DEFLATE --co PREDICTOR=3 --co BIGTIFF=YES \
-            --co TILED=YES --co BLOCKXSIZE=512 --co BLOCKYSIZE=512 --quiet
-        DEM_INPUT="$WORK_DIR/dem_ft-$part.tif"
-    fi
+# The lines of finished cells are kept until the build is complete, so a stopped build
+# carries on where it was. They belong to one outline and one unit: others are removed.
+SIGNATURE="$( (echo "v1 $UNITS"; cat "$WORK_DIR/outline/outline.geojson") | sha1sum | cut -c1-12)"
+CELLS_ROOT="$REPO_DIR/data/cache/contour-cells"
+CELLS_DIR="$CELLS_ROOT/$SIGNATURE"
+mkdir -p "$CELLS_DIR"
+find "$CELLS_ROOT" -mindepth 1 -maxdepth 1 ! -name "$SIGNATURE" -exec rm -rf {} +
 
-    echo "Step 3/5: part $part: compute contour lines (interval $MINOR $UNITS)"
-    gdal_contour -q -a elev -i "$MINOR" "$DEM_INPUT" "$WORK_DIR/contours-$part.gpkg" -nln contour
-    rm -f "$WORK_DIR/dem_ft-$part.tif"
+echo "Step 2/3: compute contour lines, one elevation cell at a time (interval $MINOR $UNITS)"
+python3 "$REPO_DIR/tools/contour-cells.py" --outline-dir "$WORK_DIR/outline" \
+    --dem-dir "$REPO_DIR/data/cache/dem" --out-dir "$CELLS_DIR" --units "$UNITS" \
+    ${CONTOUR_JOBS:+--jobs "$CONTOUR_JOBS"}
+mapfile -t MAJOR_FILES < <(find "$CELLS_DIR" -name '*-major.fgb' | sort)
+mapfile -t MINOR_FILES < <(find "$CELLS_DIR" -name '*-minor.fgb' | sort)
+if [ ${#MAJOR_FILES[@]} -eq 0 ] && [ ${#MINOR_FILES[@]} -eq 0 ]; then
+    echo "Error: no contour lines in this outline (flat, or all sea)." >&2
+    exit 1
+fi
 
-    echo "Step 4/5: part $part: split major and minor contours"
-    # Feet values are whole interval multiples. Store them as integers.
-    if [ "$UNITS" = "ft" ]; then
-        SELECT="CAST(ROUND(elev) AS INTEGER) AS $ELEV_ATTR, geom"
-    else
-        SELECT="elev AS $ELEV_ATTR, geom"
-    fi
-    ogr2ogr -f GeoJSONSeq "$WORK_DIR/major-$part.json" "$WORK_DIR/contours-$part.gpkg" \
-        -dialect SQLITE -sql "SELECT $SELECT FROM contour WHERE CAST(ROUND(elev) AS INTEGER) % $MAJOR = 0"
-    ogr2ogr -f GeoJSONSeq "$WORK_DIR/minor-$part.json" "$WORK_DIR/contours-$part.gpkg" \
-        -dialect SQLITE -sql "SELECT $SELECT FROM contour WHERE CAST(ROUND(elev) AS INTEGER) % $MAJOR <> 0"
-    rm -f "$WORK_DIR/contours-$part.gpkg"
-    MAJOR_FILES+=("$WORK_DIR/major-$part.json")
-    MINOR_FILES+=("$WORK_DIR/minor-$part.json")
-done 3< "$WORK_DIR/outline/mosaics.txt"
+echo "Step 3/3: build the vector tiles"
+# One tippecanoe run over all cells, so the low zooms are thinned the same way everywhere.
+# -t keeps its temporary files on the data drive (the container's own /tmp is small).
+# -T: tippecanoe reads FlatGeobuf numbers as text unless told the type.
+mkdir -p "$WORK_DIR/tmp"
+JOIN=()
+if [ ${#MAJOR_FILES[@]} -gt 0 ]; then
+    tippecanoe -q -f -t "$WORK_DIR/tmp" -o "$WORK_DIR/major.mbtiles" -l contours_major \
+        -Z8 -z14 -y "$ELEV_ATTR" -T "$ELEV_ATTR:$ELEV_TYPE" --drop-densest-as-needed \
+        -A "Copernicus DEM (c) ESA" "${MAJOR_FILES[@]}"
+    JOIN+=("$WORK_DIR/major.mbtiles")
+fi
+if [ ${#MINOR_FILES[@]} -gt 0 ]; then
+    tippecanoe -q -f -t "$WORK_DIR/tmp" -o "$WORK_DIR/minor.mbtiles" -l contours_minor \
+        -Z11 -z14 -y "$ELEV_ATTR" -T "$ELEV_ATTR:$ELEV_TYPE" --drop-densest-as-needed \
+        -A "Copernicus DEM (c) ESA" "${MINOR_FILES[@]}"
+    JOIN+=("$WORK_DIR/minor.mbtiles")
+fi
+tile-join -q -f -o "$REPO_DIR/data/contours.mbtiles" -n "Contours ($UNITS)" "${JOIN[@]}"
 
-echo "Step 5/5: build the vector tiles"
-tippecanoe -q -f -o "$WORK_DIR/major.mbtiles" -l contours_major \
-    -Z8 -z14 -y "$ELEV_ATTR" --drop-densest-as-needed \
-    -A "Copernicus DEM (c) ESA" "${MAJOR_FILES[@]}"
-tippecanoe -q -f -o "$WORK_DIR/minor.mbtiles" -l contours_minor \
-    -Z11 -z14 -y "$ELEV_ATTR" --drop-densest-as-needed \
-    -A "Copernicus DEM (c) ESA" "${MINOR_FILES[@]}"
-tile-join -f -o "$REPO_DIR/data/contours.mbtiles" -n "Contours ($UNITS)" \
-    "$WORK_DIR/major.mbtiles" "$WORK_DIR/minor.mbtiles"
-
+echo "Contour lines of all cells: $(du -sh "$CELLS_DIR" | cut -f1)."
 report_work_space "$WORK_DIR" "$REPO_DIR/data/contours.mbtiles"
-rm -rf "$WORK_DIR"
+rm -rf "$WORK_DIR" "$CELLS_ROOT"
 echo "Done. Output: data/contours.mbtiles (units: $UNITS)"

@@ -71,7 +71,7 @@ From a six-state build (about 64 square degrees):
 | Step | Finished file | Working space needed |
 |---|---|---|
 | Base map | ~1 GB | ~15 GB |
-| Contours | ~2 GB | ~40 GB |
+| Contours | ~2 GB | under 20 GB (checked as 0.25 GB per one-degree cell with land) |
 | Hillshade | ~0.5 GB as PNG; about a quarter as lossy WebP (the default) | ~15 GB |
 | Elevation (zoom 12) | ~0.05-0.15 GB | the elevation downloads only |
 
@@ -303,9 +303,9 @@ Test builds on an 8-core desktop (sizes of the finished files; times include the
 
 | Test area | Outline | Contours (40 ft) | Hillshade (lossy WebP) | Elevation (zoom 12) |
 |---|---|---|---|---|
-| Mountains and sound against an international border (one US state's outline, cut to a 2.2° × 1.4° box) | 12,134 km², 1 part | 61 MB, 109 s | 2.4 MB, 10 s | 16.6 MB, 15 s |
-| One Aleutian island west of 180° (mostly sea) | 13,210 km², 1 part | 9.0 MB, 18 s | 0.5 MB, 6 s | 2.8 MB, 16 s |
-| Two Aleutian islands, a box across 180° | 9,650 km², 2 parts | 1.9 MB, 9 s | 0.1 MB, 4 s | 0.7 MB, 4 s |
+| Mountains and sound against an international border (one US state's outline, cut to a 2.2° × 1.4° box) | 12,134 km², 1 part | 61 MB, 54 s | 2.4 MB, 10 s | 16.6 MB, 15 s |
+| One Aleutian island west of 180° (mostly sea) | 13,210 km², 1 part | 9.0 MB, 9 s | 0.5 MB, 6 s | 2.8 MB, 16 s |
+| Two Aleutian islands, a box across 180° | 9,650 km², 2 parts | 1.9 MB, 5 s | 0.1 MB, 4 s | 0.7 MB, 4 s |
 
 In the first area nothing reaches past the border (the last valid pixel is within one 30 m pixel of the outline), and the two
 parts of the third join at 180° without a seam. The hillshade of the first area is 9.4 MB as lossless WebP and
@@ -320,6 +320,15 @@ Use `ft` for feet (minor 40 ft, major 200 ft):
 ```bash
 ./scripts/build-contours.sh --areas <geofabrik-area> <min-lon> <min-lat> <max-lon> <max-lat> ft
 ```
+
+The lines are computed one 1° elevation cell at a time, several cells in parallel (`CONTOUR_JOBS=<n>` sets how many;
+the default is one fewer than the CPUs), by `tools/contour-cells.py`. Each cell also reads one pixel row and column
+of its neighbours, and its lines are cut along shared pixel centres, so they meet the neighbours' lines exactly.
+Finished cells are kept in `data/cache/contour-cells` until the build is complete: a build that stops (power, disk,
+a closed terminal) carries on with the missing cells when the same command is run again. One tippecanoe run then
+tiles all cells together, so the low zooms are thinned the same way everywhere. No file holds more than one cell's
+lines, which keeps the working space small: 0.25 GB on the first test area below at its peak, about 26 kB per km² of
+rugged mountains (the disk check allows 0.25 GB per cell with land).
 
 ### `build-hillshade.sh [--areas "<geofabrik paths>"] <min-lon> <min-lat> <max-lon> <max-lat>`
 
@@ -491,10 +500,11 @@ The world layer is built once (about 96 GB to download and about 160 GB of free 
 The box crosses the 180° line, so the terrain covers Alaska's Aleutians on both sides of it, while the base map,
 extras and US data stop at 180°. Geofabrik's US outline takes in a wide band of sea, so the first estimate is high
 (it counts about 3,700 one-degree cells); cells of open sea have no elevation file and are recorded on the first
-download, which makes later estimates closer. The contours step needs the most working space, about 0.6 GB per
-one-degree cell with land: roughly 800 GB for all of the US, freed when it finishes. A build this size takes several days on a fast machine with 32 GB
-of RAM, most of it for the contours. A failed or stopped step can be run again on its own, for example
-`./scripts/build-region.sh regions/us-all.env contours`.
+download, which makes later estimates closer. The contours step's disk check allows 0.25 GB of working space per
+one-degree cell with land, about 300 GB for all of the US, freed when it finishes; that figure is scaled up from
+small test builds, not measured at this size. Allow a few days on a fast machine with 32 GB of RAM. A failed or
+stopped step can be run again on its own, for example `./scripts/build-region.sh regions/us-all.env contours`
+(the contours step carries on with the cells it has not finished).
 
 Planetiler also needs three shared inputs (water polygons, Natural Earth,
 lake centerlines). The script downloads them to `data/sources` before it runs
@@ -654,6 +664,8 @@ See [systemd/README.md](systemd/README.md).
   WebP by default. `regions/us-all.env` builds the whole world at low zoom plus all 50 states; `build-usdata.sh`
   takes the wider side of a box across the 180° line. The terrain disk checks run after the elevation download
   and count only cells with land.
+- Contours are computed one elevation cell at a time, in parallel, and a stopped build resumes: about half the
+  time and less than half the working space of the earlier whole-region pass, with the same lines.
 - Terrain analysis in the print tool: viewshed and VHF/UHF radio coverage from a point, point-to-point profiles,
   printed on sheets and atlases with a collar strip and an optional profile page; `build-elevation.sh` writes the
   elevation tiles it uses.
