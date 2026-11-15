@@ -14,6 +14,12 @@ OUT_SUB="${FIELDMAP_STAGE:+$FIELDMAP_STAGE/}"
 # (docker kill $(docker ps -q --filter label=fieldmap-build)).
 BUILD_LABEL="fieldmap-build"
 
+# Every container a build starts runs at low CPU priority: it still uses all the CPU that is
+# free, but the tile server, the print tool and anything else on the machine come first when
+# they need it, so the maps stay usable during a build of hours or days. Docker's default
+# weight is 1024; BUILD_CPU_SHARES=1024 gives a build the same weight as everything else.
+BUILD_DOCKER_ARGS=(--label "$BUILD_LABEL" --cpu-shares "${BUILD_CPU_SHARES:-128}")
+
 # Planetiler release used for the base map. Pinned so a new release cannot change
 # the tiles unnoticed; set PLANETILER_IMAGE to try another one.
 PLANETILER_IMAGE="${PLANETILER_IMAGE:-ghcr.io/onthegomap/planetiler:0.10.2}"
@@ -46,7 +52,7 @@ run_planetiler() {
     shift 3
     local lang=()
     [ -n "${LANGUAGE:-}" ] && lang=(--languages="$LANGUAGE")
-    docker run --rm --label "$BUILD_LABEL" \
+    docker run --rm "${BUILD_DOCKER_ARGS[@]}" \
         --user "$(id -u):$(id -g)" \
         -e JAVA_TOOL_OPTIONS="-Xmx$memory" \
         -v "$REPO_DIR/data":/data \
@@ -392,7 +398,7 @@ reexec_in_tools() {
     docker build -q -t "$TOOLS_IMAGE" "$REPO_DIR/tools"
     # Run as the calling user so that files under data/ are not owned by
     # root. Host-side steps (curl, rm) must be able to write there too.
-    exec docker run --rm --label "$BUILD_LABEL" \
+    exec docker run --rm "${BUILD_DOCKER_ARGS[@]}" \
         --user "$(id -u):$(id -g)" \
         -e HOME=/tmp \
         -e IN_TOOLS=1 \
@@ -400,7 +406,7 @@ reexec_in_tools() {
         -e OSM_MAX_AGE_DAYS \
         -e ELEVATION_MAXZOOM -e ELEVATION_ENCODING -e ELEVATION_FORMAT \
         -e HILLSHADE_MAXZOOM -e HILLSHADE_FORMAT -e CONTOUR_JOBS -e DEM_SOURCE \
-        -e DETAIL_MAX_KM2 -e DETAIL_MAXZOOM \
+        -e DETAIL_MAX_KM2 -e DETAIL_MAXZOOM -e BUILD_CPU_SHARES \
         -v "$REPO_DIR":/work \
         -w /work \
         "$TOOLS_IMAGE" \

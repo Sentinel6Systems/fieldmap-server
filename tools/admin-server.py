@@ -398,6 +398,9 @@ def run_job():
     print(f"Map builder: {', '.join(request['names'])}; steps: {' '.join(steps)}", flush=True)
     env = dict(os.environ)
     env.pop("LANGUAGE", None)          # a locale setting, not the label language of a build
+    # The scripts on the machine itself at low priority too (the containers they start get a
+    # low CPU weight, scripts/lib.sh): the page, the tile server and the rest come first.
+    os.nice(10)
     child = subprocess.Popen([os.path.join(ROOT, "scripts", "build-region.sh"), "--staged",
                               os.path.relpath(REGION_FILE, ROOT), *steps], cwd=ROOT, env=env, start_new_session=True)
     code = child.wait()

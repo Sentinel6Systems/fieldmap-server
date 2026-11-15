@@ -45,7 +45,7 @@ OSM_GB="$(du -BG "$REPO_DIR/data/sources/$OSM" | cut -f1 | tr -dc '0-9')"
 require_free_space "$REPO_DIR/data" "$(( OSM_GB * 3 + 2 ))" "the extras build"
 
 echo "Planetiler: build data/extras.mbtiles from $OSM (Java heap $MEMORY)"
-docker run --rm --label "$BUILD_LABEL" \
+docker run --rm "${BUILD_DOCKER_ARGS[@]}" \
     --user "$(id -u):$(id -g)" \
     -e JAVA_TOOL_OPTIONS="-Xmx$MEMORY" \
     -v "$REPO_DIR/data":/data \

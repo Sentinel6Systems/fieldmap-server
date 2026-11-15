@@ -66,6 +66,10 @@ docker restart tileserver
 ./scripts/build-elevation.sh --areas <geofabrik-area> <min-lon> <min-lat> <max-lon> <max-lat>   # optional: terrain analysis
 ```
 
+Builds use all the CPU that is free, at low priority: the tile server, the print tool and anything else on the
+machine come first when they need it (the build containers get a CPU weight of 128 against Docker's 1024;
+`BUILD_CPU_SHARES=1024` gives a build the same weight as everything else).
+
 `./scripts/install.sh --no-builder` leaves the map builder page out (and removes its service if it was installed).
 Without systemd, or to do the steps yourself: `./scripts/data-placeholders.sh` (empty files for the data you have
 not built, which the tile server needs to start), `./scripts/mem-limit.sh` (memory cap from this machine's RAM, see
@@ -798,6 +802,7 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- Builds run at low CPU priority, so the maps stay usable while they run.
 - Print tool: save the markers, arrows and shapes to a GeoJSON file and load them again (also from other map
   software).
 
