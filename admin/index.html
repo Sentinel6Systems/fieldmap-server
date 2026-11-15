@@ -52,7 +52,7 @@
 
 <section class="card" id="step-regions">
   <h2><span class="num">1</span> Choose your regions</h2>
-  <p>Click a region on the map to add it. Click it again to take it off. To choose a smaller part, such as one country or one state, use <b>Look inside</b>.</p>
+  <p>Tap a region on the map. A small one, such as a state or a small country, is added straight away; tap it again to take it off. For a large one, such as a continent or the United States, you are asked whether you want <b>all of it</b> or only <b>parts of it</b>. You can choose as many regions as you like.</p>
   <div class="regions">
     <div class="mapbox">
       <nav class="crumbs" id="crumbs" aria-label="Where you are on the map"></nav>
@@ -63,6 +63,7 @@
         <button id="zoom-fit" title="Show everything in this view" aria-label="Show everything in this view">⤢</button>
       </div>
       <div class="labels" id="labels" aria-hidden="true"></div>
+      <div class="sheet" id="sheet" hidden role="dialog" aria-live="polite"></div>
       <div class="placing" id="placing" hidden>Click the map where the middle of the very sharp area should be. <button id="placing-stop">Not now</button></div>
       <div class="hover" id="hover" hidden></div>
       <ul class="legend">

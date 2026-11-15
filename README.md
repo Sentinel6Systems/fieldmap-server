@@ -31,47 +31,55 @@ Requirements on the machine that builds the data and runs the server:
 The server alone (no building) runs on much less: a Raspberry Pi 4 with 4 GB serves a large region (see `pi/`).
 Node.js and Pillow are only needed to work on the print tool or the style generators.
 
-Build a small area first to check that everything works, then your real region.
-
 ```bash
 git clone https://github.com/Sentinel6Systems/fieldmap-server.git
 cd fieldmap-server
+cp .env.example .env          # optional: ports, config file, image
+./scripts/install.sh
+```
 
-# 1. Build the data for your region (hours, once), from a region file (see "Region files"):
-./scripts/build-region.sh <region-file>
-#    or from a single Geofabrik area plus a terrain bounding box:
+`install.sh` starts everything and keeps it running across reboots: the tile server, the print tool, and the map
+builder page (as a systemd service; that part asks for sudo). It ends with the addresses:
+
+```
+Map viewer and styles   http://<address>/
+Print a map             http://<address>/mapprinter/
+Tile server (TAK)       http://<address>:8080/
+Map builder             http://<address>:8730/
+```
+
+A new install has no maps yet, so the viewer is blank. Build them in one of two ways, a small area first to check
+that everything works, then your real region:
+
+- on the **map builder page**: choose regions and layers on a map and press the button (next section);
+- or from the command line, with a region file (see "Region files"):
+
+```bash
+./scripts/build-region.sh --staged <region-file>
+docker restart tileserver
+#    or step by step, from a single Geofabrik area plus a terrain bounding box:
 ./scripts/build-vector.sh <geofabrik-area>
 ./scripts/build-contours.sh --areas <geofabrik-area> <min-lon> <min-lat> <max-lon> <max-lat> ft
 ./scripts/build-hillshade.sh --areas <geofabrik-area> <min-lon> <min-lat> <max-lon> <max-lat>
 ./scripts/build-elevation.sh --areas <geofabrik-area> <min-lon> <min-lat> <max-lon> <max-lat>   # optional: terrain analysis
-
-# 2. Start the server
-./scripts/data-placeholders.sh   # empty extras/usdata/elevation/hillshade-detail files unless you built them (needed after updating, too)
-cp .env.example .env          # optional: ports, config file, image
-./scripts/mem-limit.sh        # memory cap from this machine's RAM (see "Use with TAK clients")
-docker compose up -d --build
-
-# 3. Use it
-#    http://localhost/            style list and map viewer
-#    http://localhost/mapprinter/ print a map or an atlas
-#    http://localhost:8080/       TileServer GL directly (TAK raster tiles)
 ```
+
+`./scripts/install.sh --no-builder` leaves the map builder page out (and removes its service if it was installed).
+Without systemd, or to do the steps yourself: `./scripts/data-placeholders.sh` (empty files for the data you have
+not built, which the tile server needs to start), `./scripts/mem-limit.sh` (memory cap from this machine's RAM, see
+"Use with TAK clients"), `docker compose up -d --build`, and `./scripts/admin.sh` for the map builder.
 
 The web front (nginx) serves the print tool at `/mapprinter/` and proxies everything else to TileServer GL, so the print
 tool finds its tiles on the same host automatically. It also looks under `/maps/` (the Internet-in-a-Box layout) and on
 port 8080, or you can point it anywhere with `?tiles=http://host:8080`.
 
-### Map builder page (optional)
+### Map builder page
 
-If you would rather click than write a region file, start the map builder and open it in a browser:
-
-```bash
-./scripts/admin.sh
-#   Map builder: http://<this device's address>:8730/
-```
-
-The page shows a map of the world divided into regions (Geofabrik's extracts: continents, countries, and states or
-provinces of the larger countries). You choose the regions, tick the layers to build (base map, contour lines,
+`install.sh` runs the map builder as a service, at `http://<this device's address>:8730/` (`./scripts/admin.sh`
+starts it by hand). The page shows a map of the world divided into regions (Geofabrik's extracts: continents,
+countries, and states or provinces of the larger countries). A tap on a small region adds it; a tap on a large one
+asks whether you want all of it or to choose among its parts, so several US states or several European countries
+are a few taps. You choose the regions, tick the layers to build (base map, contour lines,
 hillshade, elevation, extras, and the US government data for regions in the United States), choose how detailed
 the terrain is (standard; the 10 m USGS data in the United States; or that plus one small area of 1 m hillshade
 that you place on the map, 10 to 50 km across), and the page shows how
@@ -96,8 +104,8 @@ The page is open to everyone who can reach the device, like the tile server and 
 network you trust. Whoever can open it can replace the maps and fill the disk, so on any other network start it
 with `ADMIN_PIN=<code>`, and the page asks for that code first. `ADMIN_HOST=127.0.0.1` keeps the page to the device
 itself, `ADMIN_PORT` moves it from 8730.
-It runs on the device itself with Python's standard library, not in a container, because it starts the build
-scripts. `systemd/fieldmap-admin.service` keeps it running across reboots. The page needs no internet to open; the
+These three can also be set in `.env`. It runs on the device itself with Python's standard library, not in a
+container, because it starts the build scripts; `install.sh` installs `systemd/fieldmap-admin.service` for it. The page needs no internet to open; the
 builds do.
 
 `tools/make-admin-regions.py` (run in the tool container) writes `admin/regions.json`, `admin/land.json` and
@@ -127,7 +135,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `config.json`, `config-basic.json` | TileServer GL configs: all six styles and the `topo-usgs` scale bands, or `osm`+`overlay` with only a base map |
 | `styles/`, `fonts/`, `sprites/` | The styles and every asset they need, all local |
 | `planetiler/` | Custom Planetiler schema for the extras layers |
-| `scripts/`, `regions/`, `tools/` | Data builders (Planetiler, GDAL, Tippecanoe, Osmium in a tool container) |
+| `scripts/`, `regions/`, `tools/` | `install.sh` (install and update), and the data builders (Planetiler, GDAL, Tippecanoe, Osmium in a tool container) |
 | `admin/`, `scripts/admin.sh` | The optional map builder page: choose regions and layers on a map, check the disk space, start the build |
 | `print/` | The print tool: `src/`, `public/`, `build.mjs` (esbuild). Built inside the `web` image |
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
@@ -750,9 +758,7 @@ Docker Compose install:
 ```bash
 cd <repo-dir>
 git pull
-./scripts/data-placeholders.sh          # empty files for optional data you have not built
-docker compose up -d --build
-docker restart tileserver               # loads changed config, styles and data
+./scripts/install.sh                    # placeholders, containers, tile server restart, map builder service
 ```
 
 Raspberry Pi with Internet-in-a-Box:
@@ -784,6 +790,8 @@ See [systemd/README.md](systemd/README.md).
   WebP by default. `regions/us-all.env` builds the whole world at low zoom plus all 50 states; `build-usdata.sh`
   takes the wider side of a box across the 180° line. The terrain disk checks run after the elevation download
   and count only cells with land.
+- `scripts/install.sh`: one command installs or updates everything and keeps it running across reboots, the map
+  builder page included.
 - Map builder page (`scripts/admin.sh`): choose regions on a world map, tick the layers, see the disk space and time
   the build needs, and start it from the browser. `build-region.sh --staged` (which the page uses) swaps all new
   files in together at the end and leaves the old ones in place if the build fails.

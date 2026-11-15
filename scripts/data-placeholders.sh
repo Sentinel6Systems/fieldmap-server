@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Make sure the optional data files exist: data/extras.mbtiles (build-extras.sh),
-# data/usdata.mbtiles (build-usdata.sh), data/elevation.mbtiles (build-elevation.sh) and
+# Make sure every data file the tile server reads exists: the base map, contours and
+# hillshade (so that a new install starts before the first build; the map is then blank),
+# and the optional data/extras.mbtiles (build-extras.sh), data/usdata.mbtiles
+# (build-usdata.sh), data/elevation.mbtiles (build-elevation.sh) and
 # data/hillshade-detail.mbtiles (build-detail.sh).
 # config.json lists them and the print styles read them, and TileServer GL stops at
 # start-up when a listed file is missing. A missing one is written empty: its layers are
@@ -41,6 +43,9 @@ PY
     echo "Wrote an empty data/$name.mbtiles (run $builder for the real layers)."
 }
 
+placeholder basemap "build-region.sh, or the map builder page," pbf
+placeholder contours build-contours.sh pbf contours_major contours_minor
+placeholder hillshade build-hillshade.sh raster webp ""
 placeholder extras build-extras.sh pbf power pipeline barrier tower landmark building_large exit runway
 placeholder usdata build-usdata.sh pbf obstacle gnis survey_mark protected flood
 placeholder elevation build-elevation.sh raster webp mapbox

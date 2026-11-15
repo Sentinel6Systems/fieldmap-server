@@ -30,15 +30,16 @@ sudo journalctl -u tileserver -f
 docker logs -f tileserver
 ```
 
-## The map builder page (optional)
+## The map builder page
 
-`fieldmap-admin.service` keeps the map builder page (`scripts/admin.sh`, see the main README)
-running across reboots. Copy it to `/etc/systemd/system/`, set `WorkingDirectory`, `User` and
-the path in `ExecStart` to your clone and its owner, then:
+`./scripts/install.sh` installs `fieldmap-admin.service` for you, with this folder and its owner
+filled in, and starts it; `./scripts/install.sh --no-builder` removes it again. By hand: copy the
+file to `/etc/systemd/system/`, set `WorkingDirectory`, `User` and the path in `ExecStart` to your
+clone and its owner, then:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now fieldmap-admin
 ```
 
-To make the page ask for a code, add `Environment=ADMIN_PIN=<code>` to the `[Service]` section.
+To make the page ask for a code, set `ADMIN_PIN=<code>` in `.env` and restart the service.

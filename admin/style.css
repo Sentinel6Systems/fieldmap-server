@@ -79,6 +79,12 @@ input[type=search], select { width: 100%; }
 .sw.chosen { background: var(--accent); }
 .sw.part { background: repeating-linear-gradient(45deg, var(--accent) 0 3px, var(--pick) 3px 6px); }
 .sw.free { background: var(--land); }
+@media (max-width: 600px) {
+  .legend { gap: 10px; font-size: 11px; padding: 3px 6px; right: 8px; justify-content: space-between; }
+  .legend li { white-space: nowrap; }
+  .sw { width: 11px; height: 11px; margin-right: 3px; }
+  #map { height: 400px; }
+}
 
 .side h3 { margin-top: 12px; }
 .list { list-style: none; margin: 0; padding: 0; max-height: 372px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
@@ -146,6 +152,13 @@ dialog { border: 1px solid var(--line); border-radius: var(--radius); background
 dialog::backdrop { background: rgba(0, 0, 0, .5); }
 dialog ul { padding-left: 20px; }
 [hidden] { display: none !important; }
+
+/* the panel that asks "all of it, or parts of it?" when a large region is tapped */
+.sheet { position: absolute; left: 8px; right: 8px; bottom: 44px; z-index: 4; background: var(--card); border: 2px solid var(--accent);
+  border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 18px rgba(0, 0, 0, .35); }
+.sheet p { margin: 0 34px 8px 0; }
+.sheet .row { margin-top: 0; }
+.sheet .close { position: absolute; right: 6px; top: 6px; min-height: 30px; width: 30px; padding: 0; border-radius: 50%; }
 
 /* town names and the 1 m area on the map */
 .labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }

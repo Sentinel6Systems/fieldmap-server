@@ -1,16 +1,14 @@
-# Systemd unit for the map builder page (scripts/admin.sh). Optional.
-# It keeps the page available after a reboot. Without it, start the page by hand
-# with ./scripts/admin.sh whenever you want to build or change the maps.
+# Systemd unit for the map builder page (scripts/admin.sh): it keeps the page available,
+# now and after a reboot.
 #
-# Install steps:
+# scripts/install.sh installs this file with WorkingDirectory, User and ExecStart set to
+# your clone of this repository and its owner (a member of the docker group). By hand:
 # 1. Copy this file to /etc/systemd/system/fieldmap-admin.service
-# 2. Edit WorkingDirectory and User. Set them to your clone of this repository and to
-#    the user who owns it (a member of the docker group).
+# 2. Edit WorkingDirectory, User and ExecStart.
 # 3. Run: sudo systemctl daemon-reload
 # 4. Run: sudo systemctl enable --now fieldmap-admin
-# The page is open to everyone who can reach the device. To make it ask for a code, add
-#   Environment=ADMIN_PIN=<code>
-# to the [Service] section.
+#
+# The page's port, address and optional PIN are read from .env (see .env.example).
 
 [Unit]
 Description=fieldmap-server map builder page

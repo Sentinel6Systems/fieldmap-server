@@ -118,10 +118,11 @@ function setBox(b) {
 // Town names, the largest first, as many as fit: they tell the user where they are.
 function drawLabels() {
   const layer = $("labels"), sx = map.clientWidth / box.w, sy = map.clientHeight / box.h, out = [];
+  const top = $("crumbs").offsetHeight + 18;       // below the "where you are" buttons, which wrap on a phone
   if (box.w < 200) for (const [name, lon, lat] of PLACES) {
     for (const shift of [0, 360]) {
       const x = (lon + shift - box.x) * sx, y = (mercY(lat) - box.y) * sy;
-      if (x > 10 && y > 60 && x < map.clientWidth - 90 && y < map.clientHeight - 40 &&
+      if (x > 10 && y > top && x < map.clientWidth - 90 && y < map.clientHeight - 40 &&
           !out.some(o => Math.abs(o.y - y) < 16 && Math.abs(o.x - x) < 110)) out.push({ name, x, y });
     }
     if (out.length >= 28) break;
@@ -134,6 +135,21 @@ function fit(id = view) {
   let [w, s, e, n] = REG[id].bbox;
   if (w > e) e += 360;                       // across the 180 degree line: the copy drawn 360 further east
   const pad = Math.max(0.3, (e - w) * 0.06);
+  setBox({ x: w - pad, y: mercY(n) - pad, w: e - w + 2 * pad, h: mercY(s) - mercY(n) + 2 * pad });
+}
+
+// Where most of a region's parts are: the map opens there, so that they are large enough to
+// tap (the United States without Alaska, Hawaii and the islands; Europe without the Azores and
+// Svalbard). The far ones are a zoom out away, and in the list.
+function fitParts(id) {
+  const kids = KIDS[id] || [];
+  if (!id || kids.length < 8) return fit(id);
+  const spans = kids.map(k => { let [w, s, e, n] = REG[k].bbox; if (w > e) e += 360; return { w, s, e, n, x: (w + e) / 2, y: (s + n) / 2 }; });
+  const cut = key => { const v = spans.map(p => p[key]).sort((a, b) => a - b), d = Math.floor(v.length / 10); return [v[d], v[v.length - 1 - d]]; };
+  const [x0, x1] = cut("x"), [y0, y1] = cut("y");
+  const near = spans.filter(p => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1);
+  const w = Math.min(...near.map(p => p.w)), e = Math.max(...near.map(p => p.e));
+  const s = Math.min(...near.map(p => p.s)), n = Math.max(...near.map(p => p.n)), pad = Math.max(0.3, (e - w) * 0.04);
   setBox({ x: w - pad, y: mercY(n) - pad, w: e - w + 2 * pad, h: mercY(s) - mercY(n) + 2 * pad });
 }
 
@@ -180,6 +196,30 @@ function toggle(id) {
   refresh();
 }
 
+// A tap on a region. One without smaller parts is added or taken off at once. One with parts
+// (a continent, a large country) opens a panel on the map: all of it, or choose among its parts.
+function pick(id) {
+  if (!chosenAbove(id) && !KIDS[id]) { closeSheet(); return toggle(id); }
+  const r = REG[id], above = chosenAbove(id), sheet = $("sheet"), buttons = [];
+  let text;
+  if (above) {
+    text = `${r.name} is already included, because all of ${REG[above].name} is chosen.`;
+    buttons.push(el("button", { className: "primary", textContent: `Choose only parts of ${REG[above].name} instead`,
+      onclick: () => { chosen.delete(above); save(); closeSheet(); draw(); refresh(); say(`Now tap the parts of ${REG[above].name} you want.`); } }));
+  } else {
+    const all = chosen.has(id);
+    text = all ? `All of ${r.name} is chosen.` : hasChosenInside(id) ? `Part of ${r.name} is chosen.` : `${r.name}: all of it, or only parts of it?`;
+    buttons.push(el("button", { className: all ? "" : "primary", textContent: all ? "Take it off" : `Add all of ${r.name}`,
+      onclick: () => { closeSheet(); toggle(id); } }));
+    buttons.push(el("button", { className: all ? "primary" : "", textContent: all ? "Choose only parts of it instead ›" : "Choose parts of it ›",
+      onclick: () => { if (all) { chosen.delete(id); save(); refresh(); } lookInside(id); } }));
+  }
+  sheet.replaceChildren(el("p", {}, el("b", { textContent: text })), el("div", { className: "row" }, ...buttons),
+    el("button", { className: "close", textContent: "×", ariaLabel: "Close", onclick: closeSheet }));
+  sheet.hidden = false;
+}
+function closeSheet() { $("sheet").hidden = true; }
+
 function say(text) {
   const h = $("hover");
   h.textContent = text;
@@ -191,13 +231,15 @@ function say(text) {
 
 function lookInside(id) {
   view = id;
+  closeSheet();
   $("search").value = "";
   draw();
-  fit();
+  fitParts(id);
 }
 
 // From a search result: the map moves to the region, among its neighbours.
 function showOnMap(id) {
+  closeSheet();
   view = REG[REG[id].parent] ? REG[id].parent : "";
   draw();
   fit(id);
@@ -225,11 +267,11 @@ function draw() {
     p.setAttribute("fill-rule", "evenodd");
     p.dataset.id = id;
     p.setAttribute("class", "region" + (chosen.has(id) ? " chosen" : chosenAbove(id) ? " within" : hasChosenInside(id) ? " part" : ""));
-    p.addEventListener("click", () => { if (!placing && (!drag || !drag.moved)) toggle(id); });
+    p.addEventListener("click", () => { if (!placing && (!drag || !drag.moved)) pick(id); });
     p.addEventListener("dblclick", () => { if (!placing && KIDS[id]) lookInside(id); });
     p.addEventListener("pointermove", ev => {
       const h = $("hover"), b = map.parentElement.getBoundingClientRect();
-      h.textContent = r.name + (KIDS[id] ? " (double-click to look inside)" : "");
+      h.textContent = r.name;
       h.hidden = false;
       h.style.left = `${ev.clientX - b.left}px`; h.style.top = `${ev.clientY - b.top}px`;
       setHot(id);
@@ -305,7 +347,7 @@ function regionRow(id, where) {
   li.append(el("span", { className: "name" }, r.name,
     el("small", { textContent: where || (above ? `included with ${REG[above].name}` : hasChosenInside(id) ? "part of it is chosen" : "") })));
   if (where) li.append(el("button", { textContent: "Show", title: `Move the map to ${r.name}`, onclick: () => showOnMap(id) }));
-  else if (KIDS[id]) li.append(el("button", { textContent: "Look inside ›", title: `Show the parts of ${r.name}, to choose only some of them`, onclick: () => lookInside(id) }));
+  else if (KIDS[id]) li.append(el("button", { textContent: "Its parts ›", title: `Show the parts of ${r.name}, to choose only some of them`, onclick: () => lookInside(id) }));
   if (!above) li.append(el("button", { className: chosen.has(id) ? "on" : "", textContent: chosen.has(id) ? "✓ Chosen" : "Add",
     title: chosen.has(id) ? "Click to take it off your list" : "Add this region to your list", onclick: () => toggle(id) }));
   li.addEventListener("pointerenter", () => setHot(id));
@@ -322,7 +364,8 @@ function drawList() {
     ids = Object.keys(REG).filter(id => REG[id].name.toLowerCase().includes(q))
       .sort((a, b) => REG[a].name.toLowerCase().indexOf(q) - REG[b].name.toLowerCase().indexOf(q) || REG[a].name.localeCompare(REG[b].name)).slice(0, 40);
   } else {
-    $("list-title").textContent = view ? `Parts of ${REG[view].name}` : "Parts of the world";
+    const whole = view && (chosen.has(view) ? view : chosenAbove(view));
+    $("list-title").textContent = (view ? `Parts of ${REG[view].name}` : "Parts of the world") + (whole ? ` (all of ${REG[whole].name} is chosen)` : "");
     ids = [...(KIDS[view] || [])].sort((a, b) => REG[a].name.localeCompare(REG[b].name));
   }
   if (!ids.length) list.append(el("li", { className: "empty", textContent: q ? "Nothing with that name. Try a country or a state." : "This region has no smaller parts." }));
