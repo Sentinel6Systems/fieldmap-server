@@ -434,8 +434,7 @@ terrain_estimate() {
         --hillshade-format "${HILLSHADE_FORMAT:-webp}" "$@"
 }
 
-# Download the Copernicus GLO-30 cells (1x1 degree GeoTIFF files) that touch the outline,
-# then build one mosaic per outline part (WORK_DIR/outline/mosaics.txt).
+# Download the Copernicus GLO-30 cells (1x1 degree GeoTIFF files) that touch the outline.
 # Cells without a file (open sea, mostly) are added to data/cache/dem/ocean-cells.txt and
 # not requested again. Argument: WORK_DIR
 download_dem() {
@@ -487,5 +486,11 @@ download_dem() {
         done
     done 3< "$work/outline/cells.txt"
     echo "Elevation cells: $fetched downloaded, $cached already here, $none with no file (open sea)."
-    python3 "$REPO_DIR/tools/region-outline.py" mosaic --out "$work/outline" --dem-dir "$out_dir"
+}
+
+# One mosaic (a VRT, no copy) of the downloaded cells per part of the outline, listed in
+# WORK_DIR/outline/mosaics.txt (see tools/region-outline.py). Run after download_dem.
+# Argument: WORK_DIR
+terrain_mosaic() {
+    python3 "$REPO_DIR/tools/region-outline.py" mosaic --out "$1/outline" --dem-dir "$REPO_DIR/data/cache/dem"
 }

@@ -56,39 +56,29 @@ mkdir -p "$WORK_DIR"
 terrain_outline "$WORK_DIR" "$MIN_LON" "$MIN_LAT" "$MAX_LON" "$MAX_LAT" $AREAS
 terrain_estimate "$WORK_DIR" hillshade
 
-echo "Step 1/4: download elevation tiles"
+echo "Step 1/3: download elevation tiles"
 download_dem "$WORK_DIR"
 CELLS="$(terrain_land_cells "$WORK_DIR")"
-# Measured: 2 GB working space for 64 one-degree cells (land cells only, after the download).
-NEED_GB="$(python3 -c "print(max(4, int($CELLS * 0.06 + 2)))")"
+# The hillshade raster of each outline part, its overviews and the tiles (land cells
+# only, after the download). Measured: under 0.015 GB per one-degree cell of mountains.
+NEED_GB="$(python3 -c "print(max(2, int($CELLS * 0.03 + 2)))")"
 require_free_space "$REPO_DIR/data" "$NEED_GB" "hillshade for $CELLS one-degree cells with land"
 
-echo "Step 2/4: reproject the elevation data, masked to the outline"
+terrain_mosaic "$WORK_DIR"
+echo "Step 2/3: compute the hillshade, masked to the outline"
 HILLSHADES=()
-while read -r part raw _masked cut xmin ymin xmax ymax res <&3; do
-    # The extent and pixel size come from region-outline.py (gdalwarp's own choice goes
-    # wrong for a part that touches the 180° line).
-    # BIGTIFF=YES lifts the 4 GB TIFF limit, which large regions exceed.
-    gdalwarp -q -t_srs EPSG:3857 -te "$xmin" "$ymin" "$xmax" "$ymax" -tr "$res" "$res" \
-        -r bilinear -cutline "$cut" -dstnodata -32768 -ot Float32 \
-        -co COMPRESS=DEFLATE -co PREDICTOR=3 -co BIGTIFF=YES -co TILED=YES \
-        "$raw" "$WORK_DIR/dem_3857-$part.tif"
-    HILLSHADES+=("$WORK_DIR/hillshade-$part.tif")
-done 3< "$WORK_DIR/outline/mosaics.txt"
-
-echo "Step 3/4: compute the hillshade"
-for hs in "${HILLSHADES[@]}"; do
-    dem="$WORK_DIR/dem_3857-${hs##*/hillshade-}"
-    # Outside the outline the hillshade is 0 (no data); the tiles are transparent there.
-    gdaldem hillshade -q -z 1 -az 315 -alt 45 -compute_edges \
-        -co COMPRESS=DEFLATE -co BIGTIFF=YES -co TILED=YES \
-        "$dem" "$hs"
-    rm -f "$dem"
+while read -r part raw cut xmin ymin xmax ymax res <&3; do
+    hs="$WORK_DIR/hillshade-$part.tif"
+    # The extent and pixel size come from region-outline.py (GDAL's own choice goes wrong
+    # for a part that touches the 180° line). The elevation data is reprojected and shaded
+    # in memory, chunk by chunk: no reprojected copy on disk.
+    python3 "$REPO_DIR/tools/hillshade-raster.py" "$raw" "$cut" "$hs" "$xmin" "$ymin" "$xmax" "$ymax" "$res"
     # Overviews make the lower zoom levels fast to read.
     gdaladdo -q -r average "$hs" 2 4 8 16 32 64
-done
+    HILLSHADES+=("$hs")
+done 3< "$WORK_DIR/outline/mosaics.txt"
 
-echo "Step 4/4: write the raster tiles (zoom $MINZOOM-$HILLSHADE_MAXZOOM, $HILLSHADE_FORMAT)"
+echo "Step 3/3: write the raster tiles (zoom $MINZOOM-$HILLSHADE_MAXZOOM, $HILLSHADE_FORMAT)"
 python3 "$REPO_DIR/tools/hillshade-tiles.py" --outline "$WORK_DIR/outline/outline.geojson" \
     --minzoom "$MINZOOM" --maxzoom "$HILLSHADE_MAXZOOM" --format "$HILLSHADE_FORMAT" \
     --attribution "Copernicus DEM (c) ESA" \

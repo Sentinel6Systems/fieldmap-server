@@ -59,7 +59,13 @@ def _tile_lonlat(z, x, y):
     return x / k * 360 - 180, math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / k))))
 
 
-def _box(w, s, e, n):
+def cell_name(lat, lon):
+    """File name (without .tif) of the Copernicus GLO-30 cell whose south-west corner is lat, lon."""
+    return (f"Copernicus_DSM_COG_10_{'N' if lat >= 0 else 'S'}{abs(lat):02d}_00_"
+            f"{'E' if lon >= 0 else 'W'}{abs(lon):03d}_00_DEM")
+
+
+def box(w, s, e, n):
     ring = ogr.Geometry(ogr.wkbLinearRing)
     for px, py in ((w, s), (e, s), (e, n), (w, n), (w, s)):
         ring.AddPoint_2D(px, py)
@@ -93,7 +99,7 @@ def image_bytes(bands, driver, options):
 def _outline_mask(bounds, w, h):
     """The outline rasterised onto a block: True where the pixel centre is inside."""
     if "layer" not in _mask:                 # once per worker process
-        g = read_outline(_cfg["outline"]).Intersection(_box(-180, -MAX_LAT, 180, MAX_LAT))
+        g = read_outline(_cfg["outline"]).Intersection(box(-180, -MAX_LAT, 180, MAX_LAT))
         src, dst = osr.SpatialReference(), osr.SpatialReference()
         src.ImportFromEPSG(4326)
         dst.ImportFromEPSG(3857)
@@ -106,10 +112,16 @@ def _outline_mask(bounds, w, h):
         f.SetGeometry(g)
         layer.CreateFeature(f)
         _mask.update(ds=ds, layer=layer, srs=dst.ExportToWkt())
+    gt = (bounds[0], (bounds[2] - bounds[0]) / w, 0, bounds[3], 0, -(bounds[3] - bounds[1]) / h)
+    return layer_mask(_mask["layer"], _mask["srs"], gt, w, h)
+
+
+def layer_mask(layer, srs_wkt, gt, w, h):
+    """A polygon layer rasterised onto a grid: True where the pixel centre is inside."""
     r = gdal.GetDriverByName("MEM").Create("", w, h, 1, gdal.GDT_Byte)
-    r.SetGeoTransform((bounds[0], (bounds[2] - bounds[0]) / w, 0, bounds[3], 0, -(bounds[3] - bounds[1]) / h))
-    r.SetProjection(_mask["srs"])
-    gdal.RasterizeLayer(r, [1], _mask["layer"], burn_values=[1])
+    r.SetGeoTransform(gt)
+    r.SetProjection(srs_wkt)
+    gdal.RasterizeLayer(r, [1], layer, burn_values=[1])
     return r.GetRasterBand(1).ReadAsArray() > 0
 
 
@@ -150,7 +162,7 @@ def write(out, sources, outline_path, minzoom, maxzoom, warp, encode, meta, jobs
                     if outline is not None:
                         lw, ln = _tile_lonlat(z, bx, by)
                         le, ls = _tile_lonlat(z, bx1 + 1, by1 + 1)
-                        if not outline.Intersects(_box(lw, ls, le, ln)):
+                        if not outline.Intersects(box(lw, ls, le, ln)):
                             continue
                     job_list.append((src, z, bx, by, bx1, by1))
     tmp = out + ".tmp"

@@ -67,52 +67,71 @@ terrain_estimate "$WORK_DIR" contours
 echo "Step 1/3: download elevation tiles"
 download_dem "$WORK_DIR"
 CELLS="$(terrain_land_cells "$WORK_DIR")"
-# Disk estimate (checked after the download, so cells of open sea are not counted):
-# the lines of every cell, then tippecanoe's temporary files and the tiles beside them.
-# Measured on rugged mountains: 26 kB per km², about 0.2 GB for a whole cell.
-NEED_GB="$(python3 -c "print(max(4, int($CELLS * 0.25 + 3)))")"
-require_free_space "$REPO_DIR/data" "$NEED_GB" "contours for $CELLS one-degree cells with land"
 
-# The lines of finished cells are kept until the build is complete, so a stopped build
-# carries on where it was. They belong to one outline and one unit: others are removed.
-SIGNATURE="$( (echo "v1 $UNITS"; cat "$WORK_DIR/outline/outline.geojson") | sha1sum | cut -c1-12)"
+# The lines of finished cells, and the tiles made from them, are kept until the build is
+# complete, so a stopped build carries on where it was. They belong to one outline and
+# one unit: others are removed.
+SIGNATURE="$( (echo "v2 $UNITS"; cat "$WORK_DIR/outline/outline.geojson") | sha1sum | cut -c1-12)"
 CELLS_ROOT="$REPO_DIR/data/cache/contour-cells"
 CELLS_DIR="$CELLS_ROOT/$SIGNATURE"
 mkdir -p "$CELLS_DIR"
 find "$CELLS_ROOT" -mindepth 1 -maxdepth 1 ! -name "$SIGNATURE" -exec rm -rf {} +
+rm -f "$CELLS_DIR"/*.part.*
+
+# Disk estimate (checked after the download, so cells of open sea are not counted): the
+# lines of every cell, then tippecanoe's temporary files and the tiles beside them.
+# Measured on rugged mountains: 17 kB per km² at the peak, about 0.15 GB for a whole
+# cell. What an earlier, stopped run already wrote is taken off.
+HAVE_MB="$(du -sm "$CELLS_DIR" | cut -f1)"
+NEED_GB="$(python3 -c "print(max(4, int($CELLS * 0.2 + 3 - $HAVE_MB / 1024)))")"
+require_free_space "$REPO_DIR/data" "$NEED_GB" "contours for $CELLS one-degree cells with land"
 
 echo "Step 2/3: compute contour lines, one elevation cell at a time (interval $MINOR $UNITS)"
 python3 "$REPO_DIR/tools/contour-cells.py" --outline-dir "$WORK_DIR/outline" \
     --dem-dir "$REPO_DIR/data/cache/dem" --out-dir "$CELLS_DIR" --units "$UNITS" \
     ${CONTOUR_JOBS:+--jobs "$CONTOUR_JOBS"}
-mapfile -t MAJOR_FILES < <(find "$CELLS_DIR" -name '*-major.fgb' | sort)
-mapfile -t MINOR_FILES < <(find "$CELLS_DIR" -name '*-minor.fgb' | sort)
-if [ ${#MAJOR_FILES[@]} -eq 0 ] && [ ${#MINOR_FILES[@]} -eq 0 ]; then
+
+echo "Step 3/3: build the vector tiles"
+# tippecanoe maps its temporary files into memory. Keep them on the data drive (the
+# container's own /tmp is on Docker's drive and not counted by the disk check) unless
+# that drive cannot do it (some network and FUSE mounts).
+TIPPE_TMP="$WORK_DIR/tmp"
+mkdir -p "$TIPPE_TMP"
+if ! python3 -c "
+import mmap, sys
+with open(sys.argv[1], 'w+b') as f:
+    f.truncate(4096)
+    mmap.mmap(f.fileno(), 4096).close()" "$TIPPE_TMP/probe" 2>/dev/null; then
+    echo "Note: $REPO_DIR/data cannot map files into memory; tippecanoe's temporary files go to /tmp."
+    TIPPE_TMP=/tmp
+fi
+rm -f "$TIPPE_TMP/probe"
+
+# One tippecanoe run per layer over all cells, so the low zooms are thinned the same way
+# everywhere. A finished layer is kept, and its cells' lines are deleted at once.
+# Arguments: KIND LAYER MINZOOM
+tile_layer() {
+    local kind="$1" layer="$2" minzoom="$3" files
+    [ -f "$CELLS_DIR/$kind.mbtiles" ] && return 0
+    # Short names, relative to the folder: a large region has thousands of files.
+    mapfile -t files < <(cd "$CELLS_DIR" && find . -maxdepth 1 -name "*-$kind.fgb" | sort)
+    [ ${#files[@]} -gt 0 ] || return 0
+    # -T: tippecanoe reads FlatGeobuf numbers as text unless told the type.
+    (cd "$CELLS_DIR" && tippecanoe -q -f -t "$TIPPE_TMP" -o "$kind.part.mbtiles" -l "$layer" \
+        -Z"$minzoom" -z14 -y "$ELEV_ATTR" -T "$ELEV_ATTR:$ELEV_TYPE" --drop-densest-as-needed \
+        -A "Copernicus DEM (c) ESA" "${files[@]}")
+    mv "$CELLS_DIR/$kind.part.mbtiles" "$CELLS_DIR/$kind.mbtiles"
+    (cd "$CELLS_DIR" && rm -f "${files[@]}")
+}
+tile_layer major contours_major 8
+tile_layer minor contours_minor 11
+mapfile -t JOIN < <(find "$CELLS_DIR" -maxdepth 1 \( -name major.mbtiles -o -name minor.mbtiles \) | sort)
+if [ ${#JOIN[@]} -eq 0 ]; then
     echo "Error: no contour lines in this outline (flat, or all sea)." >&2
     exit 1
 fi
-
-echo "Step 3/3: build the vector tiles"
-# One tippecanoe run over all cells, so the low zooms are thinned the same way everywhere.
-# -t keeps its temporary files on the data drive (the container's own /tmp is small).
-# -T: tippecanoe reads FlatGeobuf numbers as text unless told the type.
-mkdir -p "$WORK_DIR/tmp"
-JOIN=()
-if [ ${#MAJOR_FILES[@]} -gt 0 ]; then
-    tippecanoe -q -f -t "$WORK_DIR/tmp" -o "$WORK_DIR/major.mbtiles" -l contours_major \
-        -Z8 -z14 -y "$ELEV_ATTR" -T "$ELEV_ATTR:$ELEV_TYPE" --drop-densest-as-needed \
-        -A "Copernicus DEM (c) ESA" "${MAJOR_FILES[@]}"
-    JOIN+=("$WORK_DIR/major.mbtiles")
-fi
-if [ ${#MINOR_FILES[@]} -gt 0 ]; then
-    tippecanoe -q -f -t "$WORK_DIR/tmp" -o "$WORK_DIR/minor.mbtiles" -l contours_minor \
-        -Z11 -z14 -y "$ELEV_ATTR" -T "$ELEV_ATTR:$ELEV_TYPE" --drop-densest-as-needed \
-        -A "Copernicus DEM (c) ESA" "${MINOR_FILES[@]}"
-    JOIN+=("$WORK_DIR/minor.mbtiles")
-fi
 tile-join -q -f -o "$REPO_DIR/data/contours.mbtiles" -n "Contours ($UNITS)" "${JOIN[@]}"
 
-echo "Contour lines of all cells: $(du -sh "$CELLS_DIR" | cut -f1)."
-report_work_space "$WORK_DIR" "$REPO_DIR/data/contours.mbtiles"
+report_work_space "$CELLS_DIR" "$REPO_DIR/data/contours.mbtiles"
 rm -rf "$WORK_DIR" "$CELLS_ROOT"
 echo "Done. Output: data/contours.mbtiles (units: $UNITS)"

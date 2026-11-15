@@ -71,8 +71,8 @@ From a six-state build (about 64 square degrees):
 | Step | Finished file | Working space needed |
 |---|---|---|
 | Base map | ~1 GB | ~15 GB |
-| Contours | ~2 GB | under 20 GB (checked as 0.25 GB per one-degree cell with land) |
-| Hillshade | ~0.5 GB as PNG; about a quarter as lossy WebP (the default) | ~15 GB |
+| Contours | ~2 GB | under 16 GB (checked as 0.2 GB per one-degree cell with land) |
+| Hillshade | ~0.5 GB as PNG; about a quarter as lossy WebP (the default) | under 4 GB (checked as 0.03 GB per cell with land) |
 | Elevation (zoom 12) | ~0.05-0.15 GB | the elevation downloads only |
 
 Finished downloads are kept in `data/sources` and `data/cache` and reused.
@@ -303,7 +303,7 @@ Test builds on an 8-core desktop (sizes of the finished files; times include the
 
 | Test area | Outline | Contours (40 ft) | Hillshade (lossy WebP) | Elevation (zoom 12) |
 |---|---|---|---|---|
-| Mountains and sound against an international border (one US state's outline, cut to a 2.2° × 1.4° box) | 12,134 km², 1 part | 61 MB, 54 s | 2.4 MB, 10 s | 16.6 MB, 15 s |
+| Mountains and sound against an international border (one US state's outline, cut to a 2.2° × 1.4° box) | 12,134 km², 1 part | 61 MB, 47 s | 2.4 MB, 7 s | 16.6 MB, 15 s |
 | One Aleutian island west of 180° (mostly sea) | 13,210 km², 1 part | 9.0 MB, 9 s | 0.5 MB, 6 s | 2.8 MB, 16 s |
 | Two Aleutian islands, a box across 180° | 9,650 km², 2 parts | 1.9 MB, 5 s | 0.1 MB, 4 s | 0.7 MB, 4 s |
 
@@ -323,18 +323,28 @@ Use `ft` for feet (minor 40 ft, major 200 ft):
 
 The lines are computed one 1° elevation cell at a time, several cells in parallel (`CONTOUR_JOBS=<n>` sets how many;
 the default is one fewer than the CPUs), by `tools/contour-cells.py`. Each cell also reads one pixel row and column
-of its neighbours, and its lines are cut along shared pixel centres, so they meet the neighbours' lines exactly.
-Finished cells are kept in `data/cache/contour-cells` until the build is complete: a build that stops (power, disk,
-a closed terminal) carries on with the missing cells when the same command is run again. One tippecanoe run then
-tiles all cells together, so the low zooms are thinned the same way everywhere. No file holds more than one cell's
-lines, which keeps the working space small: 0.25 GB on the first test area below at its peak, about 26 kB per km² of
-rugged mountains (the disk check allows 0.25 GB per cell with land).
+of its neighbours, and its lines are cut along shared pixel centres, so they meet the neighbours' lines exactly
+(where the pixel width changes, at 50°, 60°, 70° ..., the row between two cells is contoured on a grid that holds
+both cells' pixel centres). One tippecanoe run per layer then tiles all cells together, so the low zooms are thinned
+the same way everywhere.
+
+Finished cells, and each finished layer's tiles, are kept in `data/cache/contour-cells` until the build is
+complete: a build that stops (power, disk, a closed terminal) carries on where it was when the same command is run
+again. To keep the working space small, no file holds more than one cell's lines, a layer's lines are deleted as
+soon as its tiles exist, and tippecanoe's temporary files are on the data drive, where the disk check counts them.
+On the first test area above the peak was 0.21 GB, the finished 61 MB file included: about 17 kB per km² of
+rugged mountains (the disk check allows 0.2 GB per cell with land, less what a stopped run already wrote).
 
 ### `build-hillshade.sh [--areas "<geofabrik paths>"] <min-lon> <min-lat> <max-lon> <max-lat>`
 
 Builds `data/hillshade.mbtiles` from the same elevation data: gray tiles from zoom 6 to `HILLSHADE_MAXZOOM` (default
 12; the print styles stretch zoom 12 over the higher zooms without visible loss on paper), transparent outside the
 outline. `HILLSHADE_FORMAT` chooses the encoding: `webp` (lossy, quality 80; the default), `webp-lossless` or `png`.
+
+The elevation data is reprojected and shaded in memory, in chunks of 4096 × 4096 pixels with one pixel of overlap
+(`tools/hillshade-raster.py`), several in parallel; chunks of sea or outside the outline are skipped. Only the
+gray hillshade raster and its overviews are written to the working folder, not a reprojected copy of the heights:
+20 MB at the peak on the first test area above, where the earlier whole-region pass took 64 MB for the same pixels.
 
 A hillshade file built before this option (PNG to zoom 13) can be converted in place of a rebuild:
 
@@ -500,11 +510,11 @@ The world layer is built once (about 96 GB to download and about 160 GB of free 
 The box crosses the 180° line, so the terrain covers Alaska's Aleutians on both sides of it, while the base map,
 extras and US data stop at 180°. Geofabrik's US outline takes in a wide band of sea, so the first estimate is high
 (it counts about 3,700 one-degree cells); cells of open sea have no elevation file and are recorded on the first
-download, which makes later estimates closer. The contours step's disk check allows 0.25 GB of working space per
-one-degree cell with land, about 300 GB for all of the US, freed when it finishes; that figure is scaled up from
-small test builds, not measured at this size. Allow a few days on a fast machine with 32 GB of RAM. A failed or
-stopped step can be run again on its own, for example `./scripts/build-region.sh regions/us-all.env contours`
-(the contours step carries on with the cells it has not finished).
+download, which makes later estimates closer. The contours step's disk check allows 0.2 GB of working space per
+one-degree cell with land, about 230 GB for all of the US, and the hillshade step's 0.03 GB, about 40 GB, freed
+when each finishes; those figures are scaled up from small test builds, not measured at this size. Allow a few
+days on a fast machine with 32 GB of RAM. A failed or stopped step can be run again on its own, for example
+`./scripts/build-region.sh regions/us-all.env contours` (the contours step carries on where it stopped).
 
 Planetiler also needs three shared inputs (water polygons, Natural Earth,
 lake centerlines). The script downloads them to `data/sources` before it runs
@@ -664,8 +674,9 @@ See [systemd/README.md](systemd/README.md).
   WebP by default. `regions/us-all.env` builds the whole world at low zoom plus all 50 states; `build-usdata.sh`
   takes the wider side of a box across the 180° line. The terrain disk checks run after the elevation download
   and count only cells with land.
-- Contours are computed one elevation cell at a time, in parallel, and a stopped build resumes: about half the
-  time and less than half the working space of the earlier whole-region pass, with the same lines.
+- Contours are computed one elevation cell at a time, in parallel, and a stopped build resumes (the tiling too):
+  under half the time and about a third of the working space of the earlier whole-region pass, with the same lines.
+  Hillshade is shaded in chunks in memory: the same pixels with a third of the working space.
 - Terrain analysis in the print tool: viewshed and VHF/UHF radio coverage from a point, point-to-point profiles,
   printed on sheets and atlases with a collar strip and an optional profile page; `build-elevation.sh` writes the
   elevation tiles it uses.

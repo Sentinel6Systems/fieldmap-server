@@ -18,10 +18,9 @@ mosaic spans the whole globe. Writes, in --out:
   cells.txt             "N <Copernicus tile name>" for each 1° cell that touches part N
   summary.json          areas and cell counts, for the estimate
 mosaic: for each part with at least one downloaded cell, part-N.vrt (the cells on their own
-grid) and part-N-masked.vrt (the same grid, -32768 outside the outline); lists them in
-mosaics.txt as "N part-N.vrt part-N-masked.vrt part-N.geojson XMIN YMIN XMAX YMAX RES": the
-last five are the part's extent and pixel size in Web Mercator, for gdalwarp -te/-tr (left
-to itself, gdalwarp sees a part that touches 180° wrap round the globe and picks a far too
+grid); lists them in mosaics.txt as "N part-N.vrt part-N.geojson XMIN YMIN XMAX YMAX RES": the
+last five are the part's extent and pixel size in Web Mercator, for the hillshade's grid (left
+to itself, GDAL sees a part that touches 180° wrap round the globe and picks a far too
 coarse grid).
 estimate: prints the expected output size and time of each step.
 
@@ -37,25 +36,13 @@ import urllib.request
 
 from osgeo import gdal, ogr, osr
 
+from tilewriter import box, cell_name
+
 gdal.UseExceptions()
 ogr.UseExceptions()
 
 GEOFABRIK = "https://download.geofabrik.de"
 ORIGIN = 20037508.342789244          # half the Web Mercator world width, metres
-
-
-def cell_name(lat, lon):
-    return (f"Copernicus_DSM_COG_10_{'N' if lat >= 0 else 'S'}{abs(lat):02d}_00_"
-            f"{'E' if lon >= 0 else 'W'}{abs(lon):03d}_00_DEM")
-
-
-def box(w, s, e, n):
-    ring = ogr.Geometry(ogr.wkbLinearRing)
-    for x, y in ((w, s), (e, s), (e, n), (w, n), (w, s)):
-        ring.AddPoint_2D(x, y)
-    g = ogr.Geometry(ogr.wkbPolygon)
-    g.AddGeometry(ring)
-    return g
 
 
 def parse_poly(path):
@@ -226,18 +213,13 @@ def mosaic(a):
         # highest with bilinear keeps the finest grid and interpolates the coarser cells.
         # A missing cell inside the mosaic is open sea and reads as 0 m.
         vrt = gdal.BuildVRT(raw, files, resolution="highest", resampleAlg="bilinear")
-        gt, xs, ys = vrt.GetGeoTransform(), vrt.RasterXSize, vrt.RasterYSize
+        gt = vrt.GetGeoTransform()
         vrt = None
-        masked = os.path.join(a.out, f"part-{i}-masked.vrt")
-        # Same grid (nearest neighbour on identical pixels is a copy), -32768 outside the outline.
-        gdal.Warp(masked, raw, format="VRT", cutlineDSName=cut, dstNodata=-32768, resampleAlg="near",
-                  outputBounds=(gt[0], gt[3] + ys * gt[5], gt[0] + xs * gt[1], gt[3]), xRes=gt[1], yRes=-gt[5],
-                  outputType=gdal.GDT_Float32)
         # Web Mercator x is linear in longitude: keep the cells' longitude spacing.
         w, e, s, n = read_geojson(cut).GetEnvelope()
         mx = lambda lon: max(-180.0, min(180.0, lon)) * ORIGIN / 180
         my = lambda lat: math.log(math.tan(math.pi / 4 + math.radians(max(-85.0511, min(85.0511, lat))) / 2)) * ORIGIN / math.pi
-        out.append(f"{i} {raw} {masked} {cut} {mx(w):.3f} {my(s):.3f} {mx(e):.3f} {my(n):.3f} {gt[1] * ORIGIN / 180:.4f}")
+        out.append(f"{i} {raw} {cut} {mx(w):.3f} {my(s):.3f} {mx(e):.3f} {my(n):.3f} {gt[1] * ORIGIN / 180:.4f}")
     if not out:
         sys.exit("Error: no elevation data for this outline (every cell is open sea).")
     with open(os.path.join(a.out, "mosaics.txt"), "w") as f:
@@ -246,12 +228,11 @@ def mosaic(a):
 
 # Measured on test builds (see the README's "Terrain outline"): output kB per km² of land
 # (low = flat, high = rugged; at zoom 12 and 40 ft contours) and seconds per 1000 km² on
-# 8 CPUs. Contour lines (one cell per process, then tippecanoe) and elevation tiles are made
-# in parallel and scale with the CPUs.
+# 8 CPUs. All three are made in parallel and scale with the CPUs.
 RATES = {
     "contours":  {"kb": (1.5, 5.5), "secs": 4.5, "parallel": True},
     "hillshade": {"kb": {"webp": (0.1, 0.25), "webp-lossless": (0.4, 0.9), "png": (0.5, 1.0)},
-                  "secs": 1.0, "parallel": False},
+                  "secs": 1.0, "parallel": True},
     "elevation": {"kb": (0.5, 1.4), "secs": 1.0, "parallel": True},
 }
 CELL_MB = 25          # average Copernicus cell download

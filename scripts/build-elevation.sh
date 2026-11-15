@@ -60,6 +60,7 @@ terrain_estimate "$WORK_DIR" elevation
 
 echo "Step 1/2: download elevation tiles"
 download_dem "$WORK_DIR"
+terrain_mosaic "$WORK_DIR"
 CELLS="$(terrain_land_cells "$WORK_DIR")"
 # The tiles are written straight from the downloaded elevation data; the space needed
 # is the output (measured: about 40 MB per square degree at zoom 12), with room to spare.
