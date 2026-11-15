@@ -80,12 +80,16 @@ export function shapeSummary(s, system) {
   return area;
 }
 
+/** Polygons with more sides than this (an outline loaded from other map software) get no side
+ *  lengths, only their area: thousands of labels would cover the map. */
+export const MAX_LEGS = 24;
+
 /** The legs that get their own length label: every side of a polygon; a rectangle's width and
  *  height once each, as a list of choices (south, else north; east, else west) so a printed page
  *  can use the side that is on it; none for a circle (its radius goes with the area).
  *  Returns [[{ a, b, metres }, ...choices], ...]. */
 export function shapeLegs(s) {
-  if (s.type === "circle") return [];
+  if (s.type === "circle" || (s.type === "polygon" && s.points.length > MAX_LEGS)) return [];
   const ring = shapeRing(s).map(([lng, lat]) => ({ lng, lat }));
   const legs = [];
   for (let i = 0; i < ring.length - 1; i++) legs.push({ a: ring[i], b: ring[i + 1], metres: inverse(ring[i].lat, ring[i].lng, ring[i + 1].lat, ring[i + 1].lng).distance });

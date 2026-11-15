@@ -520,7 +520,12 @@ function drawJob() {
   $("open-map").hidden = $("open-print").hidden = job.state !== "done";
   $("open-map").href = `${base}/`; $("open-print").href = `${base}/mapprinter/`;
   if (job.state === "failed") $("details").open = true;
-  if (logFor !== job.started) { logFor = job.started; logAt = 0; $("log").textContent = ""; }
+  // A new build: show its last 200 kB, where a failure is explained, not its beginning.
+  if (logFor !== job.started) {
+    logFor = job.started;
+    logAt = Math.max(0, job.log_size - 200000);
+    $("log").textContent = logAt ? "… (earlier lines left out)\n" : "";
+  }
   if ($("details").open && job.log_size > logAt) readLog();
 }
 

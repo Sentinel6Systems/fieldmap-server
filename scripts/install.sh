@@ -41,6 +41,7 @@ setting() {
     local value=""
     if [ -f .env ]; then
         value="$(grep -E "^$1=" .env | tail -1 | cut -d= -f2- || true)"
+        value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
     fi
     echo "${value:-$2}"
 }
@@ -52,8 +53,17 @@ if [ "$(id -un)" != "$OWNER" ]; then
     exit 1
 fi
 
+SUDO=""
+[ "$(id -u)" -eq 0 ] || SUDO=sudo
+
 echo "== Data files"
 ./scripts/data-placeholders.sh
+# Docker makes a mounted folder that is missing, owned by root: an earlier `docker compose up`
+# may have made data/admin that way, and the map builder could then not use it.
+if [ -n "$(find data/admin -maxdepth 0 ! -user "$OWNER" 2>/dev/null)" ]; then
+    echo "data/admin belongs to another user: giving it back to $OWNER."
+    $SUDO chown -R "$OWNER" data/admin
+fi
 
 echo "== Tile server and print tool"
 ./scripts/mem-limit.sh
@@ -62,8 +72,6 @@ docker restart tileserver >/dev/null
 echo "Started: tileserver, fieldmap-web (print tool), fieldmap-wmm."
 
 UNIT=/etc/systemd/system/fieldmap-admin.service
-SUDO=""
-[ "$(id -u)" -eq 0 ] || SUDO=sudo
 echo "== Map builder page"
 if [ "$BUILDER" = no ]; then
     if [ -f "$UNIT" ]; then

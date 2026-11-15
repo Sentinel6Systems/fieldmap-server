@@ -71,3 +71,10 @@ test("file name from the title and the date", () => {
   assert.equal(fileName("Ridge walk: day 2", d), "Ridge-walk-day-2-2026-11-15.geojson");
   assert.equal(fileName("", d), "map-drawings-2026-11-15.geojson");
 });
+
+test("an outline with many sides gets no side lengths, a hand-drawn polygon does", async () => {
+  const { shapeLegs, MAX_LEGS } = await import("../src/shapes.js");
+  const ring = (n) => Array.from({ length: n }, (_, i) => ({ lng: Math.cos((i / n) * 2 * Math.PI) * 0.01, lat: 40 + Math.sin((i / n) * 2 * Math.PI) * 0.01 }));
+  assert.equal(shapeLegs({ type: "polygon", points: ring(5) }).length, 5);
+  assert.equal(shapeLegs({ type: "polygon", points: ring(MAX_LEGS + 1) }).length, 0);
+});

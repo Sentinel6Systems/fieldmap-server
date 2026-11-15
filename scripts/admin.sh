@@ -25,6 +25,8 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 for var in ADMIN_PORT ADMIN_HOST ADMIN_PIN; do
     if [ -z "${!var:-}" ] && [ -f "$REPO_DIR/.env" ]; then
         value="$(grep -E "^$var=" "$REPO_DIR/.env" | tail -1 | cut -d= -f2- || true)"
+        # Docker Compose allows quotes round a value: the quotes are not part of it.
+        value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
         if [ -n "$value" ]; then export "$var=$value"; fi
     fi
 done

@@ -26,6 +26,7 @@ replaces the maps; ADMIN_PIN=<code> makes it ask for that code first, and ADMIN_
 keeps it to the device itself. Requests only choose from the bundled region list and fixed
 options: nothing a browser sends reaches a command line as text.
 """
+import glob
 import hashlib
 import json
 import math
@@ -51,6 +52,9 @@ ADMIN = os.path.join(DATA, "admin")
 STATIC = os.path.join(ROOT, "admin")
 JOB, STATE, LOG = (os.path.join(ADMIN, n) for n in ("job.json", "state.json", "build.log"))
 REGION_FILE = os.path.join(ADMIN, "region.env")
+# Written by Stop. The build looks for it as soon as it can be stopped, so that a Stop pressed
+# while the build is still starting is not lost.
+CANCEL = os.path.join(ADMIN, "cancel")
 SOCKET = os.path.join(ADMIN, "admin.sock")
 # build-region.sh's "=== step ===" and "=== step finished in N min ===", after any colour codes
 # the step before left on the line.
@@ -141,7 +145,7 @@ def check_selection(body):
                    (r["bbox"][0] <= lon <= r["bbox"][2] if r["bbox"][0] <= r["bbox"][2]
                     else lon >= r["bbox"][0] or lon <= r["bbox"][2]) for r in usa):
             raise BadRequest("The very sharp area is outside the regions you chose. Place it again.")
-        if "hillshade" not in layers and not os.path.exists(os.path.join(DATA, "hillshade.mbtiles")):
+        if "hillshade" not in layers and not layers_status()["hillshade"]["present"]:
             raise BadRequest("The very sharp area goes on top of the hillshade. Tick Hillshade as well.")
         options["detail"] = {"lon": round(lon, 5), "lat": round(lat, 5), "km": km}
         layers = [k for k in ORDER if k in layers or k == "detail"]
@@ -271,11 +275,16 @@ def region_file(regions, options):
 
 # ---------- the build ----------
 
-def pid_alive(pid):
+def is_build_process(pid):
+    """True when pid is this file's "run-job" process. A pid alone is not enough: after a
+    reboot the number may belong to any other program."""
+    if not isinstance(pid, int) or pid <= 0:
+        return False
     try:
-        os.kill(pid, 0)
-        return True
-    except (OSError, TypeError):
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            args = f.read().split(b"\0")
+        return any(a.endswith(b"admin-server.py") for a in args) and b"run-job" in args
+    except OSError:
         return False
 
 
@@ -283,28 +292,45 @@ def job_status():
     job = read_json(JOB, None)
     if not job:
         return None
-    if job["state"] == "running" and not pid_alive(job.get("pid")):
+    starting = job.get("pid") is None and time.time() - job.get("started", 0) < 30
+    if job["state"] == "running" and not starting and not is_build_process(job.get("pid")):
         job.update(state="failed", message="The build stopped without saying why (was the device switched off?). "
                                            "The maps on this device were not changed.")
         write_json(JOB, job)
-    # Which step the log has reached: build-region.sh prints "=== step ===" and "=== step finished".
-    done, current = [], None
-    try:
-        with open(LOG, errors="replace") as f:
-            for line in f:
-                m = STEP_LINE.match(line)
-                if m and m.group(2):
-                    done.append(m.group(1))
-                    current = None
-                elif m:
-                    current = m.group(1)
-        job["log_size"] = os.path.getsize(LOG)
-    except OSError:
-        job["log_size"] = 0
+    done, current = log_steps(job["started"])
     step_of = {v[0]: k for k, v in LAYERS.items()}
+    job["log_size"] = _steps["offset"]
     job["done"] = [step_of[s] for s in done if s in step_of]
     job["current"] = step_of.get(current) if job["state"] == "running" else None
     return job
+
+
+_steps = {"job": None, "offset": 0, "rest": b"", "done": [], "current": None}
+
+
+def log_steps(job_started):
+    """The steps the log has finished and the one it is in: build-region.sh prints
+    "=== step ===" and "=== step finished". Only what was added since the last call is read."""
+    s = _steps
+    if s["job"] != job_started:
+        s.update(job=job_started, offset=0, rest=b"", done=[], current=None)
+    try:
+        with open(LOG, "rb") as f:
+            f.seek(s["offset"])
+            data = f.read()
+    except OSError:
+        return s["done"], s["current"]
+    s["offset"] += len(data)
+    lines = (s["rest"] + data).split(b"\n")
+    s["rest"] = lines.pop()[-4096:]            # an unfinished line; long progress lines are cut
+    for line in lines:
+        m = STEP_LINE.match(line.decode("utf-8", "replace"))
+        if m and m.group(2):
+            s["done"].append(m.group(1))
+            s["current"] = None
+        elif m:
+            s["current"] = m.group(1)
+    return list(s["done"]), s["current"]
 
 
 def docker(*args, **kw):
@@ -317,13 +343,17 @@ def start_build(regions, layers, options):
         f.write(region_file(regions, options))
     request = {"regions": [r["id"] for r in regions], "names": [r["name"] for r in regions],
                "layers": layers, "options": options}
-    # The job file first (the build reads it), with this server's process until the build
-    # has put in its own.
-    write_json(JOB, {"state": "running", "pid": os.getpid(), "started": int(time.time()), "request": request})
+    # The job file first (the build reads it), then the build's own process number.
+    if os.path.exists(CANCEL):
+        os.remove(CANCEL)
+    job = {"state": "running", "pid": None, "started": int(time.time()), "request": request}
+    write_json(JOB, job)
     with open(LOG, "w") as log:
         # Its own session: the build carries on when this server stops.
-        subprocess.Popen([sys.executable, os.path.abspath(__file__), "run-job"], cwd=ROOT, stdout=log,
-                         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+        proc = subprocess.Popen([sys.executable, os.path.abspath(__file__), "run-job"], cwd=ROOT, stdout=log,
+                                stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+    job["pid"] = proc.pid
+    write_json(JOB, job)
 
 
 def run_job():
@@ -332,8 +362,12 @@ def run_job():
     request = job["request"]
     steps = [LAYERS[k][0] for k in request["layers"]]
     child = None
+    swapped = []                       # set once build-region.sh has put the new files in place
 
     def stop(*_):
+        # Once the new files are in place there is nothing left to stop: let it finish.
+        if swapped:
+            return
         # Cancelled: the scripts first (their EXIT trap removes the staged files), then
         # the containers they started, which do not stop by themselves.
         if child and child.poll() is None:
@@ -350,13 +384,26 @@ def run_job():
 
     signal.signal(signal.SIGTERM, stop)
     job["pid"] = os.getpid()
+    job["ready"] = True
     write_json(JOB, job)
+    if os.path.exists(CANCEL):             # Stop was pressed before this process could hear it
+        stop()
+    # A build from this page merges the chosen OSM extracts into data/sources/<REGION_NAME>.osm.pbf
+    # (merge-osm.sh); the merged files of earlier selections are several GB each and not used again.
+    name = re.search(r'^REGION_NAME="([^"]+)"', open(REGION_FILE).read(), re.M).group(1)
+    for old in glob.glob(os.path.join(DATA, "sources", "admin-*.osm.pbf")):
+        if os.path.basename(old) != name + ".osm.pbf":
+            os.remove(old)
+            print(f"Removed {os.path.basename(old)}, the merged map data of an earlier selection.", flush=True)
     print(f"Map builder: {', '.join(request['names'])}; steps: {' '.join(steps)}", flush=True)
     env = dict(os.environ)
     env.pop("LANGUAGE", None)          # a locale setting, not the label language of a build
     child = subprocess.Popen([os.path.join(ROOT, "scripts", "build-region.sh"), "--staged",
                               os.path.relpath(REGION_FILE, ROOT), *steps], cwd=ROOT, env=env, start_new_session=True)
-    if child.wait() != 0:
+    code = child.wait()
+    if code == 0:
+        swapped.append(True)
+    else:
         finish("failed", "The build stopped with an error. The maps on this device were not changed. "
                          "The details below say what went wrong.")
     state = read_json(STATE, {})
@@ -379,7 +426,12 @@ def run_job():
 
 def cancel_build():
     job = job_status()
-    if job and job["state"] == "running":
+    if not job or job["state"] != "running":
+        return
+    open(CANCEL, "w").close()
+    # Only a build that is listening for it: a signal sent earlier would end it without
+    # tidying up, and an unknown process is never signalled.
+    if job.get("ready") and is_build_process(job.get("pid")):
         os.kill(job["pid"], signal.SIGTERM)
 
 
@@ -484,7 +536,10 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/log":
             if not self.signed_in():
                 return self.send(401, {"error": "pin"})
-            start = max(0, int(parse_qs(url.query).get("from", ["0"])[0] or 0))
+            try:
+                start = max(0, int(parse_qs(url.query).get("from", ["0"])[0] or 0))
+            except ValueError:
+                start = 0
             try:
                 with open(LOG, "rb") as f:
                     f.seek(start)
@@ -559,10 +614,16 @@ def serve():
     # The web front (the nginx container, web/nginx.conf) passes /mapadmin/ on to this socket,
     # which it sees through a mounted folder: the page then needs no port of its own, and no
     # firewall rule. ADMIN_PORT adds a port, for a machine that runs no web front.
-    os.makedirs(ADMIN, exist_ok=True)
-    if os.path.exists(SOCKET):
-        os.remove(SOCKET)
-    servers = [SocketServer(SOCKET, Handler)]
+    try:
+        os.makedirs(ADMIN, exist_ok=True)
+        if os.path.exists(SOCKET):
+            os.remove(SOCKET)
+        servers = [SocketServer(SOCKET, Handler)]
+    except PermissionError:
+        # Docker makes a missing folder it mounts, owned by root (docker-compose.yml mounts this
+        # one into the web container).
+        sys.exit(f"Error: {ADMIN} belongs to another user (often root, when Docker made it).\n"
+                 f"Fix it with:  sudo chown -R $(id -un) {ADMIN}   (scripts/install.sh does this too)")
     os.chmod(SOCKET, 0o666)             # nginx runs as another user
     print("Map builder: http://<this device's address>/mapadmin/", flush=True)
     port = os.environ.get("ADMIN_PORT") or os.environ.get("PORT")

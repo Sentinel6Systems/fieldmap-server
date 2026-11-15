@@ -26,6 +26,8 @@ Requirements on the machine that builds the data and runs the server:
 - Docker with the Compose plugin; every build tool (Planetiler, GDAL, Tippecanoe, Osmium) runs in a container
 - `bash`, `git`, `curl` and `python3` on the host
 - RAM: 8 GB is enough for a few US states or a small country; large regions want 16-32 GB (`PLANETILER_MEMORY`)
+- Tested on Ubuntu 24.04 and 26.04 (with Ubuntu's own `docker.io` and `docker-compose-v2` packages): `install.sh`,
+  the map builder service, and a build from the map builder page
 - Disk: see [Disk space](#disk-space); the build needs far more than the finished files
 
 The server alone (no building) runs on much less: a Raspberry Pi 4 with 4 GB serves a large region (see `pi/`).
@@ -199,7 +201,8 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
   items to those on the map. The file keeps everything exactly (a circle's centre and radius, a rectangle's corners,
   names and colours) and is plain GeoJSON for other map software too; files from such software load as well: points
   as markers, two-point lines as arrows, polygons as polygon shapes (anything else is left out, and the panel says
-  how much). See `print/src/drawings.js`.
+  how much). A polygon of more than 24 sides, such as a boundary loaded from other software, shows its area but no
+  side lengths. See `print/src/drawings.js`.
 - Atlas mode: 2×2, 3×3, 4×4, 6×6 or 8×8 pages with 1 cm overlap, rows A… from the north and columns 1… from the west.
   A cover page built from the map data (places, peaks, lakes, rivers inside the atlas, a locator map), an index page
   with the page grid, neighbour tabs on every page, optional binder margin. Rendering is sequential with progress and

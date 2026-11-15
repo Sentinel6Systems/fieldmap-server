@@ -675,8 +675,10 @@ $("load-file").onchange = async (e) => {
   // Show what was loaded.
   const pts = [...got.markers, ...got.arrows.flatMap((a) => [a.a, a.b]),
     ...got.shapes.flatMap((s) => shapeRing(s).map(([lng, lat]) => ({ lng, lat })))];
-  const lngs = pts.map((p) => p.lng), lats = pts.map((p) => p.lat);
-  map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 80, maxZoom: 15, duration: 0 });
+  // A loop, not Math.min(...list): a detailed outline can have more points than a call takes.
+  const b = pts.reduce((r, p) => [Math.min(r[0], p.lng), Math.min(r[1], p.lat), Math.max(r[2], p.lng), Math.max(r[3], p.lat)],
+    [Infinity, Infinity, -Infinity, -Infinity]);
+  map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 80, maxZoom: 15, duration: 0 });
   fileHint(`Loaded ${countText(got.markers.length, got.arrows.length, got.shapes.length)} from ${file.name}` +
     (got.skipped ? `. ${got.skipped} item${got.skipped === 1 ? " was" : "s were"} left out: this tool draws points, two-point lines and areas only.` : "."));
 };
