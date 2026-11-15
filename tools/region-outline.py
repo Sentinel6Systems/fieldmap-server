@@ -5,6 +5,11 @@
     region-outline.py mosaic   --out DIR --dem-dir DIR
     region-outline.py estimate --out DIR --dem-dir DIR STEP ... [--units ft|m] [--elevation-maxzoom N]
                                [--hillshade-maxzoom N] [--hillshade-format F]
+    region-outline.py tile-full FILE
+
+The first three take --usgs-dir DIR when the build uses the USGS 3DEP 1/3 arc-second tiles
+(DEM_SOURCE=usgs, see scripts/lib.sh): a cell that has a tile there is built from it, with the
+Copernicus cell underneath where the tile has gaps.
 
 prepare: the outline is the union of the Geofabrik .poly files of the areas (downloaded once
 into --poly-cache), cut to the box. Without areas, or when any area has no outline, it is the
@@ -23,6 +28,7 @@ last five are the part's extent and pixel size in Web Mercator, for the hillshad
 to itself, GDAL sees a part that touches 180° wrap round the globe and picks a far too
 coarse grid).
 estimate: prints the expected output size and time of each step.
+tile-full: exit status 0 when a USGS tile has no gaps (no pixel without data).
 
 Cells that Copernicus has no file for (open sea, mostly) are listed in <dem-dir>/ocean-cells.txt
 by the download (scripts/lib.sh), so later runs neither request them again nor count them as land.
@@ -36,7 +42,7 @@ import urllib.request
 
 from osgeo import gdal, ogr, osr
 
-from tilewriter import box, cell_name
+from tilewriter import box, cell_name, cell_origin, read_list, usgs_name
 
 gdal.UseExceptions()
 ogr.UseExceptions()
@@ -120,14 +126,6 @@ def read_geojson(path):
         return ogr.CreateGeometryFromJson(json.dumps(json.load(f)["features"][0]["geometry"]))
 
 
-def ocean_cells(dem_dir):
-    p = os.path.join(dem_dir, "ocean-cells.txt")
-    if not os.path.exists(p):
-        return set()
-    with open(p) as f:
-        return {ln.strip() for ln in f if ln.strip() and not ln.startswith("#")}
-
-
 def prepare(a):
     w, s, e, n = a.bbox
     if not (-90 <= s < n <= 90 and -180 <= w <= 180 and -180 <= e <= 180 and w != e):
@@ -160,9 +158,13 @@ def prepare(a):
         if not g.IsEmpty() and g.GetArea() > 0:
             parts.append(g)
 
-    ocean = ocean_cells(a.dem_dir)
+    ocean = read_list(os.path.join(a.dem_dir, "ocean-cells.txt"))
+    usgs = {"have": 0, "none": 0, "todo": 0} if a.usgs_dir else None
+    no_tile = read_list(os.path.join(a.usgs_dir, "no-tile.txt")) if usgs else set()
+    full = read_list(os.path.join(a.usgs_dir, "full-tiles.txt")) if usgs else set()
+    # todo: Copernicus cells still to fetch (at most: a USGS tile without gaps needs none).
     summary = {"source": source, "parts": [], "km2": 0.0, "land_km2": 0.0,
-               "cells": 0, "cached": 0, "ocean": 0}
+               "cells": 0, "cached": 0, "ocean": 0, "todo": 0, "usgs": usgs}
     with open(os.path.join(a.out, "parts.txt"), "w") as pf, open(os.path.join(a.out, "cells.txt"), "w") as cf:
         for i, g in enumerate(parts):
             write_geojson(os.path.join(a.out, f"part-{i}.geojson"), g)
@@ -182,19 +184,28 @@ def prepare(a):
                         continue
                     cf.write(f"{i} {name}\n")
                     land += equal_area_km2(piece)
+                    tile = usgs_name(lat, lon)
+                    if usgs and os.path.exists(os.path.join(a.usgs_dir, tile + ".tif")):
+                        usgs["have"] += 1
+                    elif usgs:
+                        usgs["none" if tile in no_tile else "todo"] += 1
                     if os.path.exists(os.path.join(a.dem_dir, name + ".tif")):
                         summary["cached"] += 1
+                    elif tile not in full:
+                        summary["todo"] += 1
             summary["parts"].append({"bbox": [gw, gs, ge, gn], "km2": round(km2)})
             summary["km2"] += km2
             summary["land_km2"] += land
     with open(os.path.join(a.out, "summary.json"), "w") as f:
         json.dump(summary, f, indent=1)
-    todo = summary["cells"] - summary["cached"] - summary["ocean"]
     print(f"Outline: {source}")
     print(f"  {len(parts)} part{'s' if len(parts) != 1 else ''}"
           f"{' (split at the 180° line)' if len(parts) > 1 else ''}, {summary['km2']:,.0f} km²; "
           f"{summary['cells']} one-degree cells touch it: {summary['cached']} downloaded, "
-          f"{summary['ocean']} known to have no data, {todo} to fetch")
+          f"{summary['ocean']} known to have no data, {summary['todo']} to fetch")
+    if usgs:
+        print(f"  USGS 3DEP 1/3 arc-second tiles: {usgs['have']} downloaded, {usgs['none']} cells known "
+              f"to have none, {usgs['todo']} to try")
 
 
 def mosaic(a):
@@ -202,7 +213,12 @@ def mosaic(a):
     with open(os.path.join(a.out, "cells.txt")) as f:
         rows = [ln.split() for ln in f if ln.strip()]
     for i in sorted({int(r[0]) for r in rows}):
-        files = [os.path.join(a.dem_dir, r[1] + ".tif") for r in rows if int(r[0]) == i]
+        names = [r[1] for r in rows if int(r[0]) == i]
+        files = [os.path.join(a.dem_dir, n + ".tif") for n in names]
+        # Later files lie on top: the USGS tiles over the Copernicus cells, which show
+        # through where a tile has no data.
+        if a.usgs_dir:
+            files += [os.path.join(a.usgs_dir, usgs_name(*cell_origin(n)) + ".tif") for n in names]
         files = [p for p in files if os.path.exists(p)]
         if not files:
             continue
@@ -212,7 +228,9 @@ def mosaic(a):
         # half a pixel). Above 50° Copernicus cells are narrower in longitude; -resolution
         # highest with bilinear keeps the finest grid and interpolates the coarser cells.
         # A missing cell inside the mosaic is open sea and reads as 0 m.
-        vrt = gdal.BuildVRT(raw, files, resolution="highest", resampleAlg="bilinear")
+        # USGS tiles are in NAD 83, within about a metre of WGS 84: taken as the same.
+        vrt = gdal.BuildVRT(raw, files, resolution="highest", resampleAlg="bilinear",
+                            allowProjectionDifference=True)
         gt = vrt.GetGeoTransform()
         vrt = None
         # Web Mercator x is linear in longitude: keep the cells' longitude spacing.
@@ -232,10 +250,15 @@ def mosaic(a):
 RATES = {
     "contours":  {"kb": (1.5, 5.5), "secs": 4.5, "parallel": True},
     "hillshade": {"kb": {"webp": (0.1, 0.25), "webp-lossless": (0.4, 0.9), "png": (0.5, 1.0)},
-                  "secs": 1.0, "parallel": True},
+                  "secs": 0.5, "parallel": True},
     "elevation": {"kb": (0.5, 1.4), "secs": 1.0, "parallel": True},
 }
+# With the USGS 1/3 arc-second tiles (as if every cell had one): the contour lines have about
+# three times the points, and the raster layers are built to a higher zoom (see scripts/lib.sh).
+# Factors on the size and on the time, measured on the first test area.
+USGS = {"contours": (1.85, 2.5), "elevation": (1.0, 1.8)}
 CELL_MB = 25          # average Copernicus cell download
+USGS_MB = 450         # a USGS 1/3 arc-second tile of land (tiles of mostly sea are far smaller)
 
 
 def estimate(a):
@@ -243,20 +266,31 @@ def estimate(a):
         sm = json.load(f)
     land = sm["land_km2"]
     cpus = os.cpu_count() or 2
-    todo = sm["cells"] - sm["cached"] - sm["ocean"]
+    todo, usgs = sm["todo"], (sm.get("usgs") or {}).get("todo", 0) if a.usgs_dir else 0
     print(f"Estimate for {land:,.0f} km² (cells known to be open sea left out), {cpus} CPUs; "
           f"sizes run from flat to rugged terrain:")
-    if todo:
-        print(f"  download     {todo} cells, at most {todo * CELL_MB / 1024:.1f} GB "
-              f"({fmt_time(todo * CELL_MB / 10)} at 10 MB/s)")
+    if todo or usgs:
+        mb = todo * CELL_MB + usgs * USGS_MB
+        what = f"{usgs} USGS tiles and {todo} Copernicus cells" if usgs else f"{todo} cells"
+        print(f"  download     {what}, at most {mb / 1024:.1f} GB ({fmt_time(mb / 10)} at 10 MB/s)")
     for step in a.steps:
         r = RATES[step]
         kb = r["kb"][a.hillshade_format] if step == "hillshade" else r["kb"]
         zoom = {"elevation": a.elevation_maxzoom, "hillshade": a.hillshade_maxzoom}.get(step, 12)
         scale = 4.0 ** (zoom - 12)
-        lo, hi = (land * k * scale / 1024 for k in kb)
-        secs = 10 + land / 1000 * r["secs"] * max(scale, 0.25) * (8 / cpus if r["parallel"] else 1)
+        larger, slower = USGS.get(step, (1.0, 1.0)) if a.usgs_dir else (1.0, 1.0)
+        lo, hi = (land * k * scale * larger / 1024 for k in kb)
+        secs = 10 + land / 1000 * r["secs"] * max(scale, 0.25) * slower * (8 / cpus if r["parallel"] else 1)
         print(f"  {step:<12} {fmt_mb(lo)} to {fmt_mb(hi)}, {fmt_time(secs)}")
+
+
+def tile_full(a):
+    ds = gdal.Open(a.file)
+    band = ds.GetRasterBand(1)
+    nodata = band.GetNoDataValue()
+    for y in range(0, band.YSize, 1024):
+        if nodata is not None and (band.ReadAsArray(0, y, band.XSize, min(1024, band.YSize - y)) == nodata).any():
+            sys.exit(1)
 
 
 def fmt_mb(mb):
@@ -283,8 +317,11 @@ def main():
     for x in (p, m, q):
         x.add_argument("--out", required=True)
         x.add_argument("--dem-dir", required=True)
+        x.add_argument("--usgs-dir")
+    t = sub.add_parser("tile-full")
+    t.add_argument("file")
     a = ap.parse_args()
-    {"prepare": prepare, "mosaic": mosaic, "estimate": estimate}[a.cmd](a)
+    {"prepare": prepare, "mosaic": mosaic, "estimate": estimate, "tile-full": tile_full}[a.cmd](a)
 
 
 if __name__ == "__main__":

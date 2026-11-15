@@ -311,6 +311,41 @@ In the first area nothing reaches past the border (the last valid pixel is withi
 parts of the third join at 180° without a seam. The hillshade of the first area is 9.4 MB as lossless WebP and
 10.4 MB as PNG.
 
+### Higher-resolution elevation in the United States (`DEM_SOURCE=usgs`)
+
+By default the terrain is built from Copernicus GLO-30: 30 m, the whole world, and the surface as a radar saw it,
+with the tops of trees and roofs. For the United States there is finer data of the bare ground: the USGS 3D
+Elevation Program's 1/3 arc-second layer, about 10 m, made mostly from lidar. Set `DEM_SOURCE="usgs"` in the region
+file (or `DEM_SOURCE=usgs` in front of one of the three terrain scripts) to build contours, hillshade and elevation
+tiles from it:
+
+- Each 1° cell is built from its USGS tile where USGS has one. A cell without a tile uses Copernicus, and so do the
+  parts of a tile that have no data (sea, the far side of a border, land USGS has not covered): the Copernicus cell
+  is laid underneath. Cells without a tile are listed in `data/cache/dem-usgs/no-tile.txt` and not asked for again.
+- The hillshade goes to zoom 14 and the elevation tiles to zoom 13 unless `HILLSHADE_MAXZOOM` or `ELEVATION_MAXZOOM`
+  says otherwise (zoom 12 would throw the extra detail away). Each zoom more is about four times the size.
+- The contour lines keep the same intervals. tippecanoe thins them with half its usual tolerance
+  (`--simplification=0.5`), so that the finer shapes stay.
+- Where a USGS cell meets a Copernicus cell the two surfaces differ, by the height of the trees for one thing: the
+  hillshade shows a faint line there and the contour lines do not join. Inside the USGS data everything joins.
+- The USGS tiles are in NAD 83 and NAVD 88 heights, Copernicus in WGS 84 and EGM2008 heights. Both differences are
+  about a metre or less and are not corrected. The 1 m lidar layer is not used: it is hundreds of times larger.
+- The tiles are large: 90 to 480 MB for each cell of land, kept in `data/cache/dem-usgs` (delete the folder after
+  the build to get the space back; a rebuild downloads them again).
+
+The first test area of the table above (12,134 km², six cells), both ways:
+
+| | Copernicus, 30 m | USGS 3DEP, 10 m |
+|---|---|---|
+| Download | 0.15 GB | 1.2 GB |
+| Contours (40 ft) | 61 MB, 47 s, 0.21 GB at the peak | 113 MB, 114 s, 0.58 GB at the peak |
+| Hillshade (lossy WebP) | 2.4 MB to zoom 12, 7 s | 27 MB to zoom 14, 46 s |
+| Elevation | 16.6 MB to zoom 12, 15 s | 52 MB to zoom 13, 89 s |
+
+For a large region count on about 350 MB of download per cell of land, and let the estimate that each build prints
+first tell the rest. The disk checks allow 0.5 GB of working space per cell for the contours and 0.2 GB for the
+hillshade.
+
 ### `build-contours.sh [--areas "<geofabrik paths>"] <min-lon> <min-lat> <max-lon> <max-lat> [m|ft]`
 
 Builds `data/contours.mbtiles` from Copernicus GLO-30 elevation data.
@@ -476,8 +511,9 @@ country on top of the world layer; its comments list sizes). A region file sets 
 | `BBOX` | Box: `min-lon min-lat max-lon max-lat`. The base map stops at it; the terrain covers the areas' outlines inside it. A min-lon larger than the max-lon crosses the 180° line |
 | `CONTOUR_UNITS` | `ft` or `m` (default `ft`) |
 | `HILLSHADE_FORMAT` | `webp` (default, lossy), `webp-lossless` or `png` |
-| `HILLSHADE_MAXZOOM` | Highest zoom of `hillshade.mbtiles` (default 12) |
-| `ELEVATION_MAXZOOM` | Highest zoom of `elevation.mbtiles`: 12 (default, about 30 m) or 11 (about 60 m, a quarter of the size) |
+| `DEM_SOURCE` | Elevation data for contours, hillshade and elevation: `copernicus` (default, 30 m, the surface) or `usgs` (10 m, bare ground, United States; see "Higher-resolution elevation") |
+| `HILLSHADE_MAXZOOM` | Highest zoom of `hillshade.mbtiles` (default 12; 14 with `DEM_SOURCE="usgs"`) |
+| `ELEVATION_MAXZOOM` | Highest zoom of `elevation.mbtiles`: 12 (default, about 30 m) or 11 (about 60 m, a quarter of the size); 13 by default with `DEM_SOURCE="usgs"` |
 | `PLANETILER_MEMORY` | Java heap for Planetiler (default `8g`) |
 | `WORLD` | `yes`: the whole world at zoom 0-8, the region from zoom 9 (same as `--world`) |
 | `LANGUAGE` | Keep labels in one language only (same as `--language`) |
@@ -674,6 +710,8 @@ See [systemd/README.md](systemd/README.md).
   WebP by default. `regions/us-all.env` builds the whole world at low zoom plus all 50 states; `build-usdata.sh`
   takes the wider side of a box across the 180° line. The terrain disk checks run after the elevation download
   and count only cells with land.
+- `DEM_SOURCE="usgs"`: contours, hillshade and elevation tiles from the USGS 3DEP 10 m bare-ground data in the
+  United States, with Copernicus wherever USGS has none.
 - Contours are computed one elevation cell at a time, in parallel, and a stopped build resumes (the tiling too):
   under half the time and about a third of the working space of the earlier whole-region pass, with the same lines.
   Hillshade is shaded in chunks in memory: the same pixels with a third of the working space.
@@ -710,6 +748,8 @@ See [systemd/README.md](systemd/README.md).
 - Elevation data: © ESA, [Copernicus DEM GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model).
   Contours, hillshade and elevation tiles are produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus
   Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved.
+- Optional higher-resolution elevation data for the United States (`DEM_SOURCE=usgs`): USGS 3D Elevation Program,
+  1/3 arc-second DEM, courtesy of the U.S. Geological Survey (public domain)
 - Optional US layers (public domain, US federal government): FAA Digital Obstacle File, USGS GNIS, NOAA National
   Geodetic Survey, USGS PAD-US, FEMA National Flood Hazard Layer
 - World Magnetic Model: NOAA NCEI and the British Geological Survey for the US NGA and UK DGC (public domain)

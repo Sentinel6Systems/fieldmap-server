@@ -5,8 +5,8 @@
 # Usage:
 #   ./scripts/terrain-estimate.sh [--areas "<geofabrik paths>"] <min-lon> <min-lat> <max-lon> <max-lat> <step> ...
 #
-# Steps: contours, hillshade, elevation. ELEVATION_MAXZOOM, HILLSHADE_MAXZOOM and
-# HILLSHADE_FORMAT are read as in the build scripts.
+# Steps: contours, hillshade, elevation. DEM_SOURCE, ELEVATION_MAXZOOM, HILLSHADE_MAXZOOM
+# and HILLSHADE_FORMAT are read as in the build scripts.
 
 set -euo pipefail
 

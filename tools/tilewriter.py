@@ -11,6 +11,7 @@ import json
 import math
 import multiprocessing as mp
 import os
+import re
 import sqlite3
 import time
 import uuid
@@ -63,6 +64,27 @@ def cell_name(lat, lon):
     """File name (without .tif) of the Copernicus GLO-30 cell whose south-west corner is lat, lon."""
     return (f"Copernicus_DSM_COG_10_{'N' if lat >= 0 else 'S'}{abs(lat):02d}_00_"
             f"{'E' if lon >= 0 else 'W'}{abs(lon):03d}_00_DEM")
+
+
+def cell_origin(name):
+    """Latitude and longitude of the south-west corner of a Copernicus cell, from its name."""
+    m = re.fullmatch(r"Copernicus_DSM_COG_10_([NS])(\d\d)_00_([EW])(\d\d\d)_00_DEM", name)
+    lat, lon = int(m.group(2)), int(m.group(4))
+    return (lat if m.group(1) == "N" else -lat), (lon if m.group(3) == "E" else -lon)
+
+
+def usgs_name(lat, lon):
+    """File name (without .tif) of the USGS 3DEP 1/3 arc-second tile of the cell whose south-west
+    corner is lat, lon. USGS names a tile by its north-west corner."""
+    return f"USGS_13_{'n' if lat + 1 >= 0 else 's'}{abs(lat + 1):02d}{'w' if lon < 0 else 'e'}{abs(lon):03d}"
+
+
+def read_list(path):
+    """The lines of a list file such as ocean-cells.txt, without comments; empty if it is missing."""
+    if not os.path.exists(path):
+        return set()
+    with open(path) as f:
+        return {ln.strip() for ln in f if ln.strip() and not ln.startswith("#")}
 
 
 def box(w, s, e, n):

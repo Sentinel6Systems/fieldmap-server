@@ -24,14 +24,20 @@ lines meet there (GDAL draws half a pixel past the outermost centres from one ro
 that part is kept only on a side with no neighbour). Where the north neighbour has wider pixels
 (at 50°, 60°, 70° ...) the row between the two cells is contoured on its own, on a grid that
 holds both cells' pixel centres, into <cell>n-major.fgb and <cell>n-minor.fgb. Pixels whose
-centre is outside the outline are no data, so the lines stop at the outline. Heights are in metres; for feet they
-are multiplied by 3.28084 first, so the levels are whole multiples of the interval.
+centre is outside the outline are no data, so the lines stop at the outline.
+
+With --usgs-dir (DEM_SOURCE=usgs, see scripts/lib.sh) a cell that has a USGS 3DEP 1/3 arc-second
+tile there is contoured from it, in 3 x 3 blocks (<cell>a ... <cell>i), with the Copernicus
+cell underneath where the tile has no data. Its lines do not join those of a neighbouring
+Copernicus cell: the two are different surfaces (bare ground, and the top of trees and roofs).
+
+Heights are in metres; for feet they are multiplied by 3.28084 first, so the levels are whole
+multiples of the interval.
 """
 import argparse
 import math
 import multiprocessing as mp
 import os
-import re
 import sys
 import time
 import uuid
@@ -39,7 +45,7 @@ import uuid
 import numpy as np
 from osgeo import gdal, ogr, osr
 
-from tilewriter import box, cell_name, layer_mask, read_outline
+from tilewriter import box, cell_name, cell_origin, layer_mask, read_outline, usgs_name
 
 gdal.UseExceptions()
 ogr.UseExceptions()
@@ -49,12 +55,6 @@ UNITS = {"ft": {"minor": 40, "major": 200, "attr": "elev_ft", "scale": 3.28084, 
          "m":  {"minor": 20, "major": 100, "attr": "elev_m", "scale": 1.0, "type": "float"}}
 
 _cfg = {}
-
-
-def cell_origin(name):
-    m = re.fullmatch(r"Copernicus_DSM_COG_10_([NS])(\d\d)_00_([EW])(\d\d\d)_00_DEM", name)
-    lat, lon = int(m.group(2)), int(m.group(4))
-    return (lat if m.group(1) == "N" else -lat), (lon if m.group(3) == "E" else -lon)
 
 
 def short_name(name):
@@ -119,7 +119,8 @@ def write_lines(arr, valid, gt, clip, base):
         path, part = f"{base}-{kind}.fgb", f"{base}-{kind}.part.fgb"
         gdal.VectorTranslate(part, mem, format="FlatGeobuf", layerName=kind,
                              layerCreationOptions=["SPATIAL_INDEX=NO"],
-                             clipSrc=clip, geometryType="LINESTRING", explodeCollections=True,
+                             # The cut can leave a line in several pieces.
+                             clipSrc=clip, geometryType="MULTILINESTRING",
                              SQLStatement=f"SELECT CAST(e AS {u['type']}) AS {u['attr']} FROM contour WHERE {where}")
         # The cut can remove every line (a few short ones in the outer half pixel).
         written = ogr.Open(part)
@@ -132,37 +133,72 @@ def write_lines(arr, valid, gt, clip, base):
     return counts
 
 
+def cop_file(lat, lon):
+    return os.path.join(_cfg["dem_dir"], cell_name(lat, lon) + ".tif")
+
+
+def usgs_file(lat, lon):
+    """The cell's USGS tile when the build uses them (--usgs-dir) and it exists, else None."""
+    p = _cfg["usgs_dir"] and os.path.join(_cfg["usgs_dir"], usgs_name(lat, lon) + ".tif")
+    return p if p and os.path.exists(p) else None
+
+
+def sources(lat, lon):
+    """The files a cell is read from, the upper one last: the USGS tile lies over the
+    Copernicus cell, which shows through where the tile has no data."""
+    return [p for p in (cop_file(lat, lon), usgs_file(lat, lon)) if p and os.path.exists(p)]
+
+
+def read_window(files, bounds, px, py):
+    """Heights of the files on one grid, as float64, and where they have data."""
+    vrt_path = f"/vsimem/{uuid.uuid4().hex}.vrt"
+    # USGS tiles are in NAD 83, within about a metre of WGS 84: taken as the same.
+    vrt = gdal.BuildVRT(vrt_path, files, resolution="user", xRes=px, yRes=py, outputBounds=bounds,
+                        resampleAlg="bilinear", VRTNodata=NODATA, allowProjectionDifference=True)
+    arr = vrt.GetRasterBand(1).ReadAsArray().astype(np.float64)
+    vrt = None
+    gdal.Unlink(vrt_path)
+    return arr, arr > NODATA + 1
+
+
 def contour_cell(job):
-    """Write one cell's lines; returns (name, major lines, minor lines)."""
-    part, name = job
-    dem, out = _cfg["dem_dir"], _cfg["out_dir"]
+    """Write one cell's lines, or one ninth of a USGS cell's; returns (name, major lines, minor lines)."""
+    part, name, block = job
     lat, lon = cell_origin(name)
-    short = short_name(name)
-    tif = lambda la, lo: os.path.join(dem, cell_name(la, lo) + ".tif")
-    src = gdal.Open(tif(lat, lon))
+    if block is None:
+        counts, base = copernicus_cell(part, lat, lon), short_name(name)
+    else:
+        counts, base = usgs_block(part, lat, lon, block), short_name(name) + BLOCKS[block]
+    with open(os.path.join(_cfg["out_dir"], base + ".done"), "w") as f:
+        f.write(f"{counts[0]} {counts[1]}\n")
+    return name, counts[0], counts[1]
+
+
+def copernicus_cell(part, lat, lon):
+    base = os.path.join(_cfg["out_dir"], short_name(cell_name(lat, lon)))
+    src = gdal.Open(cop_file(lat, lon))
     gt, xs, ys = src.GetGeoTransform(), src.RasterXSize, src.RasterYSize
     src = None
     px, py = gt[1], -gt[5]
     # The neighbours that supply the extra column and row. The cell east of 179° is on the
     # other side of the 180° line, in another part of the outline: none there.
     near = {"e": (lat, lon + 1), "n": (lat + 1, lon), "ne": (lat + 1, lon + 1)}
-    have = {k: (lon + 1 < 180 or k == "n") and os.path.exists(tif(*c)) for k, c in near.items()}
+    have = {k: (lon + 1 < 180 or k == "n") and bool(sources(*c)) for k, c in near.items()}
     # Above 50°, 60° ... the cells have fewer, wider pixels. A north neighbour on another grid
     # cannot supply the extra row: the cell stops at its own top row and the row between the
-    # two cells is contoured on its own (see seam_row).
-    north = gdal.Open(tif(*near["n"])) if have["n"] else None
+    # two cells is contoured on its own (see seam_row). (A USGS neighbour is on another grid
+    # too, and another surface: its heights are interpolated onto the extra row and column.)
+    north = gdal.Open(cop_file(*near["n"])) if have["n"] and not usgs_file(*near["n"]) else None
     seam = north is not None and north.RasterXSize != xs
-    files = [tif(lat, lon)] + [tif(*near[k]) for k in near if have[k] and not (seam and k != "e")]
+    files = [cop_file(lat, lon)]
+    for k in near:
+        if have[k] and not (seam and k != "e"):
+            files += sources(*near[k])
     w, s, e, n = gt[0], gt[3] - ys * py, gt[0] + (xs + 1) * px, gt[3] + py
     wgt = (w, px, 0.0, n, 0.0, -py)
-    vrt_path = f"/vsimem/{uuid.uuid4().hex}.vrt"
-    # On the cell's own grid, so the pixels are copied, not interpolated.
-    vrt = gdal.BuildVRT(vrt_path, files, resolution="user", xRes=px, yRes=py,
-                        outputBounds=(w, s, e, n), resampleAlg="bilinear")
-    arr = vrt.GetRasterBand(1).ReadAsArray().astype(np.float64)
-    vrt = None
-    gdal.Unlink(vrt_path)
-    valid = outline_mask(part, wgt, xs + 1, ys + 1)
+    # On the cell's own grid, so its pixels are copied, not interpolated.
+    arr, valid = read_window(files, (w, s, e, n), px, py)
+    valid &= outline_mask(part, wgt, xs + 1, ys + 1)
     if not have["n"] or seam:
         valid[0, :] = False
     if not have["e"]:
@@ -170,18 +206,66 @@ def contour_cell(job):
     if not have["ne"]:
         valid[0, xs] = False
     # Where the lines are cut: pixel centres on the sides that have a neighbour.
-    clip = (w + px / 2 if lon > -180 and os.path.exists(tif(lat, lon - 1)) else w,
-            s + py / 2 if os.path.exists(tif(lat - 1, lon)) else s,
+    clip = (w + px / 2 if lon > -180 and sources(lat, lon - 1) else w,
+            s + py / 2 if sources(lat - 1, lon) else s,
             e - px / 2 if have["e"] else e,
             n - py * 1.5 if seam else n - py / 2 if have["n"] else n)
-    counts = write_lines(arr, valid, wgt, clip, os.path.join(out, short))
+    counts = write_lines(arr, valid, wgt, clip, base)
     if seam:
-        more = seam_row(part, arr[1], valid[1], north, tif(*near["ne"]) if have["ne"] else None,
-                        w + px / 2, n - py * 1.5, py, os.path.join(out, short + "n"))
+        ne = cop_file(*near["ne"])
+        more = seam_row(part, arr[1], valid[1], north, ne if have["ne"] and os.path.exists(ne) else None,
+                        w + px / 2, n - py * 1.5, py, base + "n")
         counts = [counts[0] + more[0], counts[1] + more[1]]
-    with open(os.path.join(out, short + ".done"), "w") as f:
-        f.write(f"{counts[0]} {counts[1]}\n")
-    return name, counts[0], counts[1]
+    return counts
+
+
+BLOCKS = "abcdefghi"                 # a USGS cell is contoured in 3 x 3 blocks, from the south-west
+MARGIN = 5                           # pixels read round a block; a USGS tile has 6 past its cell
+COPERNICUS_ROW = 1 / 3600            # Copernicus rows are one arc second apart at every latitude
+
+
+def usgs_block(part, lat, lon, block):
+    """One ninth of a cell that has a USGS 1/3 arc-second tile (10800 x 10800 pixels, with
+    pixel edges, not centres, on the whole degrees; the whole cell at once would take
+    several GB of memory). Neighbouring blocks and cells read the same pixels round a shared
+    edge, so cutting the lines at the edge makes them meet exactly: every pixel is taken from
+    the tile of the cell it lies in, not from the 6 pixels by which the tiles overlap."""
+    base = os.path.join(_cfg["out_dir"], short_name(cell_name(lat, lon)) + BLOCKS[block])
+    own = usgs_file(lat, lon)
+    src = gdal.Open(own)
+    gt = src.GetGeoTransform()
+    src = None
+    px, py = gt[1], -gt[5]
+    i, j = block % 3, block // 3
+    x0, x1, y0, y1 = lon + i / 3, lon + (i + 1) / 3, lat + j / 3, lat + (j + 1) / 3
+    # A Copernicus cell's lines reach from one row north of its south edge to one row north of
+    # its north edge (see copernicus_cell): next to one, this cell's lines are cut there too.
+    copernicus = lambda la, lo: os.path.exists(cop_file(la, lo)) and not usgs_file(la, lo)
+    clip = (x0, y0 + COPERNICUS_ROW if j == 0 and copernicus(lat - 1, lon) else y0,
+            x1, y1 + COPERNICUS_ROW if j == 2 and copernicus(lat + 1, lon) else y1)
+    # The block and MARGIN pixels round it, on the tile's own grid.
+    col, row = round((x0 - gt[0]) / px) - MARGIN, round((gt[3] - y1) / py) - MARGIN
+    xs, ys = round((x1 - x0) / px) + 2 * MARGIN, round((y1 - y0) / py) + 2 * MARGIN
+    w, n = gt[0] + col * px, gt[3] - row * py
+    bounds = (w, n - ys * py, w + xs * px, n)
+    wgt = (w, px, 0.0, n, 0.0, -py)
+    files, crops = [], []
+    around = [(lat + dj, lon + di) for dj in (-1, 0, 1) for di in (-1, 0, 1)
+              if box(lon + di, lat + dj, lon + di + 1, lat + dj + 1).Intersects(box(*bounds))]
+    for la, lo in around:
+        if os.path.exists(cop_file(la, lo)):
+            files.append(cop_file(la, lo))
+    files.append(own)
+    for la, lo in around:
+        if (la, lo) != (lat, lon) and usgs_file(la, lo) and -180 <= lo < 180:
+            crops.append(f"/vsimem/{uuid.uuid4().hex}.vrt")
+            gdal.Translate(crops[-1], usgs_file(la, lo), format="VRT", projWin=[lo, la + 1, lo + 1, la])
+            files.append(crops[-1])
+    arr, valid = read_window(files, bounds, px, py)
+    for c in crops:
+        gdal.Unlink(c)
+    valid &= outline_mask(part, wgt, xs, ys)
+    return write_lines(arr, valid, wgt, clip, base)
 
 
 def seam_row(part, row, row_valid, north, north_east, lon, lat, py, base):
@@ -216,27 +300,40 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--outline-dir", required=True)
     ap.add_argument("--dem-dir", required=True)
+    ap.add_argument("--usgs-dir")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--units", choices=list(UNITS), default="m")
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     a = ap.parse_args()
-    _cfg.update(outline_dir=a.outline_dir, dem_dir=a.dem_dir, out_dir=a.out_dir, units=UNITS[a.units], parts={})
+    _cfg.update(outline_dir=a.outline_dir, dem_dir=a.dem_dir, usgs_dir=a.usgs_dir, out_dir=a.out_dir,
+                units=UNITS[a.units], parts={})
     os.makedirs(a.out_dir, exist_ok=True)
     with open(os.path.join(a.outline_dir, "cells.txt")) as f:
         rows = [ln.split() for ln in f if ln.strip()]
-    cells = [(int(p), name) for p, name in rows if os.path.exists(os.path.join(a.dem_dir, name + ".tif"))]
-    if not cells:
+    jobs, cells, usgs = [], 0, 0
+    for p, name in rows:
+        lat, lon = cell_origin(name)
+        if usgs_file(lat, lon):
+            jobs += [(int(p), name, b) for b in range(len(BLOCKS))]
+            usgs += 1
+        elif os.path.exists(cop_file(lat, lon)):
+            jobs.append((int(p), name, None))
+        else:
+            continue
+        cells += 1
+    if not jobs:
         sys.exit("Error: no elevation data for this outline (every cell is open sea).")
-    todo = [c for c in cells if not os.path.exists(os.path.join(a.out_dir, short_name(c[1]) + ".done"))]
-    print(f"  {len(cells)} cells with elevation data: {len(cells) - len(todo)} already done, "
-          f"{len(todo)} to do, {a.jobs} processes", flush=True)
+    done_file = lambda j: os.path.join(a.out_dir, short_name(j[1]) + ("" if j[2] is None else BLOCKS[j[2]]) + ".done")
+    todo = [j for j in jobs if not os.path.exists(done_file(j))]
+    print(f"  {cells} cells with elevation data{f' ({usgs} from USGS tiles, in 9 blocks each)' if usgs else ''}: "
+          f"{len(jobs) - len(todo)} of {len(jobs)} pieces already done, {len(todo)} to do, {a.jobs} processes", flush=True)
     t0, done, lines = time.time(), 0, 0
     with mp.Pool(a.jobs) as pool:
         for _name, major, minor in pool.imap_unordered(contour_cell, todo):
             done += 1
             lines += major + minor
             if done % 20 == 0 or done == len(todo):
-                print(f"  {done}/{len(todo)} cells, {lines:,} lines, {time.time() - t0:.0f} s", flush=True)
+                print(f"  {done}/{len(todo)} pieces, {lines:,} lines, {time.time() - t0:.0f} s", flush=True)
 
 
 if __name__ == "__main__":

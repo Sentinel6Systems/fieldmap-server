@@ -388,11 +388,41 @@ reexec_in_tools() {
         -e IN_TOOLS=1 \
         -e OSM_MAX_AGE_DAYS \
         -e ELEVATION_MAXZOOM -e ELEVATION_ENCODING -e ELEVATION_FORMAT \
-        -e HILLSHADE_MAXZOOM -e HILLSHADE_FORMAT -e CONTOUR_JOBS \
+        -e HILLSHADE_MAXZOOM -e HILLSHADE_FORMAT -e CONTOUR_JOBS -e DEM_SOURCE \
         -v "$REPO_DIR":/work \
         -w /work \
         "$TOOLS_IMAGE" \
         bash "/work/scripts/$(basename "$0")" "$@"
+}
+
+# Elevation data for the terrain builds (contours, hillshade, elevation), chosen with
+# DEM_SOURCE:
+#   copernicus  Copernicus GLO-30: 30 m, the whole world, the surface with its trees
+#               and buildings. The default.
+#   usgs        USGS 3DEP 1/3 arc-second: about 10 m, bare ground, mostly from lidar.
+#               United States only: a cell with no USGS tile, and gaps inside a tile,
+#               use Copernicus. About 350 MB to download per one-degree cell.
+# Sets DEM_SOURCE, USGS_DIR and USGS_ARGS (the option the Python tools take).
+terrain_source() {
+    DEM_SOURCE="${DEM_SOURCE:-copernicus}"
+    USGS_DIR="$REPO_DIR/data/cache/dem-usgs"
+    case "$DEM_SOURCE" in
+        copernicus) USGS_ARGS=() ;;
+        usgs) USGS_ARGS=(--usgs-dir "$USGS_DIR") ;;
+        *) echo "Error: DEM_SOURCE must be 'copernicus' or 'usgs', not '$DEM_SOURCE'." >&2; exit 1 ;;
+    esac
+}
+
+# Default highest zoom of the hillshade or elevation tiles. Zoom 12 (38 m pixels at the
+# equator) suits the 30 m data. The 10 m USGS data gets zoom 14 for the hillshade and 13
+# for the elevation tiles; each zoom more is four times the tiles.
+# Argument: hillshade | elevation
+terrain_default_zoom() {
+    if [ "${DEM_SOURCE:-copernicus}" = usgs ]; then
+        [ "$1" = hillshade ] && echo 14 || echo 13
+    else
+        echo 12
+    fi
 }
 
 # Region outline for the terrain builds (contours, hillshade, elevation): the union of
@@ -407,10 +437,28 @@ terrain_outline() {
     if [ $# -gt 0 ]; then
         areas=(--areas "$@")
     fi
+    terrain_source
     mkdir -p "$work/outline"
     python3 "$REPO_DIR/tools/region-outline.py" prepare --out "$work/outline" \
         --dem-dir "$REPO_DIR/data/cache/dem" --poly-cache "$REPO_DIR/data/cache/outlines" \
-        --bbox "${bbox[@]}" "${areas[@]}"
+        "${USGS_ARGS[@]}" --bbox "${bbox[@]}" "${areas[@]}"
+}
+
+# USGS 3DEP 1/3 arc-second tile of a cell, from the Copernicus cell name. USGS names a
+# tile by its north-west corner: the cell N48 W123 is USGS_13_n49w123.
+usgs_tile() {
+    local name="$1" lat lon
+    lat=$((10#${name:23:2})); [ "${name:22:1}" = S ] && lat=$((-lat))
+    lon=$((10#${name:30:3})); [ "${name:29:1}" = W ] && lon=$((-lon))
+    lat=$((lat + 1))
+    printf 'USGS_13_%s%02d%s%03d\n' "$([ "$lat" -ge 0 ] && echo n || echo s)" "${lat#-}" \
+        "$([ "$lon" -lt 0 ] && echo w || echo e)" "${lon#-}"
+}
+
+# 0 when a cell has elevation data to build from. Argument: Copernicus cell name
+cell_has_data() {
+    [ -f "$REPO_DIR/data/cache/dem/$1.tif" ] ||
+        { [ "$DEM_SOURCE" = usgs ] && [ -f "$USGS_DIR/$(usgs_tile "$1").tif" ]; }
 }
 
 # Number of the outline's cells that have elevation data (run after download_dem): cells
@@ -419,7 +467,7 @@ terrain_outline() {
 terrain_land_cells() {
     local _part name n=0
     while read -r _part name <&3; do
-        [ -f "$REPO_DIR/data/cache/dem/$name.tif" ] && n=$((n + 1))
+        if cell_has_data "$name"; then n=$((n + 1)); fi
     done 3< "$1/outline/cells.txt"
     echo "$n"
 }
@@ -429,68 +477,125 @@ terrain_land_cells() {
 terrain_estimate() {
     local work="$1"; shift
     python3 "$REPO_DIR/tools/region-outline.py" estimate --out "$work/outline" \
-        --dem-dir "$REPO_DIR/data/cache/dem" \
-        --elevation-maxzoom "${ELEVATION_MAXZOOM:-12}" --hillshade-maxzoom "${HILLSHADE_MAXZOOM:-12}" \
+        --dem-dir "$REPO_DIR/data/cache/dem" "${USGS_ARGS[@]}" \
+        --elevation-maxzoom "${ELEVATION_MAXZOOM:-$(terrain_default_zoom elevation)}" \
+        --hillshade-maxzoom "${HILLSHADE_MAXZOOM:-$(terrain_default_zoom hillshade)}" \
         --hillshade-format "${HILLSHADE_FORMAT:-webp}" "$@"
 }
 
-# Download the Copernicus GLO-30 cells (1x1 degree GeoTIFF files) that touch the outline.
-# Cells without a file (open sea, mostly) are added to data/cache/dem/ocean-cells.txt and
-# not requested again. Argument: WORK_DIR
+# Download one file, with retries. Returns 0 when it is saved and 1 when the server has
+# no such file (it answers 404 or 403); stops the build after four failed tries.
+# Arguments: URL DEST
+fetch_file() {
+    local url="$1" dest="$2" code tries=0
+    while :; do
+        code="$(curl -sSL -o "$dest.part" -w '%{http_code}' "$url" || true)"
+        case "$code" in
+            200)
+                mv "$dest.part" "$dest"
+                return 0 ;;
+            403|404)
+                rm -f "$dest.part"
+                return 1 ;;
+            *)
+                rm -f "$dest.part"
+                tries=$((tries + 1))
+                if [ "$tries" -ge 4 ]; then
+                    echo "Error: could not download ${dest##*/} (HTTP ${code:-none}). Check the connection and run the same command again; finished downloads are kept." >&2
+                    exit 1
+                fi
+                echo "retry $tries: ${dest##*/} (HTTP ${code:-none})"
+                sleep $((tries * 5)) ;;
+        esac
+    done
+}
+
+# Download the elevation data of the cells that touch the outline (1x1 degree GeoTIFF files).
+# Copernicus GLO-30: cells without a file (open sea, mostly) are added to
+# data/cache/dem/ocean-cells.txt and not requested again.
+# With DEM_SOURCE=usgs, the USGS tile of each cell first, into data/cache/dem-usgs: cells
+# USGS has no tile for go into no-tile.txt there, and each tile into full-tiles.txt or
+# gap-tiles.txt (it has pixels without data: sea, or land USGS has not covered). The
+# Copernicus cell is then fetched only where there is no USGS tile or it has gaps.
+# Argument: WORK_DIR
 download_dem() {
     local work="$1"
     local out_dir="$REPO_DIR/data/cache/dem" base_url="https://copernicus-dem-30m.s3.amazonaws.com"
-    local ocean="$out_dir/ocean-cells.txt"
+    local usgs_url="https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/current"
+    local ocean="$out_dir/ocean-cells.txt" no_tile="$USGS_DIR/no-tile.txt"
+    local full="$USGS_DIR/full-tiles.txt" gaps="$USGS_DIR/gap-tiles.txt"
     mkdir -p "$out_dir"
     if [ ! -f "$ocean" ]; then
         printf '%s\n' "# Copernicus GLO-30 cells that have no file (open sea, mostly), found by the terrain" \
             "# builds; they are not requested again. Delete a line to try that cell again." > "$ocean"
     fi
-    local _part name code tries fetched=0 cached=0 none=0 todo=0
+    if [ "$DEM_SOURCE" = usgs ]; then
+        mkdir -p "$USGS_DIR"
+        [ -f "$no_tile" ] || printf '%s\n' "# Cells USGS 3DEP has no 1/3 arc-second tile for, found by the terrain builds; they" \
+            "# are not requested again. Delete a line to try that tile again." > "$no_tile"
+        [ -f "$full" ] || printf '%s\n' "# USGS tiles without gaps: their cells need no Copernicus data underneath." > "$full"
+        [ -f "$gaps" ] || printf '%s\n' "# USGS tiles with pixels without data: Copernicus data is laid underneath." > "$gaps"
+    fi
+    local _part name tile todo=0 usgs_todo=0
     while read -r _part name <&3; do
+        if [ "$DEM_SOURCE" = usgs ]; then
+            tile="$(usgs_tile "$name")"
+            [ -f "$USGS_DIR/$tile.tif" ] || grep -qxF "$tile" "$no_tile" || usgs_todo=$((usgs_todo + 1))
+            grep -qxF "$tile" "$full" && continue
+        fi
         [ -f "$out_dir/$name.tif" ] || todo=$((todo + 1))
     done 3< "$work/outline/cells.txt"
-    # Up to about 30 MB a cell; cells of open sea turn out to have no file and take nothing.
-    require_free_space "$REPO_DIR/data" "$(( todo * 3 / 100 + 1 ))" "downloading up to $todo elevation cells"
+    # Up to about 30 MB a Copernicus cell and 450 MB a USGS tile; cells that turn out to
+    # have no file take nothing.
+    require_free_space "$REPO_DIR/data" "$(( todo * 3 / 100 + usgs_todo * 45 / 100 + 1 ))" \
+        "downloading up to $((todo + usgs_todo)) elevation cells"
+    local fetched=0 cached=0 none=0 hires=0 need
     while read -r _part name <&3; do
+        need=yes
+        if [ "$DEM_SOURCE" = usgs ]; then
+            tile="$(usgs_tile "$name")"
+            if [ ! -f "$USGS_DIR/$tile.tif" ] && ! grep -qxF "$tile" "$no_tile"; then
+                if fetch_file "$usgs_url/${tile#USGS_13_}/$tile.tif" "$USGS_DIR/$tile.tif"; then
+                    echo "download: $tile"
+                else
+                    echo "$tile" >> "$no_tile"
+                fi
+            fi
+            if [ -f "$USGS_DIR/$tile.tif" ]; then
+                hires=$((hires + 1))
+                if ! grep -qxF "$tile" "$full" "$gaps"; then
+                    if python3 "$REPO_DIR/tools/region-outline.py" tile-full "$USGS_DIR/$tile.tif"; then
+                        echo "$tile" >> "$full"
+                    else
+                        echo "$tile" >> "$gaps"
+                    fi
+                fi
+                if grep -qxF "$tile" "$full"; then need=no; fi
+            fi
+        fi
+        [ "$need" = yes ] || continue
         if [ -f "$out_dir/$name.tif" ]; then
             cached=$((cached + 1))
-            continue
+        elif fetch_file "$base_url/$name/$name.tif" "$out_dir/$name.tif"; then
+            echo "download: $name"
+            fetched=$((fetched + 1))
+        else
+            # The bucket answers 404 (or 403) for cells it has no file for.
+            echo "$name" >> "$ocean"
+            echo "no file (open sea): $name"
+            none=$((none + 1))
         fi
-        tries=0
-        while :; do
-            code="$(curl -sSL -o "$out_dir/$name.tif.part" -w '%{http_code}' "$base_url/$name/$name.tif" || true)"
-            case "$code" in
-                200)
-                    mv "$out_dir/$name.tif.part" "$out_dir/$name.tif"
-                    echo "download: $name"
-                    fetched=$((fetched + 1))
-                    break ;;
-                403|404)
-                    # The bucket answers 404 (or 403) for cells it has no file for.
-                    rm -f "$out_dir/$name.tif.part"
-                    echo "$name" >> "$ocean"
-                    echo "no file (open sea): $name"
-                    none=$((none + 1))
-                    break ;;
-                *)
-                    rm -f "$out_dir/$name.tif.part"
-                    tries=$((tries + 1))
-                    if [ "$tries" -ge 4 ]; then
-                        echo "Error: could not download $name (HTTP ${code:-none}). Check the connection and run the same command again; finished downloads are kept." >&2
-                        exit 1
-                    fi
-                    echo "retry $tries: $name (HTTP ${code:-none})"
-                    sleep $((tries * 5)) ;;
-            esac
-        done
     done 3< "$work/outline/cells.txt"
-    echo "Elevation cells: $fetched downloaded, $cached already here, $none with no file (open sea)."
+    if [ "$DEM_SOURCE" = usgs ]; then
+        echo "High-resolution cells (USGS 3DEP 1/3 arc-second): $hires."
+    fi
+    echo "Copernicus cells: $fetched downloaded, $cached already here, $none with no file (open sea)."
 }
 
 # One mosaic (a VRT, no copy) of the downloaded cells per part of the outline, listed in
 # WORK_DIR/outline/mosaics.txt (see tools/region-outline.py). Run after download_dem.
 # Argument: WORK_DIR
 terrain_mosaic() {
-    python3 "$REPO_DIR/tools/region-outline.py" mosaic --out "$1/outline" --dem-dir "$REPO_DIR/data/cache/dem"
+    python3 "$REPO_DIR/tools/region-outline.py" mosaic --out "$1/outline" --dem-dir "$REPO_DIR/data/cache/dem" \
+        "${USGS_ARGS[@]}"
 }

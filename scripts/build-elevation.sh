@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build elevation raster tiles for one region: heights in metres as Mapbox terrain-RGB
 # (0.1 m steps) in lossless WebP, for the print tool's terrain analysis (viewshed and radio coverage).
-# Same Copernicus GLO-30 elevation data as build-hillshade.sh and build-contours.sh.
+# Same elevation data as build-hillshade.sh and build-contours.sh: Copernicus GLO-30, or
+# with DEM_SOURCE=usgs the 10 m USGS data (see terrain_source in lib.sh).
 # The output file is data/elevation.mbtiles.
 #
 # Usage:
@@ -11,7 +12,8 @@
 # areas' outlines inside the box; without it, the whole box. A box whose min-lon is larger
 # than its max-lon crosses the 180° line. See tools/region-outline.py.
 #
-# maxzoom (or ELEVATION_MAXZOOM): 12 by default, about 30 m per pixel at US latitudes.
+# maxzoom (or ELEVATION_MAXZOOM): 12 by default, about 30 m per pixel at US latitudes
+# (13 with DEM_SOURCE=usgs, about 14 m).
 # 11 halves the resolution and makes the file about 4 times smaller. The tiles start
 # at zoom 8 (or maxzoom, if lower), so a large radius needs only a few tiles.
 # ELEVATION_ENCODING (terrarium or mapbox) and ELEVATION_FORMAT (png or webp) choose
@@ -34,7 +36,7 @@ if [ $# -lt 4 ] || [ $# -gt 5 ]; then
     exit 1
 fi
 
-MAXZOOM="${5:-${ELEVATION_MAXZOOM:-12}}"
+MAXZOOM="${5:-${ELEVATION_MAXZOOM:-$(terrain_default_zoom elevation)}}"
 case "$MAXZOOM" in
     ''|*[!0-9]*) echo "Error: maxzoom must be a whole number (for example 11 or 12)." >&2; exit 1 ;;
 esac
@@ -63,10 +65,18 @@ download_dem "$WORK_DIR"
 terrain_mosaic "$WORK_DIR"
 CELLS="$(terrain_land_cells "$WORK_DIR")"
 # The tiles are written straight from the downloaded elevation data; the space needed
-# is the output (measured: about 40 MB per square degree at zoom 12), with room to spare.
-NEED_GB="$(python3 -c "print(max(2, int($CELLS * 0.06 + 1)))")"
+# is the output (measured: 11 MB per one-degree cell of mountains at zoom 12, four times
+# that for each zoom more), with room to spare.
+NEED_GB="$(python3 -c "print(max(2, int($CELLS * 0.03 * 4 ** ($MAXZOOM - 12) + 1)))")"
 require_free_space "$REPO_DIR/data" "$NEED_GB" "elevation tiles for $CELLS one-degree cells with land"
 
+SOURCE="Copernicus GLO-30" SOURCE_DATE="2011-2015"
+ATTRIBUTION="Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved"
+if [ "$DEM_SOURCE" = usgs ]; then
+    SOURCE="USGS 3DEP 1/3 arc-second (bare ground); Copernicus GLO-30 where USGS has no data"
+    SOURCE_DATE="USGS: date of each survey; Copernicus: 2011-2015"
+    ATTRIBUTION="USGS 3D Elevation Program. $ATTRIBUTION"
+fi
 echo "Step 2/2: write the elevation tiles (zoom $MINZOOM-$MAXZOOM, $ELEVATION_ENCODING $ELEVATION_FORMAT)"
 # One mosaic per outline part (see tools/region-outline.py); the tile writer masks it to the
 # outline block by block, so the low zooms can read the elevation data's own overviews.
@@ -74,8 +84,7 @@ mapfile -t DEMS < <(awk '{print $2}' "$WORK_DIR/outline/mosaics.txt")
 python3 "$REPO_DIR/tools/elevation-tiles.py" --outline "$WORK_DIR/outline/outline.geojson" \
     --minzoom "$MINZOOM" --maxzoom "$MAXZOOM" \
     --encoding "$ELEVATION_ENCODING" --format "$ELEVATION_FORMAT" \
-    --source "Copernicus GLO-30" --source-date "2011-2015" \
-    --attribution "Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved" \
+    --source "$SOURCE" --source-date "$SOURCE_DATE" --attribution "$ATTRIBUTION" \
     "${DEMS[@]}" "$REPO_DIR/data/elevation.mbtiles"
 
 report_work_space "$WORK_DIR" "$REPO_DIR/data/elevation.mbtiles"

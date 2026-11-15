@@ -21,6 +21,8 @@
 #   hillshade  -> data/hillshade.mbtiles
 #   elevation  heights for the print tool's terrain analysis, up to zoom
 #              ELEVATION_MAXZOOM (default 12) -> data/elevation.mbtiles
+#              (contours, hillshade and elevation use the 10 m USGS data when the
+#              region file sets DEM_SOURCE="usgs")
 #   extras     power lines, pipelines, fences and gates, towers,
 #              springs and other landmarks for the print styles
 #              -> data/extras.mbtiles (build-extras.sh; reuses the merged
@@ -69,9 +71,11 @@ check_language
 : "${BBOX:?BBOX is not set in $REGION_FILE}"
 CONTOUR_UNITS="${CONTOUR_UNITS:-ft}"
 PLANETILER_MEMORY="${PLANETILER_MEMORY:-8g}"
-ELEVATION_MAXZOOM="${ELEVATION_MAXZOOM:-12}"
+# Elevation data for the terrain steps: copernicus or usgs (see terrain_source in lib.sh).
+export DEM_SOURCE="${DEM_SOURCE:-copernicus}"
+ELEVATION_MAXZOOM="${ELEVATION_MAXZOOM:-$(terrain_default_zoom elevation)}"
 # Hillshade tile format and highest zoom (build-hillshade.sh reads them from the environment).
-export HILLSHADE_FORMAT="${HILLSHADE_FORMAT:-webp}" HILLSHADE_MAXZOOM="${HILLSHADE_MAXZOOM:-12}"
+export HILLSHADE_FORMAT="${HILLSHADE_FORMAT:-webp}" HILLSHADE_MAXZOOM="${HILLSHADE_MAXZOOM:-$(terrain_default_zoom hillshade)}"
 
 # shellcheck disable=SC2206
 BBOX_ARGS=($BBOX)

@@ -10,7 +10,8 @@
 # areas' outlines inside the box; without it, the whole box. A box whose min-lon is larger
 # than its max-lon crosses the 180° line. See tools/region-outline.py.
 #
-# Output: gray hillshade tiles, zoom 6 to HILLSHADE_MAXZOOM (default 12), transparent
+# Output: gray hillshade tiles, zoom 6 to HILLSHADE_MAXZOOM (default 12, or 14 with
+# DEM_SOURCE=usgs: the 10 m USGS data, see terrain_source in lib.sh), transparent
 # outside the outline. HILLSHADE_FORMAT chooses the encoding:
 #   webp           lossy WebP, quality 80 (the default; about a tenth of PNG, and the
 #                  same as PNG on paper)
@@ -33,7 +34,7 @@ if [ $# -ne 4 ]; then
     exit 1
 fi
 
-export HILLSHADE_FORMAT="${HILLSHADE_FORMAT:-webp}" HILLSHADE_MAXZOOM="${HILLSHADE_MAXZOOM:-12}"
+export HILLSHADE_FORMAT="${HILLSHADE_FORMAT:-webp}" HILLSHADE_MAXZOOM="${HILLSHADE_MAXZOOM:-$(terrain_default_zoom hillshade)}"
 case "$HILLSHADE_FORMAT" in
     webp|webp-lossless|png) ;;
     *) echo "Error: HILLSHADE_FORMAT must be webp, webp-lossless or png." >&2; exit 1 ;;
@@ -60,8 +61,11 @@ echo "Step 1/3: download elevation tiles"
 download_dem "$WORK_DIR"
 CELLS="$(terrain_land_cells "$WORK_DIR")"
 # The hillshade raster of each outline part, its overviews and the tiles (land cells
-# only, after the download). Measured: under 0.015 GB per one-degree cell of mountains.
-NEED_GB="$(python3 -c "print(max(2, int($CELLS * 0.03 + 2)))")"
+# only, after the download). Measured: under 0.015 GB per one-degree cell of mountains;
+# from the USGS data, with tiles to zoom 14, 0.13 GB.
+PER_CELL=0.03
+[ "$DEM_SOURCE" = usgs ] && PER_CELL=0.2
+NEED_GB="$(python3 -c "print(max(2, int($CELLS * $PER_CELL + 2)))")"
 require_free_space "$REPO_DIR/data" "$NEED_GB" "hillshade for $CELLS one-degree cells with land"
 
 terrain_mosaic "$WORK_DIR"
@@ -78,10 +82,12 @@ while read -r part raw cut xmin ymin xmax ymax res <&3; do
     HILLSHADES+=("$hs")
 done 3< "$WORK_DIR/outline/mosaics.txt"
 
+ATTRIBUTION="Copernicus DEM (c) ESA"
+[ "$DEM_SOURCE" = usgs ] && ATTRIBUTION="USGS 3D Elevation Program; $ATTRIBUTION"
 echo "Step 3/3: write the raster tiles (zoom $MINZOOM-$HILLSHADE_MAXZOOM, $HILLSHADE_FORMAT)"
 python3 "$REPO_DIR/tools/hillshade-tiles.py" --outline "$WORK_DIR/outline/outline.geojson" \
     --minzoom "$MINZOOM" --maxzoom "$HILLSHADE_MAXZOOM" --format "$HILLSHADE_FORMAT" \
-    --attribution "Copernicus DEM (c) ESA" \
+    --attribution "$ATTRIBUTION" \
     "${HILLSHADES[@]}" "$REPO_DIR/data/hillshade.mbtiles"
 
 report_work_space "$WORK_DIR" "$REPO_DIR/data/hillshade.mbtiles"

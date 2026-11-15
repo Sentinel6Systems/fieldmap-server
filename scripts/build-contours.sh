@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build contour line vector tiles for one region.
-# The script downloads Copernicus GLO-30 elevation data.
+# The script downloads Copernicus GLO-30 elevation data, or with DEM_SOURCE=usgs the
+# 10 m USGS data where it exists (see terrain_source in lib.sh).
 # The output file is data/contours.mbtiles.
 #
 # Usage:
@@ -69,9 +70,9 @@ download_dem "$WORK_DIR"
 CELLS="$(terrain_land_cells "$WORK_DIR")"
 
 # The lines of finished cells, and the tiles made from them, are kept until the build is
-# complete, so a stopped build carries on where it was. They belong to one outline and
-# one unit: others are removed.
-SIGNATURE="$( (echo "v2 $UNITS"; cat "$WORK_DIR/outline/outline.geojson") | sha1sum | cut -c1-12)"
+# complete, so a stopped build carries on where it was. They belong to one outline, one
+# unit and one elevation source: others are removed.
+SIGNATURE="$( (echo "v3 $UNITS $DEM_SOURCE"; cat "$WORK_DIR/outline/outline.geojson") | sha1sum | cut -c1-12)"
 CELLS_ROOT="$REPO_DIR/data/cache/contour-cells"
 CELLS_DIR="$CELLS_ROOT/$SIGNATURE"
 mkdir -p "$CELLS_DIR"
@@ -81,14 +82,17 @@ rm -f "$CELLS_DIR"/*.part.*
 # Disk estimate (checked after the download, so cells of open sea are not counted): the
 # lines of every cell, then tippecanoe's temporary files and the tiles beside them.
 # Measured on rugged mountains: 17 kB per km² at the peak, about 0.15 GB for a whole
-# cell. What an earlier, stopped run already wrote is taken off.
+# cell; from the USGS data 48 kB per km², about 0.4 GB. What an earlier, stopped run
+# already wrote is taken off.
 HAVE_MB="$(du -sm "$CELLS_DIR" | cut -f1)"
-NEED_GB="$(python3 -c "print(max(4, int($CELLS * 0.2 + 3 - $HAVE_MB / 1024)))")"
+PER_CELL=0.2
+[ "$DEM_SOURCE" = usgs ] && PER_CELL=0.5
+NEED_GB="$(python3 -c "print(max(4, int($CELLS * $PER_CELL + 3 - $HAVE_MB / 1024)))")"
 require_free_space "$REPO_DIR/data" "$NEED_GB" "contours for $CELLS one-degree cells with land"
 
 echo "Step 2/3: compute contour lines, one elevation cell at a time (interval $MINOR $UNITS)"
 python3 "$REPO_DIR/tools/contour-cells.py" --outline-dir "$WORK_DIR/outline" \
-    --dem-dir "$REPO_DIR/data/cache/dem" --out-dir "$CELLS_DIR" --units "$UNITS" \
+    --dem-dir "$REPO_DIR/data/cache/dem" "${USGS_ARGS[@]}" --out-dir "$CELLS_DIR" --units "$UNITS" \
     ${CONTOUR_JOBS:+--jobs "$CONTOUR_JOBS"}
 
 echo "Step 3/3: build the vector tiles"
@@ -107,6 +111,14 @@ with open(sys.argv[1], 'w+b') as f:
 fi
 rm -f "$TIPPE_TMP/probe"
 
+# tippecanoe thins each line to within one tile unit of its place (1/4096 of a tile at
+# each zoom). The 10 m USGS data gets half that tolerance, so that its finer shapes stay.
+SIMPLIFY=() ATTRIBUTION="Copernicus DEM (c) ESA"
+if [ "$DEM_SOURCE" = usgs ]; then
+    SIMPLIFY=(--simplification=0.5)
+    ATTRIBUTION="USGS 3D Elevation Program; $ATTRIBUTION"
+fi
+
 # One tippecanoe run per layer over all cells, so the low zooms are thinned the same way
 # everywhere. A finished layer is kept, and its cells' lines are deleted at once.
 # Arguments: KIND LAYER MINZOOM
@@ -119,7 +131,7 @@ tile_layer() {
     # -T: tippecanoe reads FlatGeobuf numbers as text unless told the type.
     (cd "$CELLS_DIR" && tippecanoe -q -f -t "$TIPPE_TMP" -o "$kind.part.mbtiles" -l "$layer" \
         -Z"$minzoom" -z14 -y "$ELEV_ATTR" -T "$ELEV_ATTR:$ELEV_TYPE" --drop-densest-as-needed \
-        -A "Copernicus DEM (c) ESA" "${files[@]}")
+        "${SIMPLIFY[@]}" -A "$ATTRIBUTION" "${files[@]}")
     mv "$CELLS_DIR/$kind.part.mbtiles" "$CELLS_DIR/$kind.mbtiles"
     (cd "$CELLS_DIR" && rm -f "${files[@]}")
 }
@@ -130,7 +142,9 @@ if [ ${#JOIN[@]} -eq 0 ]; then
     echo "Error: no contour lines in this outline (flat, or all sea)." >&2
     exit 1
 fi
-tile-join -q -f -o "$REPO_DIR/data/contours.mbtiles" -n "Contours ($UNITS)" "${JOIN[@]}"
+# -pk: no size limit here. Each layer was already kept under tippecanoe's 500 kB a tile;
+# without it tile-join leaves out every tile where the two together are larger.
+tile-join -q -pk -f -o "$REPO_DIR/data/contours.mbtiles" -n "Contours ($UNITS)" "${JOIN[@]}"
 
 report_work_space "$CELLS_DIR" "$REPO_DIR/data/contours.mbtiles"
 rm -rf "$WORK_DIR" "$CELLS_ROOT"
