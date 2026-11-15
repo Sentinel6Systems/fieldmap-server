@@ -5,7 +5,11 @@
 # The output file is data/elevation.mbtiles.
 #
 # Usage:
-#   ./scripts/build-elevation.sh <min-lon> <min-lat> <max-lon> <max-lat> [maxzoom]
+#   ./scripts/build-elevation.sh [--areas "<geofabrik paths>"] <min-lon> <min-lat> <max-lon> <max-lat> [maxzoom]
+#
+# With --areas (Geofabrik extract paths, as in a region file) the tiles cover only those
+# areas' outlines inside the box; without it, the whole box. A box whose min-lon is larger
+# than its max-lon crosses the 180° line. See tools/region-outline.py.
 #
 # maxzoom (or ELEVATION_MAXZOOM): 12 by default, about 30 m per pixel at US latitudes.
 # 11 halves the resolution and makes the file about 4 times smaller. The tiles start
@@ -20,8 +24,13 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib.sh
 source "$REPO_DIR/scripts/lib.sh"
 
+AREAS=""
+if [ "${1:-}" = "--areas" ]; then
+    AREAS="${2:-}"
+    shift 2 || true
+fi
 if [ $# -lt 4 ] || [ $# -gt 5 ]; then
-    echo "Usage: $0 <min-lon> <min-lat> <max-lon> <max-lat> [maxzoom]" >&2
+    echo "Usage: $0 [--areas \"<geofabrik paths>\"] <min-lon> <min-lat> <max-lon> <max-lat> [maxzoom]" >&2
     exit 1
 fi
 
@@ -35,49 +44,38 @@ if [ "$MAXZOOM" -lt 6 ] || [ "$MAXZOOM" -gt 14 ]; then
 fi
 export ELEVATION_ENCODING="${ELEVATION_ENCODING:-mapbox}" ELEVATION_FORMAT="${ELEVATION_FORMAT:-webp}"
 
-reexec_in_tools "$@"
+reexec_in_tools ${AREAS:+--areas "$AREAS"} "$@"
 
 MIN_LON="$1" MIN_LAT="$2" MAX_LON="$3" MAX_LAT="$4"
 MINZOOM=$(( MAXZOOM < 8 ? MAXZOOM : 8 ))
 
-DEM_DIR="$REPO_DIR/data/cache/dem"
 WORK_DIR="$REPO_DIR/data/cache/elevation"
 trap 'disk_full_hint "$REPO_DIR/data"' ERR
-
-AREA_DEG2="$(bbox_area "$MIN_LON" "$MIN_LAT" "$MAX_LON" "$MAX_LAT")"
-# The tiles are written straight from the downloaded elevation data; the space needed
-# is the downloads plus the output (measured: about 40 MB per square degree at zoom 12).
-NEED_GB="$(python3 -c "print(max(2, int($AREA_DEG2 * 0.1 + 1)))")"
-require_free_space "$REPO_DIR/data" "$NEED_GB" "elevation tiles for a $AREA_DEG2 square-degree area"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 
+# shellcheck disable=SC2086
+terrain_outline "$WORK_DIR" "$MIN_LON" "$MIN_LAT" "$MAX_LON" "$MAX_LAT" $AREAS
+terrain_estimate "$WORK_DIR" elevation
+CELLS="$(terrain_cells "$WORK_DIR")"
+# The tiles are written straight from the downloaded elevation data; the space needed
+# is the downloads plus the output (measured: about 40 MB per square degree at zoom 12).
+NEED_GB="$(python3 -c "print(max(2, int($CELLS * 0.1 + 1)))")"
+require_free_space "$REPO_DIR/data" "$NEED_GB" "elevation tiles for $CELLS one-degree cells"
+
 echo "Step 1/2: download elevation tiles"
-download_dem "$MIN_LON" "$MIN_LAT" "$MAX_LON" "$MAX_LAT" "$DEM_DIR"
+download_dem "$WORK_DIR"
 
 echo "Step 2/2: write the elevation tiles (zoom $MINZOOM-$MAXZOOM, $ELEVATION_ENCODING $ELEVATION_FORMAT)"
-# The mosaic is the downloaded 1-degree cells around the box, on their own grid (cutting
-# it with gdalbuildvrt -te would shift the heights by half a pixel). Within those cells a
-# missing file is open sea (Copernicus has no tiles there) and reads as 0 m; outside
-# them there is no data.
-mapfile -t DEM_FILES < <(python3 - "$DEM_DIR" "$MIN_LON" "$MIN_LAT" "$MAX_LON" "$MAX_LAT" <<'PY'
-import math, os, sys
-d, w, s, e, n = sys.argv[1], *map(float, sys.argv[2:])
-for lat in range(math.floor(s), math.floor(n) + 1):
-    for lon in range(math.floor(w), math.floor(e) + 1):
-        f = f"{d}/Copernicus_DSM_COG_10_{'N' if lat >= 0 else 'S'}{abs(lat):02d}_00_{'E' if lon >= 0 else 'W'}{abs(lon):03d}_00_DEM.tif"
-        if os.path.exists(f):
-            print(f)
-PY
-)
-gdalbuildvrt -q "$WORK_DIR/dem.vrt" "${DEM_FILES[@]}"
-python3 "$REPO_DIR/tools/elevation-tiles.py" \
-    --bbox "$MIN_LON" "$MIN_LAT" "$MAX_LON" "$MAX_LAT" \
+# One mosaic per outline part (see tools/region-outline.py); the tile writer masks it to the
+# outline block by block, so the low zooms can read the elevation data's own overviews.
+mapfile -t DEMS < <(awk '{print $2}' "$WORK_DIR/outline/mosaics.txt")
+python3 "$REPO_DIR/tools/elevation-tiles.py" --outline "$WORK_DIR/outline/outline.geojson" \
     --minzoom "$MINZOOM" --maxzoom "$MAXZOOM" \
     --encoding "$ELEVATION_ENCODING" --format "$ELEVATION_FORMAT" \
     --source "Copernicus GLO-30" --source-date "2011-2015" \
     --attribution "Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved" \
-    "$WORK_DIR/dem.vrt" "$REPO_DIR/data/elevation.mbtiles"
+    "${DEMS[@]}" "$REPO_DIR/data/elevation.mbtiles"
 
 report_work_space "$WORK_DIR" "$REPO_DIR/data/elevation.mbtiles"
 rm -rf "$WORK_DIR"

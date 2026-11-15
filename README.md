@@ -41,9 +41,9 @@ cd fieldmap-server
 ./scripts/build-region.sh <region-file>
 #    or from a single Geofabrik area plus a terrain bounding box:
 ./scripts/build-vector.sh <geofabrik-area>
-./scripts/build-contours.sh <min-lon> <min-lat> <max-lon> <max-lat> ft
-./scripts/build-hillshade.sh <min-lon> <min-lat> <max-lon> <max-lat>
-./scripts/build-elevation.sh <min-lon> <min-lat> <max-lon> <max-lat>   # optional: terrain analysis
+./scripts/build-contours.sh --areas <geofabrik-area> <min-lon> <min-lat> <max-lon> <max-lat> ft
+./scripts/build-hillshade.sh --areas <geofabrik-area> <min-lon> <min-lat> <max-lon> <max-lat>
+./scripts/build-elevation.sh --areas <geofabrik-area> <min-lon> <min-lat> <max-lon> <max-lat>   # optional: terrain analysis
 
 # 2. Start the server
 ./scripts/data-placeholders.sh   # empty extras/usdata/elevation files unless you built them (needed after updating, too)
@@ -70,7 +70,7 @@ stops with a clear message if the drive is too small. From a six-state build (ab
 |---|---|---|
 | Base map | ~1 GB | ~15 GB |
 | Contours | ~2 GB | ~40 GB |
-| Hillshade | ~0.5 GB | ~15 GB |
+| Hillshade | ~0.5 GB as PNG; about a quarter as lossy WebP (the default) | ~15 GB |
 | Elevation (zoom 12) | ~0.05-0.15 GB | the elevation downloads only |
 
 Finished downloads are kept in `data/sources` and `data/cache` and reused.
@@ -279,22 +279,53 @@ The first run downloads about 1.5 GB of shared world data (coastlines, lakes).
 This data stays in `data/sources` for the next runs.
 Large areas need more memory: `PLANETILER_MEMORY=8g ./scripts/build-vector.sh germany`.
 
-### `build-contours.sh <min-lon> <min-lat> <max-lon> <max-lat> [m|ft]`
+### Terrain outline (contours, hillshade, elevation)
+
+The three terrain builds take an optional `--areas "<geofabrik paths>"` before the box (`build-region.sh` passes the
+region file's `GEOFABRIK_AREAS`). They then cover only the areas' outlines inside the box: the Geofabrik `.poly`
+files, merged when there are several, downloaded once to `data/cache/outlines`. Without `--areas`, or when an outline
+cannot be downloaded, they cover the whole box. In detail (`tools/region-outline.py`):
+
+- Only the 1° Copernicus cells that touch the outline are downloaded and processed; everything outside the outline
+  is masked (no contour lines, transparent hillshade, no-data elevation).
+- Cells for which Copernicus has no file (open sea, mostly) are listed in `data/cache/dem/ocean-cells.txt` and not
+  requested again. Delete a line to try that cell again.
+- An outline that reaches past the 180° line, like Alaska's Aleutians, is built as two parts, west and east of the
+  line, into one output file. A box can cross the line as well: give a min-lon larger than the max-lon, for example
+  `172 51 -129 72`.
+- Before it starts, each build prints the outline, the cells it will download and an estimate of the output size
+  and time; `build-region.sh` prints the estimate for all its terrain steps first. The estimates come from the test
+  builds below and give a range from flat to rugged terrain.
+
+Test builds on an 8-core desktop (sizes of the finished files; times include the tool container's start):
+
+| Test area | Outline | Contours (40 ft) | Hillshade (lossy WebP) | Elevation (zoom 12) |
+|---|---|---|---|---|
+| Mountains and sound against an international border (one US state's outline, cut to a 2.2° × 1.4° box) | 12,134 km², 1 part | 61 MB, 109 s | 2.4 MB, 10 s | 16.6 MB, 15 s |
+| One Aleutian island west of 180° (mostly sea) | 13,210 km², 1 part | 9.0 MB, 18 s | 0.5 MB, 6 s | 2.8 MB, 16 s |
+| Two Aleutian islands, a box across 180° | 9,650 km², 2 parts | 1.9 MB, 9 s | 0.1 MB, 4 s | 0.7 MB, 4 s |
+
+In the first area nothing reaches past the border (the last valid pixel is within one 30 m pixel of the outline), and the two
+parts of the third join at 180° without a seam. The hillshade of the first area is 9.4 MB as lossless WebP and
+10.4 MB as PNG.
+
+### `build-contours.sh [--areas "<geofabrik paths>"] <min-lon> <min-lat> <max-lon> <max-lat> [m|ft]`
 
 Builds `data/contours.mbtiles` from Copernicus GLO-30 elevation data.
 Units are meters by default (minor 20 m, major 100 m).
 Use `ft` for feet (minor 40 ft, major 200 ft):
 
 ```bash
-./scripts/build-contours.sh <min-lon> <min-lat> <max-lon> <max-lat> ft
+./scripts/build-contours.sh --areas <geofabrik-area> <min-lon> <min-lat> <max-lon> <max-lat> ft
 ```
 
-### `build-hillshade.sh <min-lon> <min-lat> <max-lon> <max-lat>`
+### `build-hillshade.sh [--areas "<geofabrik paths>"] <min-lon> <min-lat> <max-lon> <max-lat>`
 
-Builds `data/hillshade.mbtiles` from the same elevation data.
+Builds `data/hillshade.mbtiles` from the same elevation data: gray tiles from zoom 6 to `HILLSHADE_MAXZOOM` (default
+12; the print styles stretch zoom 12 over the higher zooms without visible loss on paper), transparent outside the
+outline. `HILLSHADE_FORMAT` chooses the encoding: `webp` (lossy, quality 80; the default), `webp-lossless` or `png`.
 
-To shrink a large hillshade file, drop zoom 13 and re-encode the tiles as WebP (about a tenth of the size; tested on
-a small sample, not yet on a US-wide file):
+A hillshade file built before this option (PNG to zoom 13) can be converted in place of a rebuild:
 
 ```bash
 python3 tools/hillshade-webp.py --maxzoom 12      # data/hillshade.mbtiles -> data/hillshade-webp.mbtiles
@@ -304,11 +335,11 @@ mv data/hillshade-webp.mbtiles data/hillshade.mbtiles && docker restart tileserv
 The terrain scripts build a small tool container (GDAL + Tippecanoe) on first run.
 Downloaded elevation tiles stay in `data/cache/dem` for reuse.
 
-### `build-elevation.sh <min-lon> <min-lat> <max-lon> <max-lat> [maxzoom]`
+### `build-elevation.sh [--areas "<geofabrik paths>"] <min-lon> <min-lat> <max-lon> <max-lat> [maxzoom]`
 
 Builds `data/elevation.mbtiles` from the same elevation data as the contours and hillshade: heights in metres for the
 print tool's terrain analysis (viewshed and radio coverage). Tiles are 256 px, Web Mercator, from zoom 8 to `maxzoom`
-(default 12, or `ELEVATION_MAXZOOM`), for every tile that touches the box. Encoding: Mapbox terrain-RGB
+(default 12, or `ELEVATION_MAXZOOM`), for every tile that touches the outline. Encoding: Mapbox terrain-RGB
 (height = -10000 + (R × 65536 + G × 256 + B) × 0.1 m) in lossless WebP; R = G = B = 0 marks no data. Set
 `ELEVATION_ENCODING=terrarium` and/or `ELEVATION_FORMAT=png` for the other choices; all four keep the heights to
 0.1 m or better and TileServer GL serves all four. WebP was the smallest (about 30 % below PNG) on both test areas.
@@ -399,7 +430,7 @@ Builds the data files for a region described in a region file: base map, contour
 A region can cover several Geofabrik extracts, for example several US states.
 The script downloads each extract, merges them into one file with Osmium,
 and runs Planetiler on the merged file. Then it builds contours, hillshade and
-elevation tiles for the region's bounding box.
+elevation tiles for the areas' outlines inside the region's bounding box (see "Terrain outline").
 
 ```bash
 ./scripts/build-region.sh <region-file>
@@ -421,15 +452,17 @@ country on top of the world layer; its comments list sizes). A region file sets 
 |---|---|
 | `REGION_NAME` | Short name for the merged OSM file |
 | `GEOFABRIK_AREAS` | Geofabrik paths, for example `north-america/us/new-jersey` |
-| `BBOX` | Terrain box: `min-lon min-lat max-lon max-lat` |
+| `BBOX` | Box: `min-lon min-lat max-lon max-lat`. The base map stops at it; the terrain covers the areas' outlines inside it. A min-lon larger than the max-lon crosses the 180° line |
 | `CONTOUR_UNITS` | `ft` or `m` (default `ft`) |
+| `HILLSHADE_FORMAT` | `webp` (default, lossy), `webp-lossless` or `png` |
+| `HILLSHADE_MAXZOOM` | Highest zoom of `hillshade.mbtiles` (default 12) |
 | `ELEVATION_MAXZOOM` | Highest zoom of `elevation.mbtiles`: 12 (default, about 30 m) or 11 (about 60 m, a quarter of the size) |
 | `PLANETILER_MEMORY` | Java heap for Planetiler (default `8g`) |
 | `WORLD` | `yes`: the whole world at zoom 0-8, the region from zoom 9 (same as `--world`) |
 | `LANGUAGE` | Keep labels in one language only (same as `--language`) |
 | `US_STATES` | Two-letter state codes for `build-usdata.sh` (default: the US states in `GEOFABRIK_AREAS`) |
 
-Planetiler output is limited to the region's `BBOX`.
+Planetiler output is limited to the region's `BBOX` (for a box across the 180° line, its wider side).
 
 Planetiler also needs three shared inputs (water polygons, Natural Earth,
 lake centerlines). The script downloads them to `data/sources` before it runs
@@ -493,7 +526,7 @@ Put your own files in `data/` with these names:
 |---|---|---|
 | `data/basemap.mbtiles` | vector | OpenMapTiles schema base map |
 | `data/contours.mbtiles` | vector | layers `contours_major` and `contours_minor`, attribute `elev_ft` (feet) or `elev_m` (meters) |
-| `data/hillshade.mbtiles` | raster | gray hillshade PNG tiles |
+| `data/hillshade.mbtiles` | raster | gray hillshade tiles, WebP or PNG |
 | `data/extras.mbtiles` | vector | the layers of `planetiler/extras.yml` (built by default); `./scripts/data-placeholders.sh` writes an empty one |
 | `data/usdata.mbtiles` | vector | optional: layers `obstacle`, `gnis`, `survey_mark`, `protected`, `flood` (see `tools/us-data.py`); empty from the same script |
 | `data/elevation.mbtiles` | raster | optional: heights in metres as Mapbox terrain-RGB or Terrarium (metadata `encoding`), PNG or WebP, 256 px tiles; empty from the same script |
@@ -584,6 +617,9 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- Terrain builds follow the region's Geofabrik outlines instead of its box (no neighbouring countries), skip
+  known open-sea cells, handle the 180° line, print size and time estimates first, and write hillshade as lossy
+  WebP by default.
 - Terrain analysis in the print tool: viewshed and VHF/UHF radio coverage from a point, point-to-point profiles,
   printed on sheets and atlases with a collar strip and an optional profile page; `build-elevation.sh` writes the
   elevation tiles it uses.

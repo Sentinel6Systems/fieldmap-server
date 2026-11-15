@@ -388,54 +388,95 @@ reexec_in_tools() {
         -e IN_TOOLS=1 \
         -e OSM_MAX_AGE_DAYS \
         -e ELEVATION_MAXZOOM -e ELEVATION_ENCODING -e ELEVATION_FORMAT \
+        -e HILLSHADE_MAXZOOM -e HILLSHADE_FORMAT \
         -v "$REPO_DIR":/work \
         -w /work \
         "$TOOLS_IMAGE" \
         bash "/work/scripts/$(basename "$0")" "$@"
 }
 
-# Download Copernicus GLO-30 DEM tiles for a bounding box.
-# Arguments: MIN_LON MIN_LAT MAX_LON MAX_LAT OUT_DIR
-# The tiles are 1x1 degree GeoTIFF files.
-# Tiles that do not exist (open water) are skipped.
-download_dem() {
-    local min_lon="$1" min_lat="$2" max_lon="$3" max_lat="$4" out_dir="$5"
-    local base_url="https://copernicus-dem-30m.s3.amazonaws.com"
-    mkdir -p "$out_dir"
-
-    local lat0 lat1 lon0 lon1
-    lat0=$(python3 -c "import math;print(math.floor($min_lat))")
-    lat1=$(python3 -c "import math;print(math.floor($max_lat))")
-    lon0=$(python3 -c "import math;print(math.floor($min_lon))")
-    lon1=$(python3 -c "import math;print(math.floor($max_lon))")
-
-    local lat lon name url dest
-    for lat in $(seq "$lat0" "$lat1"); do
-        for lon in $(seq "$lon0" "$lon1"); do
-            name=$(python3 -c "
-lat, lon = $lat, $lon
-ns = 'N' if lat >= 0 else 'S'
-ew = 'E' if lon >= 0 else 'W'
-print(f'Copernicus_DSM_COG_10_{ns}{abs(lat):02d}_00_{ew}{abs(lon):03d}_00_DEM')
-")
-            dest="$out_dir/$name.tif"
-            if [ -f "$dest" ]; then
-                echo "cached: $name"
-                continue
-            fi
-            url="$base_url/$name/$name.tif"
-            echo "download: $name"
-            if ! curl -sfSL -o "$dest.part" "$url"; then
-                echo "  no tile (water area), skipped"
-                rm -f "$dest.part"
-                continue
-            fi
-            mv "$dest.part" "$dest"
-        done
-    done
-
-    if ! ls "$out_dir"/*.tif >/dev/null 2>&1; then
-        echo "Error: no DEM tiles found for this bounding box." >&2
-        exit 1
+# Region outline for the terrain builds (contours, hillshade, elevation): the union of
+# the Geofabrik .poly outlines of the areas, cut to the box, or the box alone when there
+# are no areas or an outline cannot be loaded. Writes WORK_DIR/outline (see
+# tools/region-outline.py) and prints the outline and cell counts.
+# Arguments: WORK_DIR MIN_LON MIN_LAT MAX_LON MAX_LAT [AREA ...]
+terrain_outline() {
+    local work="$1"; shift
+    local bbox=("$1" "$2" "$3" "$4"); shift 4
+    local areas=()
+    if [ $# -gt 0 ]; then
+        areas=(--areas "$@")
     fi
+    mkdir -p "$work/outline"
+    python3 "$REPO_DIR/tools/region-outline.py" prepare --out "$work/outline" \
+        --dem-dir "$REPO_DIR/data/cache/dem" --poly-cache "$REPO_DIR/data/cache/outlines" \
+        --bbox "${bbox[@]}" "${areas[@]}"
+}
+
+# Number of 1-degree elevation cells (about square degrees) inside a prepared outline,
+# not counting cells known to be open sea. The disk checks scale with it.
+# Argument: WORK_DIR
+terrain_cells() {
+    grep -c . "$1/outline/cells.txt" || true
+}
+
+# Print the expected output size and time of terrain steps for a prepared outline.
+# Arguments: WORK_DIR STEP ...
+terrain_estimate() {
+    local work="$1"; shift
+    python3 "$REPO_DIR/tools/region-outline.py" estimate --out "$work/outline" \
+        --dem-dir "$REPO_DIR/data/cache/dem" \
+        --elevation-maxzoom "${ELEVATION_MAXZOOM:-12}" --hillshade-maxzoom "${HILLSHADE_MAXZOOM:-12}" \
+        --hillshade-format "${HILLSHADE_FORMAT:-webp}" "$@"
+}
+
+# Download the Copernicus GLO-30 cells (1x1 degree GeoTIFF files) that touch the outline,
+# then build one mosaic per outline part (WORK_DIR/outline/mosaics.txt).
+# Cells without a file (open sea, mostly) are added to data/cache/dem/ocean-cells.txt and
+# not requested again. Argument: WORK_DIR
+download_dem() {
+    local work="$1"
+    local out_dir="$REPO_DIR/data/cache/dem" base_url="https://copernicus-dem-30m.s3.amazonaws.com"
+    local ocean="$out_dir/ocean-cells.txt"
+    mkdir -p "$out_dir"
+    if [ ! -f "$ocean" ]; then
+        printf '%s\n' "# Copernicus GLO-30 cells that have no file (open sea, mostly), found by the terrain" \
+            "# builds; they are not requested again. Delete a line to try that cell again." > "$ocean"
+    fi
+    local _part name code tries fetched=0 cached=0 none=0
+    while read -r _part name <&3; do
+        if [ -f "$out_dir/$name.tif" ]; then
+            cached=$((cached + 1))
+            continue
+        fi
+        tries=0
+        while :; do
+            code="$(curl -sSL -o "$out_dir/$name.tif.part" -w '%{http_code}' "$base_url/$name/$name.tif" || true)"
+            case "$code" in
+                200)
+                    mv "$out_dir/$name.tif.part" "$out_dir/$name.tif"
+                    echo "download: $name"
+                    fetched=$((fetched + 1))
+                    break ;;
+                403|404)
+                    # The bucket answers 404 (or 403) for cells it has no file for.
+                    rm -f "$out_dir/$name.tif.part"
+                    echo "$name" >> "$ocean"
+                    echo "no file (open sea): $name"
+                    none=$((none + 1))
+                    break ;;
+                *)
+                    rm -f "$out_dir/$name.tif.part"
+                    tries=$((tries + 1))
+                    if [ "$tries" -ge 4 ]; then
+                        echo "Error: could not download $name (HTTP ${code:-none}). Check the connection and run the same command again; finished downloads are kept." >&2
+                        exit 1
+                    fi
+                    echo "retry $tries: $name (HTTP ${code:-none})"
+                    sleep $((tries * 5)) ;;
+            esac
+        done
+    done 3< "$work/outline/cells.txt"
+    echo "Elevation cells: $fetched downloaded, $cached already here, $none with no file (open sea)."
+    python3 "$REPO_DIR/tools/region-outline.py" mosaic --out "$work/outline" --dem-dir "$out_dir"
 }

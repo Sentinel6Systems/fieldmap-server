@@ -70,6 +70,8 @@ check_language
 CONTOUR_UNITS="${CONTOUR_UNITS:-ft}"
 PLANETILER_MEMORY="${PLANETILER_MEMORY:-8g}"
 ELEVATION_MAXZOOM="${ELEVATION_MAXZOOM:-12}"
+# Hillshade tile format and highest zoom (build-hillshade.sh reads them from the environment).
+export HILLSHADE_FORMAT="${HILLSHADE_FORMAT:-webp}" HILLSHADE_MAXZOOM="${HILLSHADE_MAXZOOM:-12}"
 
 # shellcheck disable=SC2206
 BBOX_ARGS=($BBOX)
@@ -77,7 +79,16 @@ if [ ${#BBOX_ARGS[@]} -ne 4 ]; then
     echo "Error: BBOX must have 4 numbers: min-lon min-lat max-lon max-lat" >&2
     exit 1
 fi
-BBOX_CSV="$(IFS=,; echo "${BBOX_ARGS[*]}")"
+# A box whose min-lon is larger than its max-lon crosses the 180° line. The terrain
+# builds cover both sides; the base map and extras (Planetiler) take the wider side only.
+BBOX_CSV="$(python3 -c "
+w, s, e, n = map(float, '${BBOX_ARGS[*]}'.split())
+if w > e:
+    w, e = (w, 180.0) if 180 - w > e + 180 else (-180.0, e)
+print(f'{w:g},{s:g},{e:g},{n:g}')")"
+# The terrain builds cover the areas' Geofabrik outlines inside BBOX (tools/region-outline.py).
+# shellcheck disable=SC2086
+AREAS_LIST="$(printf '%s ' $GEOFABRIK_AREAS)"
 
 STEPS=("$@")
 if [ ${#STEPS[@]} -eq 0 ]; then
@@ -106,15 +117,15 @@ run_vector() {
 }
 
 run_contours() {
-    "$REPO_DIR/scripts/build-contours.sh" "${BBOX_ARGS[@]}" "$CONTOUR_UNITS"
+    "$REPO_DIR/scripts/build-contours.sh" --areas "$AREAS_LIST" "${BBOX_ARGS[@]}" "$CONTOUR_UNITS"
 }
 
 run_hillshade() {
-    "$REPO_DIR/scripts/build-hillshade.sh" "${BBOX_ARGS[@]}"
+    "$REPO_DIR/scripts/build-hillshade.sh" --areas "$AREAS_LIST" "${BBOX_ARGS[@]}"
 }
 
 run_elevation() {
-    "$REPO_DIR/scripts/build-elevation.sh" "${BBOX_ARGS[@]}" "$ELEVATION_MAXZOOM"
+    "$REPO_DIR/scripts/build-elevation.sh" --areas "$AREAS_LIST" "${BBOX_ARGS[@]}" "$ELEVATION_MAXZOOM"
 }
 
 run_extras() {
@@ -130,6 +141,15 @@ echo "Steps:  ${STEPS[*]}"
 mkdir -p "$REPO_DIR/data"
 echo "Free disk space: $(free_gb "$REPO_DIR/data") GB on the drive that holds $REPO_DIR/data"
 echo "Each step checks its own space needs before it starts."
+TERRAIN_STEPS=()
+for step in "${STEPS[@]}"; do
+    case "$step" in contours|hillshade|elevation) TERRAIN_STEPS+=("$step") ;; esac
+done
+if [ ${#TERRAIN_STEPS[@]} -gt 0 ]; then
+    echo
+    ELEVATION_MAXZOOM="$ELEVATION_MAXZOOM" "$REPO_DIR/scripts/terrain-estimate.sh" \
+        --areas "$AREAS_LIST" "${BBOX_ARGS[@]}" "${TERRAIN_STEPS[@]}"
+fi
 for step in "${STEPS[@]}"; do
     start=$(date +%s)
     echo
