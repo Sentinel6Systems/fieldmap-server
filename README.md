@@ -702,7 +702,10 @@ Before the first download, the build downloads the first 2 MB of that extract fr
 speed. Each extract then comes from the fastest server whose copy is at most 30 days old (from its `Last-Modified`
 date). A server that is slow to answer, lacks the area, or has an older copy is skipped for the next one. Set
 `OSM_MAX_AGE_DAYS` to change the limit. The list is `OSM_MIRRORS` in `scripts/lib.sh`.
-Extracts already in `data/sources/extracts` are reused; delete that folder to download fresh copies.
+Extracts already in `data/sources/extracts` are used again for 30 days (`OSM_REFRESH_DAYS`), then downloaded anew at
+the next build. `OSM_REFRESH=yes` in front of a build downloads them again now, however recent; the map builder's
+"Get the newest map data" box does the same. When no newer copy can be downloaded, the build says so and uses the
+one on hand.
 
 ## Bring your own data
 
@@ -804,6 +807,8 @@ See [systemd/README.md](systemd/README.md).
 ### Since v1.0.0
 
 - Builds run at low CPU priority, so the maps stay usable while they run.
+- OpenStreetMap extracts are downloaded anew after 30 days, or at once with the map builder's "Get the newest map
+  data" box (`OSM_REFRESH=yes`); the page shows how old the data on the device is.
 - Print tool: save the markers, arrows and shapes to a GeoJSON file and load them again (also from other map
   software).
 

@@ -14,8 +14,9 @@
 #   europe/switzerland
 #
 # Output: data/sources/<output-name>.osm.pbf
-# Downloads are kept in data/sources/extracts and reused on later runs.
-# Delete that folder to force fresh downloads.
+# Downloads are kept in data/sources/extracts and used again for OSM_REFRESH_DAYS
+# (default 30) days; after that they are downloaded anew. OSM_REFRESH=yes downloads
+# them again now, however recent. When a new download fails, the copy on hand is used.
 
 set -euo pipefail
 
@@ -43,16 +44,29 @@ for path in "$@"; do
     name="$(basename "$path")"
     dest="$EXTRACT_DIR/$name.osm.pbf"
     INPUTS+=("$dest")
+    age=""
     if [ -f "$dest" ]; then
-        echo "cached: $name"
-        continue
+        age=$(( ( $(date +%s) - $(stat -c %Y "$dest") ) / 86400 ))
+        days="$age day$([ "$age" -eq 1 ] || echo s)"
+        if [ "${OSM_REFRESH:-no}" != yes ] && [ "$age" -lt "$OSM_REFRESH_DAYS" ]; then
+            echo "cached: $name (downloaded $days ago)"
+            continue
+        fi
+        if [ "${OSM_REFRESH:-no}" = yes ]; then
+            echo "newer data asked for: $name (the copy on hand was downloaded $days ago)"
+        else
+            echo "out of date: $name (downloaded $days ago; limit $OSM_REFRESH_DAYS days)"
+        fi
     fi
     # Test the mirrors once, on the first extract that needs downloading.
     if [ -z "$RANKED" ]; then
         rank_osm_mirrors "$path"
         RANKED=1
     fi
-    download_osm_extract "$path" "$dest"
+    if ! download_osm_extract "$path" "$dest"; then
+        [ -n "$age" ] || exit 1
+        echo "Warning: no newer copy of $name could be downloaded; using the one from $days ago."
+    fi
 done
 
 # Disk estimate: the merged copy plus Planetiler's work files and output

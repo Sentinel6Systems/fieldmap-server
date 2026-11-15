@@ -83,6 +83,7 @@ const save = () => {
   localStorage.setItem("chosen", JSON.stringify([...chosen]));
   localStorage.setItem("ticked", JSON.stringify([...ticked]));
   localStorage.setItem("options", JSON.stringify({ terrain: $("opt-terrain").value, units: $("opt-units").value, language: $("opt-language").value, world: $("opt-world").checked }));
+  // "Get the newest map data" is not kept: it is for one build.
 };
 
 // ---------- step 1: the map ----------
@@ -407,22 +408,37 @@ function drawLayers() {
 
 for (const b of document.querySelectorAll("button.help[data-help]"))
   b.addEventListener("click", ev => { ev.preventDefault(); const p = $(b.dataset.help); p.hidden = !p.hidden; });
-for (const id of ["opt-terrain", "opt-units", "opt-language", "opt-world", "opt-detail-km"])
+for (const id of ["opt-terrain", "opt-units", "opt-language", "opt-world", "opt-fresh", "opt-detail-km"])
   $(id).addEventListener("change", () => { if (detail) localStorage.setItem("detail", JSON.stringify({ ...detail, km: +$("opt-detail-km").value })); save(); draw(); refresh(); });
 
 function selection() {
   const us = [...chosen].some(id => isUS(REG[id]));
   return { regions: [...chosen], layers: LAYERS.filter(L => ticked.has(L.key) && (!L.us || us)).map(L => L.key),
     options: { terrain: $("opt-terrain").value, units: $("opt-units").value, language: $("opt-language").value, world: $("opt-world").checked,
+      fresh: $("opt-fresh").checked,
       detail: detail && { ...detail, km: +$("opt-detail-km").value } } };
 }
 
 // ---------- step 3: space and time ----------
 
 let pending = 0;
+// How old the map data on this device is, for the regions chosen.
+function drawFreshness() {
+  const ages = status ? status.osm_ages : {}, limit = status ? status.osm_refresh_days : 30;
+  const got = [...chosen].map(id => ages[REG[id].path.split("/").pop()]);
+  const have = got.filter(a => a !== undefined);
+  const days = n => n === 0 ? "today" : n === 1 ? "yesterday" : `${n} days ago`;
+  $("fresh-age").textContent = !chosen.size ? ""
+    : !have.length ? "This device has no map data for these regions yet: it is downloaded in any case."
+    : `Map data on this device for these regions: downloaded ${days(Math.min(...have))}${Math.max(...have) !== Math.min(...have) ? ` to ${days(Math.max(...have))}` : ""}` +
+      (have.length < got.length ? ", some not yet" : "") +
+      `. Data older than ${limit} days is downloaded anew in any case.`;
+}
+
 async function refresh() {
   drawLayers();
   drawDetail();
+  drawFreshness();
   const sel = selection(), mine = ++pending;
   $("build-error").textContent = "";
   if (!sel.regions.length || !sel.layers.length) {
@@ -476,6 +492,7 @@ $("start").onclick = () => {
     el("ul", {}, ...sel.layers.map(k => { const L = layerOf(k), now = status.layers[k];
       return el("li", {}, el("b", { textContent: L.name }), now.present ? ` — replaces the one on this device${now.names ? ` (${now.names.join(", ")})` : ""}` : " — new"); }),
       ...(sel.options.terrain === "1m" ? [el("li", {}, el("b", { textContent: DETAIL.name }), ` — ${sel.options.detail.km} × ${sel.options.detail.km} km, drawn over the hillshade`)] : [])),
+    ...(sel.options.fresh ? [el("p", { textContent: "The map data is downloaded again, the newest there is." })] : []),
     el("p", { textContent: `It needs about ${gb(estimate.need_gb)} of space and takes ${hours(estimate.hours)}, plus download time. The maps you have now keep working until it is finished.` }));
   $("confirm").showModal();
 };

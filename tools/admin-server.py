@@ -124,7 +124,7 @@ def check_selection(body):
     if not layers:
         raise BadRequest("Tick at least one thing to build.")
     o = body.get("options") or {}
-    options = {"world": bool(o.get("world")), "units": "m" if o.get("units") == "m" else "ft",
+    options = {"world": bool(o.get("world")), "fresh": bool(o.get("fresh")), "units": "m" if o.get("units") == "m" else "ft",
                "terrain": o.get("terrain") if o.get("terrain") in ("10m", "1m") else "30m",
                "language": o.get("language") if o.get("language") in LANGUAGES else "", "detail": None}
     regions = [REGIONS[i] for i in ids]
@@ -157,6 +157,21 @@ def check_selection(body):
     return regions, layers, options
 
 
+OSM_REFRESH_DAYS = int(os.environ.get("OSM_REFRESH_DAYS") or 30)     # as scripts/lib.sh
+
+
+def osm_ages():
+    """Days since each OpenStreetMap extract on this device was downloaded: {"new-jersey": 3}."""
+    folder, now, ages = os.path.join(DATA, "sources", "extracts"), time.time(), {}
+    try:
+        for name in os.listdir(folder):
+            if name.endswith(".osm.pbf"):
+                ages[name[:-len(".osm.pbf")]] = int((now - os.path.getmtime(os.path.join(folder, name))) // 86400)
+    except OSError:
+        pass
+    return ages
+
+
 def detail_bbox(detail):
     """min-lon, min-lat, max-lon, max-lat of the square 1 m area round its centre."""
     half_lat = detail["km"] / 2 / 111.32
@@ -176,8 +191,10 @@ def estimate(regions, layers, options):
     cpus = os.cpu_count() or 2
     slow = 8 / cpus
     osm = sum(r["osm_mb"] for r in regions) / 1024
-    cached = sum(r["osm_mb"] for r in regions
-                 if os.path.exists(os.path.join(DATA, "sources", "extracts", os.path.basename(r["path"]) + ".osm.pbf"))) / 1024
+    # Extracts on hand that the build uses again (merge-osm.sh): recent enough, and not asked anew.
+    ages = osm_ages()
+    cached = 0 if options["fresh"] else sum(
+        r["osm_mb"] for r in regions if ages.get(os.path.basename(r["path"]), OSM_REFRESH_DAYS) < OSM_REFRESH_DAYS) / 1024
     cells, land = sum(r["cells"] for r in regions), sum(r["land_km2"] for r in regions)
     fine = options["terrain"] in ("10m", "1m")
     us_cells = sum(r["cells"] for r in regions if is_us(r)) if fine else 0
@@ -404,6 +421,8 @@ def run_job():
     print(f"Map builder: {', '.join(request['names'])}; steps: {' '.join(steps)}", flush=True)
     env = dict(os.environ)
     env.pop("LANGUAGE", None)          # a locale setting, not the label language of a build
+    if request["options"].get("fresh"):
+        env["OSM_REFRESH"] = "yes"     # download the OpenStreetMap extracts again (merge-osm.sh)
     # The scripts on the machine itself at low priority too (the containers they start get a
     # low CPU weight, scripts/lib.sh): the page, the tile server and the rest come first.
     os.nice(10)
@@ -472,7 +491,8 @@ def status():
     usage = shutil.disk_usage(base)
     return {"free_gb": round(usage.free / 1024 ** 3, 1), "total_gb": round(usage.total / 1024 ** 3, 1),
             "layers": layers_status(), "job": job_status(), "docker": shutil.which("docker") is not None,
-            "languages": LANGUAGES, "web_port": web_port(), "detail_km": DETAIL_KM}
+            "languages": LANGUAGES, "web_port": web_port(), "detail_km": DETAIL_KM,
+            "osm_ages": osm_ages(), "osm_refresh_days": OSM_REFRESH_DAYS}
 
 
 def web_port():

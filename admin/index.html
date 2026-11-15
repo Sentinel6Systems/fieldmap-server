@@ -123,6 +123,11 @@
         <p class="helptext" id="h-language" hidden>The map can carry every place name in every language it is known in. Keeping one language makes the base map smaller. Names that do not exist in that language are shown in the local one.</p>
       </div>
       <div class="option check">
+        <label><input type="checkbox" id="opt-fresh"> Get the newest map data <button class="help" data-help="h-fresh" aria-label="Explain">?</button></label>
+        <p class="quiet" id="fresh-age"></p>
+        <p class="helptext" id="h-fresh" hidden>The roads, buildings and place names come from OpenStreetMap, which is updated every day. This device keeps what it downloaded and uses it again for a month, then downloads it anew by itself. Tick this to download it again now, for example after a road has changed. It takes the time of the download (the size is in step 3).</p>
+      </div>
+      <div class="option check">
         <label><input type="checkbox" id="opt-world"> Also show the rest of the world when zoomed out <button class="help" data-help="h-world" aria-label="Explain">?</button></label>
         <p class="helptext" id="h-world" hidden>Without this, the map is blank outside your regions. With it, you see countries, large cities and main roads of the whole world when you zoom out. The first time this is a big job: about 96 GB to download, 160 GB of free space while it works, and several hours. After that it is kept and reused.</p>
       </div>

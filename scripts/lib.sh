@@ -284,6 +284,9 @@ PLANET_MIRRORS=(
 )
 # A copy older than this many days is never downloaded.
 OSM_MAX_AGE_DAYS="${OSM_MAX_AGE_DAYS:-30}"
+# A downloaded extract is used again for this many days, then downloaded anew (merge-osm.sh).
+# OSM_REFRESH=yes downloads every extract of a build again, however recent.
+OSM_REFRESH_DAYS="${OSM_REFRESH_DAYS:-30}"
 # Size of the speed test download from each mirror.
 OSM_SPEED_TEST_BYTES=2097152
 
@@ -403,7 +406,7 @@ reexec_in_tools() {
         -e HOME=/tmp \
         -e IN_TOOLS=1 \
         -e FIELDMAP_STAGE \
-        -e OSM_MAX_AGE_DAYS \
+        -e OSM_MAX_AGE_DAYS -e OSM_REFRESH -e OSM_REFRESH_DAYS \
         -e ELEVATION_MAXZOOM -e ELEVATION_ENCODING -e ELEVATION_FORMAT \
         -e HILLSHADE_MAXZOOM -e HILLSHADE_FORMAT -e CONTOUR_JOBS -e DEM_SOURCE \
         -e DETAIL_MAX_KM2 -e DETAIL_MAXZOOM -e BUILD_CPU_SHARES \
