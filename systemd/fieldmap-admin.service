@@ -8,7 +8,8 @@
 # 3. Run: sudo systemctl daemon-reload
 # 4. Run: sudo systemctl enable --now fieldmap-admin
 #
-# The page's port, address and optional PIN are read from .env (see .env.example).
+# The page is served at /mapadmin/ by the web front. Its optional PIN and optional own port
+# are read from .env (see .env.example).
 
 [Unit]
 Description=fieldmap-server map builder page

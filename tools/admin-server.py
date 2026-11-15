@@ -4,7 +4,9 @@
     python3 tools/admin-server.py serve       (scripts/admin.sh does this)
 
 Runs on the machine itself, not in a container, because it starts the build scripts, which
-start containers. Python's standard library only. It serves admin/ (the page) and:
+start containers. Python's standard library only. It listens on a Unix socket,
+data/admin/admin.sock, which the web front serves as /mapadmin/ (and on a port as well when
+ADMIN_PORT is set). It serves admin/ (the page) and:
 
   GET  /api/status     free disk space, what is on the device, the running or last build
   POST /api/estimate   space and time a selection needs      {regions, layers, options}
@@ -32,6 +34,8 @@ import re
 import secrets
 import shutil
 import signal
+import socket
+import socketserver
 import sqlite3
 import subprocess
 import sys
@@ -47,6 +51,7 @@ ADMIN = os.path.join(DATA, "admin")
 STATIC = os.path.join(ROOT, "admin")
 JOB, STATE, LOG = (os.path.join(ADMIN, n) for n in ("job.json", "state.json", "build.log"))
 REGION_FILE = os.path.join(ADMIN, "region.env")
+SOCKET = os.path.join(ADMIN, "admin.sock")
 # build-region.sh's "=== step ===" and "=== step finished in N min ===", after any colour codes
 # the step before left on the line.
 STEP_LINE = re.compile(r"(?:\x1b\[[0-9;]*m)*=== (\w+)( finished)?")
@@ -540,16 +545,40 @@ class Handler(BaseHTTPRequestHandler):
 LOCK = threading.Lock()
 
 
+class SocketServer(ThreadingHTTPServer):
+    """The same server on a Unix socket (a file) instead of a network port."""
+    address_family = socket.AF_UNIX
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = "fieldmap-admin", 0
+
+
 def serve():
-    host, port = os.environ.get("ADMIN_HOST", "0.0.0.0"), int(os.environ.get("ADMIN_PORT") or os.environ.get("PORT") or 8730)
-    server = ThreadingHTTPServer((host, port), Handler)
-    print(f"Map builder: http://<this device's address>:{port}/", flush=True)
+    # The web front (the nginx container, web/nginx.conf) passes /mapadmin/ on to this socket,
+    # which it sees through a mounted folder: the page then needs no port of its own, and no
+    # firewall rule. ADMIN_PORT adds a port, for a machine that runs no web front.
+    os.makedirs(ADMIN, exist_ok=True)
+    if os.path.exists(SOCKET):
+        os.remove(SOCKET)
+    servers = [SocketServer(SOCKET, Handler)]
+    os.chmod(SOCKET, 0o666)             # nginx runs as another user
+    print("Map builder: http://<this device's address>/mapadmin/", flush=True)
+    port = os.environ.get("ADMIN_PORT") or os.environ.get("PORT")
+    if port:
+        servers.append(ThreadingHTTPServer((os.environ.get("ADMIN_HOST", "0.0.0.0"), int(port)), Handler))
+        print(f"        and: http://<this device's address>:{port}/", flush=True)
     print("It asks for the PIN in ADMIN_PIN." if pin() else
           "Open to everyone who can reach this device (ADMIN_PIN=<code> makes it ask for a code).", flush=True)
+    for server in servers[1:]:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        server.serve_forever()
+        servers[0].serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        if os.path.exists(SOCKET):
+            os.remove(SOCKET)
 
 
 if __name__ == "__main__":

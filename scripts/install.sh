@@ -13,8 +13,8 @@
 #      (docker compose up -d --build), and restarts the tile server so that it reads
 #      the current config, styles and data;
 #   4. installs the map builder page (scripts/admin.sh) as a systemd service, which
-#      needs sudo. --no-builder leaves this step out, and removes the service if an
-#      earlier run installed it.
+#      needs sudo. The page is then at /mapadmin/ beside the print tool. --no-builder
+#      leaves this step out, and removes the service if an earlier run installed it.
 # Then build your maps: on the map builder page, or with build-region.sh.
 #
 # A Raspberry Pi behind Internet-in-a-Box uses scripts/install-pi.sh instead.
@@ -93,7 +93,6 @@ fi
 
 WEB_PORT="$(setting WEB_PORT 80)"
 TILE_PORT="$(setting TILESERVER_PORT 8080)"
-ADMIN_PORT="$(setting ADMIN_PORT 8730)"
 ADDRESS="$(hostname -I 2>/dev/null | cut -d' ' -f1)"
 ADDRESS="${ADDRESS:-localhost}"
 WEB="http://$ADDRESS$([ "$WEB_PORT" = 80 ] || echo ":$WEB_PORT")"
@@ -102,7 +101,7 @@ echo "Ready:"
 echo "  Map viewer and styles   $WEB/"
 echo "  Print a map             $WEB/mapprinter/"
 echo "  Tile server (TAK)       http://$ADDRESS:$TILE_PORT/"
-[ "$BUILDER" = yes ] && echo "  Map builder             http://$ADDRESS:$ADMIN_PORT/"
+[ "$BUILDER" = yes ] && echo "  Map builder             $WEB/mapadmin/"
 if [ -z "$(find data -maxdepth 1 -name 'basemap.mbtiles' -size +100k 2>/dev/null)" ]; then
     echo "There are no maps on this device yet: the viewer is blank until the first build."
     [ "$BUILDER" = yes ] && echo "Open the map builder to choose your regions and start it."
@@ -112,7 +111,7 @@ fi
 if command -v ufw >/dev/null && $SUDO ufw status 2>/dev/null | grep -q '^Status: active'; then
     echo
     echo "The ufw firewall is on. If a page does not open from another device, allow its port, for example:"
-    for port in "$WEB_PORT" "$TILE_PORT" $([ "$BUILDER" = yes ] && echo "$ADMIN_PORT"); do
+    for port in "$WEB_PORT" "$TILE_PORT"; do
         echo "  sudo ufw allow from <your-network>/24 to any port $port proto tcp"
     done
 fi

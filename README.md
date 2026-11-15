@@ -45,7 +45,7 @@ builder page (as a systemd service; that part asks for sudo). It ends with the a
 Map viewer and styles   http://<address>/
 Print a map             http://<address>/mapprinter/
 Tile server (TAK)       http://<address>:8080/
-Map builder             http://<address>:8730/
+Map builder             http://<address>/mapadmin/
 ```
 
 A new install has no maps yet, so the viewer is blank. Build them in one of two ways, a small area first to check
@@ -75,8 +75,8 @@ port 8080, or you can point it anywhere with `?tiles=http://host:8080`.
 
 ### Map builder page
 
-`install.sh` runs the map builder as a service, at `http://<this device's address>:8730/` (`./scripts/admin.sh`
-starts it by hand). The page shows a map of the world divided into regions (Geofabrik's extracts: continents,
+`install.sh` runs the map builder as a service, at `http://<this device's address>/mapadmin/`, beside the print
+tool (`./scripts/admin.sh` starts it by hand). The page shows a map of the world divided into regions (Geofabrik's extracts: continents,
 countries, and states or provinces of the larger countries). A tap on a small region adds it; a tap on a large one
 asks whether you want all of it or to choose among its parts, so several US states or several European countries
 are a few taps. You choose the regions, tick the layers to build (base map, contour lines,
@@ -102,9 +102,12 @@ What a build from the page does (`tools/admin-server.py`):
 
 The page is open to everyone who can reach the device, like the tile server and the print tool: it is meant for a
 network you trust. Whoever can open it can replace the maps and fill the disk, so on any other network start it
-with `ADMIN_PIN=<code>`, and the page asks for that code first. `ADMIN_HOST=127.0.0.1` keeps the page to the device
-itself, `ADMIN_PORT` moves it from 8730.
-These three can also be set in `.env`. It runs on the device itself with Python's standard library, not in a
+with `ADMIN_PIN=<code>`, and the page asks for that code first. The page has no port of its own: the web front
+passes `/mapadmin/` on to it through a socket file in `data/admin`, so nothing needs opening in a firewall beyond
+the web port. `ADMIN_PORT=<port>` adds a port of its own, for a machine that runs no web front, and
+`ADMIN_HOST=127.0.0.1` keeps that port to the device itself.
+These three can also be set in `.env`. The Raspberry Pi install (`install-pi.sh`) does not set the page up: a Pi is
+too small to build maps on, so build them on a larger machine and copy the files over (see "Updating"). It runs on the device itself with Python's standard library, not in a
 container, because it starts the build scripts; `install.sh` installs `systemd/fieldmap-admin.service` for it. The page needs no internet to open; the
 builds do.
 
@@ -791,7 +794,7 @@ See [systemd/README.md](systemd/README.md).
   takes the wider side of a box across the 180° line. The terrain disk checks run after the elevation download
   and count only cells with land.
 - `scripts/install.sh`: one command installs or updates everything and keeps it running across reboots, the map
-  builder page included.
+  builder page included, which is at `/mapadmin/` beside the print tool.
 - Map builder page (`scripts/admin.sh`): choose regions on a world map, tick the layers, see the disk space and time
   the build needs, and start it from the browser. `build-region.sh --staged` (which the page uses) swaps all new
   files in together at the end and leaves the old ones in place if the build fails.

@@ -12,7 +12,9 @@
 # Usage: ./scripts/data-placeholders.sh
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-mkdir -p "$REPO_DIR/data/wmm"   # data/wmm: the magnetic model from tools/wmm-update.py
+# data/wmm: the magnetic model from tools/wmm-update.py. data/admin: the map builder's files.
+# Both are mounted into the web container, which would otherwise make them as root.
+mkdir -p "$REPO_DIR/data/wmm" "$REPO_DIR/data/admin"
 
 # Arguments: NAME BUILDER (pbf LAYER ... | raster FORMAT ENCODING)
 placeholder() {

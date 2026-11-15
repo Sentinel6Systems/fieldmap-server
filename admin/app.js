@@ -40,6 +40,7 @@ const ticked = new Set(JSON.parse(localStorage.getItem("ticked") || '["basemap",
 
 // ---------- talking to the server ----------
 
+// Paths are relative: the page is served as /mapadmin/ by the web front, or at / on its own port.
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -59,7 +60,7 @@ $("login-form").addEventListener("submit", async e => {
   e.preventDefault();
   $("login-error").textContent = "";
   try {
-    await api("/api/login", { pin: $("pin").value });
+    await api("api/login", { pin: $("pin").value });
     $("login").hidden = true;
     start();
   } catch (err) {
@@ -433,7 +434,7 @@ async function refresh() {
     return drawLayers();
   }
   try {
-    const e = await api("/api/estimate", sel);
+    const e = await api("api/estimate", sel);
     if (mine !== pending) return;           // a newer choice is already on its way
     estimate = e;
   } catch (err) {
@@ -482,7 +483,7 @@ $("confirm-no").onclick = () => $("confirm").close();
 $("confirm-yes").onclick = async () => {
   $("confirm").close();
   try {
-    await api("/api/build", selection());
+    await api("api/build", selection());
     dismissed = null; sessionStorage.removeItem("dismissed");
     await poll();
     window.scrollTo({ top: 0 });
@@ -513,7 +514,9 @@ function drawJob() {
     : job.finished ? `Ended ${ago(job.finished)}.` : "";
   $("cancel").hidden = !running;
   $("again").hidden = running;
-  const base = `${location.protocol}//${location.hostname}${status.web_port === 80 ? "" : ":" + status.web_port}`;
+  // Beside the viewer and the print tool when this page is /mapadmin/ on the web front; else on its own port.
+  const base = location.pathname.startsWith("/mapadmin") ? location.origin
+    : `${location.protocol}//${location.hostname}${status.web_port === 80 ? "" : ":" + status.web_port}`;
   $("open-map").hidden = $("open-print").hidden = job.state !== "done";
   $("open-map").href = `${base}/`; $("open-print").href = `${base}/mapprinter/`;
   if (job.state === "failed") $("details").open = true;
@@ -523,7 +526,7 @@ function drawJob() {
 
 async function readLog() {
   const pre = $("log"), bottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
-  const part = await api(`/api/log?from=${logAt}`).catch(() => null);
+  const part = await api(`api/log?from=${logAt}`).catch(() => null);
   if (!part || part.from !== logAt) return;
   logAt = part.next;
   // The tools redraw one line with carriage returns: keep what was drawn last.
@@ -535,7 +538,7 @@ $("details").addEventListener("toggle", () => { if ($("details").open && status 
 
 $("cancel").onclick = async () => {
   if (!confirm("Stop the build? The maps on this device stay as they are. What was already downloaded is kept for next time.")) return;
-  await api("/api/cancel", {}).catch(() => {});
+  await api("api/cancel", {}).catch(() => {});
   poll();
 };
 $("again").onclick = () => { dismissed = String(status.job.started); sessionStorage.setItem("dismissed", dismissed); drawJob(); refresh(); };
@@ -548,7 +551,7 @@ function drawDisk() {
 
 let wasRunning = false;
 async function poll() {
-  try { status = await api("/api/status"); } catch { return; }
+  try { status = await api("api/status"); } catch { return; }
   drawDisk();
   drawJob();
   const running = !!(status.job && status.job.state === "running");
@@ -557,7 +560,7 @@ async function poll() {
 }
 
 async function start() {
-  try { status = await api("/api/status"); } catch { return; }
+  try { status = await api("api/status"); } catch { return; }
   $("builder").hidden = false;
   if (!Object.keys(REG).length) {
     LAND = (await (await fetch("land.json")).json()).geom;

@@ -6,12 +6,14 @@
 # Usage:
 #   ./scripts/admin.sh
 #
-# Then open http://<this device's address>:8730/ in a browser. Stop it with Ctrl-C; a
-# build that is running carries on.
+# Then open http://<this device's address>/mapadmin/ in a browser: the web front (the
+# fieldmap-web container) passes that address on to this page. Stop it with Ctrl-C; a
+# build that is running carries on. scripts/install.sh runs this as a service.
 #
 # Settings, in the environment or in .env (see .env.example):
-# ADMIN_PORT   port to listen on (default 8730)
-# ADMIN_HOST   address to listen on (default 0.0.0.0: every network the device is on;
+# ADMIN_PORT   also listen on this port, for a machine that runs no web front
+#              (http://<address>:<port>/). Not 8090, which other software often holds.
+# ADMIN_HOST   address for that port (default 0.0.0.0: every network the device is on;
 #              127.0.0.1 for this device only)
 # ADMIN_PIN    a code the page then asks for. Without it the page is open to everyone who
 #              can reach the device, and whoever can open it can replace the maps and fill
