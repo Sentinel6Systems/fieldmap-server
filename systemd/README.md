@@ -39,5 +39,6 @@ the path in `ExecStart` to your clone and its owner, then:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now fieldmap-admin
-cat data/admin/pin        # the PIN the page asks for
 ```
+
+To make the page ask for a code, add `Environment=ADMIN_PIN=<code>` to the `[Service]` section.

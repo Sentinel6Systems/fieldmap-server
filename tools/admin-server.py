@@ -11,16 +11,17 @@ start containers. Python's standard library only. It serves admin/ (the page) an
   POST /api/build      start a build                          {regions, layers, options}
   POST /api/cancel     stop the running build
   GET  /api/log?from=N the build's output from byte N
-  POST /api/login      {pin} -> a session cookie
+  POST /api/login      {pin} -> a session cookie (only when ADMIN_PIN is set)
 
 A build writes a region file (data/admin/region.env) and runs
 scripts/build-region.sh --staged with it: the new files replace the old ones together, when
 every step has finished, and the tile server is then restarted. The build runs as its own
 process (this file's "run-job"), so it carries on if the page or this server is closed.
 
-Whoever can open the page can start a build that takes days and replaces the maps, so it
-asks for a PIN (data/admin/pin, printed when the server starts; ADMIN_PIN=off turns it off
-on a network you trust). Requests only choose from the bundled region list and fixed
+The page is open to whoever can reach it, as the tile server and the print tool are: it is
+meant for a network you trust. Whoever can open it can start a build that takes days and
+replaces the maps; ADMIN_PIN=<code> makes it ask for that code first, and ADMIN_HOST=127.0.0.1
+keeps it to the device itself. Requests only choose from the bundled region list and fixed
 options: nothing a browser sends reaches a command line as text.
 """
 import hashlib
@@ -426,19 +427,8 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=u
 
 
 def pin():
-    """The PIN, made on first use; None when ADMIN_PIN=off."""
-    if os.environ.get("ADMIN_PIN", "").lower() == "off":
-        return None
-    if os.environ.get("ADMIN_PIN"):
-        return os.environ["ADMIN_PIN"]
-    path = os.path.join(ADMIN, "pin")
-    if not os.path.exists(path):
-        os.makedirs(ADMIN, exist_ok=True)
-        with open(path, "w") as f:
-            f.write(f"{secrets.randbelow(10 ** 6):06d}\n")
-        os.chmod(path, 0o600)
-    with open(path) as f:
-        return f.read().strip()
+    """The code the page asks for, when ADMIN_PIN sets one; None (the default) for an open page."""
+    return os.environ.get("ADMIN_PIN") or None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -514,7 +504,7 @@ class Handler(BaseHTTPRequestHandler):
                 if len(TRIES) >= 8:
                     return self.send(429, {"error": "Too many tries. Wait a minute, then try again."})
                 TRIES.append(now)
-                if not secrets.compare_digest(str(body.get("pin", "")).strip(), pin() or ""):
+                if not secrets.compare_digest(str(body.get("pin", "")).strip().encode(), (pin() or "").encode()):
                     return self.send(403, {"error": "That PIN is not right."})
                 token = secrets.token_urlsafe(24)
                 SESSIONS.add(token)
@@ -552,10 +542,10 @@ LOCK = threading.Lock()
 
 def serve():
     host, port = os.environ.get("ADMIN_HOST", "0.0.0.0"), int(os.environ.get("ADMIN_PORT") or os.environ.get("PORT") or 8730)
-    code = pin()
     server = ThreadingHTTPServer((host, port), Handler)
     print(f"Map builder: http://<this device's address>:{port}/", flush=True)
-    print(f"PIN: {code}" if code else "No PIN (ADMIN_PIN=off): anyone on the network can start a build.", flush=True)
+    print("It asks for the PIN in ADMIN_PIN." if pin() else
+          "Open to everyone who can reach this device (ADMIN_PIN=<code> makes it ask for a code).", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

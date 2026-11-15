@@ -8,7 +8,9 @@
 #    the user who owns it (a member of the docker group).
 # 3. Run: sudo systemctl daemon-reload
 # 4. Run: sudo systemctl enable --now fieldmap-admin
-# 5. The PIN: cat <your clone>/data/admin/pin
+# The page is open to everyone who can reach the device. To make it ask for a code, add
+#   Environment=ADMIN_PIN=<code>
+# to the [Service] section.
 
 [Unit]
 Description=fieldmap-server map builder page

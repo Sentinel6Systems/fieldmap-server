@@ -68,7 +68,6 @@ If you would rather click than write a region file, start the map builder and op
 ```bash
 ./scripts/admin.sh
 #   Map builder: http://<this device's address>:8730/
-#   PIN: ......
 ```
 
 The page shows a map of the world divided into regions (Geofabrik's extracts: continents, countries, and states or
@@ -93,9 +92,10 @@ What a build from the page does (`tools/admin-server.py`):
   size of each OpenStreetMap extract, number of 1° elevation cells with land, land area) and the same rates as the
   build scripts' own checks. It is on the safe side; the build scripts still run their own checks at each step.
 
-The page asks for a PIN, printed when `admin.sh` starts and kept in `data/admin/pin`, because whoever can open it
-can replace the maps and fill the disk. `ADMIN_PIN=<your own>` sets one, `ADMIN_PIN=off` turns it off (only on a
-network you trust), `ADMIN_HOST=127.0.0.1` keeps the page to the device itself, `ADMIN_PORT` moves it from 8730.
+The page is open to everyone who can reach the device, like the tile server and the print tool: it is meant for a
+network you trust. Whoever can open it can replace the maps and fill the disk, so on any other network start it
+with `ADMIN_PIN=<code>`, and the page asks for that code first. `ADMIN_HOST=127.0.0.1` keeps the page to the device
+itself, `ADMIN_PORT` moves it from 8730.
 It runs on the device itself with Python's standard library, not in a container, because it starts the build
 scripts. `systemd/fieldmap-admin.service` keeps it running across reboots. The page needs no internet to open; the
 builds do.

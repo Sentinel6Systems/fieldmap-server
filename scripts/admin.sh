@@ -6,14 +6,15 @@
 # Usage:
 #   ./scripts/admin.sh
 #
-# Then open http://<this device's address>:8730/ in a browser and enter the PIN this
-# script prints. Stop it with Ctrl-C; a build that is running carries on.
+# Then open http://<this device's address>:8730/ in a browser. Stop it with Ctrl-C; a
+# build that is running carries on.
 #
 # ADMIN_PORT   port to listen on (default 8730)
 # ADMIN_HOST   address to listen on (default 0.0.0.0: every network the device is on;
 #              127.0.0.1 for this device only)
-# ADMIN_PIN    a PIN of your own, or "off" for none (only on a network you trust: whoever
-#              can open the page can replace the maps and fill the disk)
+# ADMIN_PIN    a code the page then asks for. Without it the page is open to everyone who
+#              can reach the device, and whoever can open it can replace the maps and fill
+#              the disk: set one on a network you do not trust.
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
