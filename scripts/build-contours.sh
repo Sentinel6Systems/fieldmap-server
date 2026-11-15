@@ -58,14 +58,15 @@ mkdir -p "$WORK_DIR"
 # shellcheck disable=SC2086
 terrain_outline "$WORK_DIR" "$MIN_LON" "$MIN_LAT" "$MAX_LON" "$MAX_LAT" $AREAS
 terrain_estimate "$WORK_DIR" contours
-CELLS="$(terrain_cells "$WORK_DIR")"
-# Disk estimate: the elevation tiles, the feet-converted copy, the contour
-# lines, and the tile build each take space, scaling with the area.
-NEED_GB="$(python3 -c "print(max(8, int($CELLS * 0.6 + 5)))")"
-require_free_space "$REPO_DIR/data" "$NEED_GB" "contours for $CELLS one-degree cells"
 
 echo "Step 1/5: download elevation tiles"
 download_dem "$WORK_DIR"
+CELLS="$(terrain_land_cells "$WORK_DIR")"
+# Disk estimate: the feet-converted copy, the contour lines, and the tile build
+# each take space, scaling with the land area (checked after the download, so
+# cells of open sea are not counted).
+NEED_GB="$(python3 -c "print(max(8, int($CELLS * 0.6 + 5)))")"
+require_free_space "$REPO_DIR/data" "$NEED_GB" "contours for $CELLS one-degree cells with land"
 
 # One mosaic per outline part, with no data outside the outline (see
 # tools/region-outline.py), so the lines stop at the outline.

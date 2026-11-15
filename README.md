@@ -64,7 +64,9 @@ port 8080, or you can point it anywhere with `?tiles=http://host:8080`.
 ### Disk space
 
 Building needs much more space than the finished files take. Each build script estimates what its step needs and
-stops with a clear message if the drive is too small. From a six-state build (about 64 square degrees):
+stops with a clear message if the drive is too small. The terrain steps check twice: before the elevation download
+(about 30 MB a cell) and again after it, for the working space, counting only the cells that turned out to have land.
+From a six-state build (about 64 square degrees):
 
 | Step | Finished file | Working space needed |
 |---|---|---|
@@ -489,7 +491,8 @@ The world layer is built once (about 96 GB to download and about 160 GB of free 
 The box crosses the 180° line, so the terrain covers Alaska's Aleutians on both sides of it, while the base map,
 extras and US data stop at 180°. Geofabrik's US outline takes in a wide band of sea, so the first estimate is high
 (it counts about 3,700 one-degree cells); cells of open sea have no elevation file and are recorded on the first
-download, which makes later estimates closer. A build this size takes several days on a fast machine with 32 GB
+download, which makes later estimates closer. The contours step needs the most working space, about 0.6 GB per
+one-degree cell with land: roughly 800 GB for all of the US, freed when it finishes. A build this size takes several days on a fast machine with 32 GB
 of RAM, most of it for the contours. A failed or stopped step can be run again on its own, for example
 `./scripts/build-region.sh regions/us-all.env contours`.
 
@@ -649,7 +652,8 @@ See [systemd/README.md](systemd/README.md).
 - Terrain builds follow the region's Geofabrik outlines instead of its box (no neighbouring countries), skip
   known open-sea cells, handle the 180° line, print size and time estimates first, and write hillshade as lossy
   WebP by default. `regions/us-all.env` builds the whole world at low zoom plus all 50 states; `build-usdata.sh`
-  takes the wider side of a box across the 180° line.
+  takes the wider side of a box across the 180° line. The terrain disk checks run after the elevation download
+  and count only cells with land.
 - Terrain analysis in the print tool: viewshed and VHF/UHF radio coverage from a point, point-to-point profiles,
   printed on sheets and atlases with a collar strip and an optional profile page; `build-elevation.sh` writes the
   elevation tiles it uses.

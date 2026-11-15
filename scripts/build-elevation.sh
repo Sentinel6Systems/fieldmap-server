@@ -57,14 +57,14 @@ mkdir -p "$WORK_DIR"
 # shellcheck disable=SC2086
 terrain_outline "$WORK_DIR" "$MIN_LON" "$MIN_LAT" "$MAX_LON" "$MAX_LAT" $AREAS
 terrain_estimate "$WORK_DIR" elevation
-CELLS="$(terrain_cells "$WORK_DIR")"
-# The tiles are written straight from the downloaded elevation data; the space needed
-# is the downloads plus the output (measured: about 40 MB per square degree at zoom 12).
-NEED_GB="$(python3 -c "print(max(2, int($CELLS * 0.1 + 1)))")"
-require_free_space "$REPO_DIR/data" "$NEED_GB" "elevation tiles for $CELLS one-degree cells"
 
 echo "Step 1/2: download elevation tiles"
 download_dem "$WORK_DIR"
+CELLS="$(terrain_land_cells "$WORK_DIR")"
+# The tiles are written straight from the downloaded elevation data; the space needed
+# is the output (measured: about 40 MB per square degree at zoom 12), with room to spare.
+NEED_GB="$(python3 -c "print(max(2, int($CELLS * 0.06 + 1)))")"
+require_free_space "$REPO_DIR/data" "$NEED_GB" "elevation tiles for $CELLS one-degree cells with land"
 
 echo "Step 2/2: write the elevation tiles (zoom $MINZOOM-$MAXZOOM, $ELEVATION_ENCODING $ELEVATION_FORMAT)"
 # One mosaic per outline part (see tools/region-outline.py); the tile writer masks it to the

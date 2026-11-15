@@ -55,13 +55,13 @@ mkdir -p "$WORK_DIR"
 # shellcheck disable=SC2086
 terrain_outline "$WORK_DIR" "$MIN_LON" "$MIN_LAT" "$MAX_LON" "$MAX_LAT" $AREAS
 terrain_estimate "$WORK_DIR" hillshade
-CELLS="$(terrain_cells "$WORK_DIR")"
-# Measured: 2 GB working space for 64 one-degree cells.
-NEED_GB="$(python3 -c "print(max(4, int($CELLS * 0.06 + 2)))")"
-require_free_space "$REPO_DIR/data" "$NEED_GB" "hillshade for $CELLS one-degree cells"
 
 echo "Step 1/4: download elevation tiles"
 download_dem "$WORK_DIR"
+CELLS="$(terrain_land_cells "$WORK_DIR")"
+# Measured: 2 GB working space for 64 one-degree cells (land cells only, after the download).
+NEED_GB="$(python3 -c "print(max(4, int($CELLS * 0.06 + 2)))")"
+require_free_space "$REPO_DIR/data" "$NEED_GB" "hillshade for $CELLS one-degree cells with land"
 
 echo "Step 2/4: reproject the elevation data, masked to the outline"
 HILLSHADES=()

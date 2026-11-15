@@ -413,11 +413,15 @@ terrain_outline() {
         --bbox "${bbox[@]}" "${areas[@]}"
 }
 
-# Number of 1-degree elevation cells (about square degrees) inside a prepared outline,
-# not counting cells known to be open sea. The disk checks scale with it.
+# Number of the outline's cells that have elevation data (run after download_dem): cells
+# found to be open sea on the way are left out, so the working-space checks only count land.
 # Argument: WORK_DIR
-terrain_cells() {
-    grep -c . "$1/outline/cells.txt" || true
+terrain_land_cells() {
+    local _part name n=0
+    while read -r _part name <&3; do
+        [ -f "$REPO_DIR/data/cache/dem/$name.tif" ] && n=$((n + 1))
+    done 3< "$1/outline/cells.txt"
+    echo "$n"
 }
 
 # Print the expected output size and time of terrain steps for a prepared outline.
@@ -443,7 +447,12 @@ download_dem() {
         printf '%s\n' "# Copernicus GLO-30 cells that have no file (open sea, mostly), found by the terrain" \
             "# builds; they are not requested again. Delete a line to try that cell again." > "$ocean"
     fi
-    local _part name code tries fetched=0 cached=0 none=0
+    local _part name code tries fetched=0 cached=0 none=0 todo=0
+    while read -r _part name <&3; do
+        [ -f "$out_dir/$name.tif" ] || todo=$((todo + 1))
+    done 3< "$work/outline/cells.txt"
+    # Up to about 30 MB a cell; cells of open sea turn out to have no file and take nothing.
+    require_free_space "$REPO_DIR/data" "$(( todo * 3 / 100 + 1 ))" "downloading up to $todo elevation cells"
     while read -r _part name <&3; do
         if [ -f "$out_dir/$name.tif" ]; then
             cached=$((cached + 1))
