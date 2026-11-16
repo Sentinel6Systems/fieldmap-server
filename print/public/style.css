@@ -68,6 +68,8 @@ button:disabled { opacity: .5; cursor: progress; }
 .add-buttons { margin-top: 10px; }
 .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
 .row3 button { padding: 0 6px; }
+.file-buttons { margin-top: 8px; }
+.file-buttons button { height: auto; padding: 6px 8px; font-size: 13px; line-height: 1.25; }
 #finish-shape { width: 100%; margin-top: 6px; }
 label.inline { flex-direction: row; align-items: center; gap: 10px; margin-top: 6px; }
 label.inline select { flex: 1; }

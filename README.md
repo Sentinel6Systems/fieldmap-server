@@ -191,7 +191,9 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
 - Declination from the World Magnetic Model for the print date (no network needed): TN, GN and MN drawn at true
   angles, the G-M angle, and which way magnetic north moves each year. See "Magnetic model updates" below.
 - Markers (12-colour palette, draggable) and arrows (tap start, tap end, drag the ends) labelled with name, range and
-  true/magnetic bearing; grid bearing in the side panel. Optional list page with MGRS, lat/lon and bearings.
+  true/magnetic bearing; grid bearing in the side panel. Optional key page: at the top, the map symbols the printed
+  pages show (icon and meaning, gathered while the pages render: only the ones that are on them), then the list of
+  markers, arrows and shapes with MGRS, lat/lon and bearings.
 - Shapes: circles (tap the centre, tap the edge, then type an exact radius), rectangles (two opposite corners) and
   polygons (tap the corners; finish on the first corner, with Enter or with Finish shape). Measurements, on screen,
   on every printed page and on the list page (a checkbox leaves them off the map; the list page always has them):
@@ -202,7 +204,8 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
   follows the printed part of the outline, and a rectangle uses its north or west side when the south or east side
   is off the sheet. A Units menu switches between imperial
   (ft, mi, acres) and metric (m, km, ha); the circle's radius can be typed in either unit of the chosen system.
-- Save to a file / Load from a file: markers, arrows and shapes are kept in the browser only, so the panel saves them
+- Save / Load markers, arrows & shapes (only those, not the map or the print settings): they are kept in the
+  browser only, so the panel saves them
   to a GeoJSON file (`<title>-<date>.geojson`) and loads one again, on this device or another. Loading adds the
   items to those on the map. The file keeps everything exactly (a circle's centre and radius, a rectangle's corners,
   names and colours) and is plain GeoJSON for other map software too; files from such software load as well: points
@@ -812,6 +815,11 @@ See [systemd/README.md](systemd/README.md).
   data" box (`OSM_REFRESH=yes`); the page shows how old the data on the device is.
 - Print tool: save the markers, arrows and shapes to a GeoJSON file and load them again (also from other map
   software).
+- Print tool: the list page is now a key page, with the map symbols the sheet shows at the top.
+- US interstate, US highway and state route shields were drawn at half size in the high-resolution sprites (the
+  ones printing and sharp screens use); fixed in `sprites/topo@2x.png` and `sprites/usgs@2x.png`.
+- Map builder: "Repeat the last build" fills in the last build's choices; downloads that break off are retried, and
+  damaged 1 m elevation tiles are found and downloaded again.
 
 - Terrain builds follow the region's Geofabrik outlines instead of its box (no neighbouring countries), skip
   known open-sea cells, handle the 180° line, print size and time estimates first, and write hillshade as lossy

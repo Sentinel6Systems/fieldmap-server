@@ -78,8 +78,11 @@ export async function renderSheet(opts) {
   const addPage = () => { if (!first) pdf.addPage([lay.page.w, lay.page.h], lay.page.w > lay.page.h ? "landscape" : "portrait"); first = false; };
   const check = () => { if (opts.signal && opts.signal.aborted) throw new Error("Cancelled"); };
 
-  const wantList = !!opts.listPage && [opts.markers, opts.arrows, opts.shapes].some((l) => l && l.length);
-  const extra = (n > 1 ? 2 : 0) + (wantList ? 1 : 0);        // cover + index (+ list)
+  // The key page: the map symbols the pages show (gathered while they render), then the
+  // markers, arrows and shapes.
+  const wantList = !!opts.listPage;
+  if (wantList) opts.symbols = new Map();
+  const extra = (n > 1 ? 2 : 0) + (wantList ? 1 : 0);        // cover + index (+ key)
   const wantProfile = !!(opts.terrain && opts.terrain.profilePage && opts.terrain.line);
   const total = atlas.cells.length + extra + (wantProfile ? 1 : 0);
   const firstCellPage = 1 + extra;                            // single sheet: 1; atlas: after cover, index (and list)
@@ -96,11 +99,6 @@ export async function renderSheet(opts) {
     check();
     addPage();
     pdf.addImage(index.img, "JPEG", 0, 0, lay.page.w, lay.page.h, undefined, "FAST");
-    if (wantList) {
-      status("Adding the list of markers and arrows…");
-      addPage();
-      addListPage(pdf, lay, opts, gridInfo, atlas, total);
-    }
   }
   for (const cell of atlas.cells) {
     check();
@@ -113,10 +111,14 @@ export async function renderSheet(opts) {
     check();
     if (n > 1) status(`Done ${label}`);
   }
-  if (n === 1 && wantList) {
-    status("Adding the list page…");
+  if (wantList) {
+    // Made last, once every map page has shown its symbols; in an atlas it then moves to
+    // its place after the index.
+    status("Adding the key page…");
+    const before = pdf.getNumberOfPages();
     addPage();
-    addListPage(pdf, lay, opts, gridInfo, atlas, total);
+    await addListPage(pdf, lay, opts, gridInfo, atlas, total);
+    if (n > 1) for (let i = before + 1; i <= pdf.getNumberOfPages(); i++) pdf.movePage(i, 3 + i - before - 1);
   }
   if (wantProfile) {
     status("Adding the profile page…");
@@ -136,7 +138,8 @@ async function renderMapPage(pdf, lay, opts, atlas, cell, status, pageNo, total)
   const center = opts.center;
 
   status("Rendering map…");
-  const mapCanvas = await renderMapCanvas(opts.styleUrl, center, zoom, cssW, cssH, pixelRatio, status);
+  const mapCanvas = await renderMapCanvas(opts.styleUrl, center, zoom, cssW, cssH, pixelRatio, status,
+    opts.symbols && symbolCollector(opts.symbols));
 
   const W = Math.round(lay.page.w * dpi), H = Math.round(lay.page.h * dpi);
   const canvas = document.createElement("canvas");
@@ -328,7 +331,7 @@ async function renderCoverPage(pdf, lay, opts, atlas, g, feats, total, status) {
   const dms = (v, pos, neg) => `${Math.abs(v).toFixed(4)}° ${v >= 0 ? pos : neg}`;
   const facts = [
     ["Scale", `1:${opts.scale.toLocaleString("en-US")} (nominal across the atlas)`],
-    ["Pages", `${atlas.cells.length} map pages A1–${last}, plus cover, index${total - atlas.cells.length > 2 ? " and list" : ""} · ${total} pages`],
+    ["Pages", `${atlas.cells.length} map pages A1–${last}, plus cover, index${total - atlas.cells.length > 2 ? " and key" : ""} · ${total} pages`],
     ["Sheet", `${lay.page.w} × ${lay.page.h} in, each map ${cellKm.w.toFixed(1)} × ${cellKm.h.toFixed(1)} km, 1 cm overlap`],
     ["Coverage", `${widthKm.toFixed(1)} × ${heightKm.toFixed(1)} km · about ${Math.round(widthKm * heightKm).toLocaleString("en-US")} km² (${Math.round(widthKm * heightKm * 0.3861).toLocaleString("en-US")} sq mi)`],
     ["Bounds", `${dms(nth, "N", "S")} to ${dms(sth, "N", "S")} · ${dms(w, "E", "W")} to ${dms(e, "E", "W")}`],
@@ -463,7 +466,7 @@ async function renderMapCanvas(style, center, zoom, cssW, cssH, pixelRatio, stat
       const cc = unproject(originX + x0 - padL + rw / 2, originY + y0 - padT + rh / 2, zoom);
       const { map, container } = await renderMap(style, { lng: cc.lng, lat: cc.lat }, zoom, rw, rh, pixelRatio);
       try {
-        if (collect) { try { collect(map); } catch (e) { console.warn("collect:", e); } }
+        if (collect) { try { collect(map, [[padL, padT], [padL + w, padT + h]]); } catch (e) { console.warn("collect:", e); } }
         octx.drawImage(map.getCanvas(),
           Math.round(padL * pixelRatio), Math.round(padT * pixelRatio), Math.round(w * pixelRatio), Math.round(h * pixelRatio),
           Math.round(x0 * pixelRatio), Math.round(y0 * pixelRatio), Math.round(w * pixelRatio), Math.round(h * pixelRatio));
@@ -1017,7 +1020,7 @@ function drawNeighbourTabs(ctx, dpi, tabs) {
 /* =====================================================================
  * List page
  * ===================================================================*/
-function addListPage(pdf, lay, opts, g, atlas, total) {
+async function addListPage(pdf, lay, opts, g, atlas, total) {
   const M = 0.5, W = lay.page.w - 2 * M;
   let y = M;
   const line = (txt, size = 9, style = "normal", color = [0, 0, 0]) => {
@@ -1030,10 +1033,34 @@ function addListPage(pdf, lay, opts, g, atlas, total) {
   const where = (lng, lat) => { if (atlas.n < 2) return ""; const c = cellFor(atlas.cells, lng, lat); return c ? `   Page ${c.name}` : "   (off the atlas)"; };
 
   pdf.setFont("helvetica", "bold"); pdf.setFontSize(14); pdf.setTextColor(0);
-  pdf.text(`${opts.title || `${g.gzd} ${g.square}`} — markers, arrows and shapes${atlas.n > 1 ? `   (page 3 of ${total})` : ""}`, M, y + 0.1); y += 0.3;
+  pdf.text(`${opts.title || `${g.gzd} ${g.square}`} — key${atlas.n > 1 ? `   (page 3 of ${total})` : ""}`, M, y + 0.1); y += 0.3;
   line(`Sheet 1:${opts.scale.toLocaleString("en-US")} · MGRS ${g.gzd} ${g.square} · WGS 84 · Declination ${fmtAngle(decl.declination)} (${decl.asOf.getUTCFullYear()}) · G-M ${fmtAngle(decl.gmAngle)} · Printed ${new Date().toISOString().slice(0, 10)}`, 8, "normal", [80, 80, 80]);
   y += 0.1;
   const swatch = (hex, yy) => { const [r, gg, b] = hexRgb(hex); pdf.setFillColor(r, gg, b); pdf.setDrawColor(0); pdf.setLineWidth(0.005); pdf.rect(M, yy - 0.11, 0.14, 0.14, "FD"); };
+
+  // The map symbols, in columns: the icon as the map draws it, and what it stands for.
+  const key = await symbolKey(opts);
+  more(0.6); line("MAP SYMBOLS", 9, "bold", [60, 60, 60]); rule();
+  if (!key.length) { line("No symbols on the map of this sheet.", 9, "normal", [90, 90, 90]); }
+  const cols = Math.max(1, Math.floor(W / 2.4)), colW = W / cols, rowH = 0.27;
+  for (let i = 0; i < key.length; i += cols) {
+    more(rowH + 0.05);
+    key.slice(i, i + cols).forEach((k, j) => {
+      const x = M + j * colW;
+      // The icon at its size on the printed map, and no larger than its cell; a shield large
+      // enough for its number (the map stretches it round the text).
+      const f = Math.min(k.shield ? 0.17 / k.h : 1, 0.36 / k.w, 0.22 / k.h), w = k.w * f, h = k.h * f;
+      pdf.addImage(k.img, "PNG", x + (0.36 - w) / 2, y - 0.08 - h / 2, w, h);
+      if (k.shield) {          // a route shield is blank in the sprite: the map writes the number in it
+        pdf.setFont("helvetica", "bold"); pdf.setFontSize(Math.max(4, Math.min(6.5, h * 72 * 0.6))); pdf.setTextColor(0);
+        pdf.text("12", x + 0.18, y - 0.08, { align: "center", baseline: "middle" });
+      }
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(8.5); pdf.setTextColor(0);
+      pdf.text(pdf.splitTextToSize(k.label, colW - 0.5)[0], x + 0.44, y - 0.03);
+    });
+    y += rowH;
+  }
+  y += 0.2;
 
   if (opts.markers && opts.markers.length) {
     more(0.6); line("MARKERS", 9, "bold", [60, 60, 60]); rule();
@@ -1074,6 +1101,107 @@ function addListPage(pdf, lay, opts, g, atlas, total) {
       y += 0.24;
     }
   }
+}
+
+/* =====================================================================
+ * Map symbols for the key page
+ * ===================================================================*/
+// What a symbol stands for, by style layer (where one icon has several meanings) and by
+// icon name (without the size suffix). Other icons are named from their file name.
+const SYMBOL_LAYER_NAMES = {
+  "survey-benchmark": "Benchmark (survey height mark)", "spot-height": "Spot height",
+  "gnis-spring": "Spring", "flow-arrow": "Direction of water flow",
+};
+const SYMBOL_NAMES = {
+  sym_flow: "Direction of water flow", sym_spring: "Spring", sym_spot: "Spot height", sym_survey: "Survey mark",
+  sym_obstacle: "Aircraft obstacle (FAA)", sym_peak: "Summit", sym_tower: "Tower", oneway: "One-way road",
+  airport: "Airport", airfield: "Airfield", heliport: "Heliport", "aerodrome": "Airport or airfield",
+  place_of_worship: "Place of worship", fire_station: "Fire station", firestation: "Fire station",
+  doctors: "Doctor", town_hall: "Town hall", ranger_station: "Ranger station", picnic_site: "Picnic site",
+  drinking_water: "Drinking water", information: "Information", lodging: "Hotel or lodging", post: "Post office",
+  railway: "Railway station", railway_light: "Light rail station", railway_metro: "Metro station", bus: "Bus station",
+};
+const SHIELDS = [
+  [/^(usgs-|us-)interstate_\d+$/, "Interstate highway number"], [/^us-highway_\d+$/, "US highway number"],
+  [/^us-state_\d+$/, "State highway number"], [/^road_\d+$/, "Road number"],
+];
+
+function symbolName(layerId, icon) {
+  if (SYMBOL_LAYER_NAMES[layerId]) return SYMBOL_LAYER_NAMES[layerId];
+  for (const [re, name] of SHIELDS) if (re.test(icon)) return name;
+  const base = icon.replace(/^[^:]*:/, "").replace(/(_11|\.\d+)$/, "");
+  if (SYMBOL_NAMES[base]) return SYMBOL_NAMES[base];
+  const words = base.replace(/^sym_/, "").replace(/[_-]+/g, " ").trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : "";
+}
+
+// The icon-image of a layer for one feature: the forms the bundled styles use ("{class}_11",
+// ["concat", ["get", "class"], "_11"], ["to-string", ...]). Others give null: not in the key.
+function iconFor(value, props) {
+  if (typeof value === "string") return value.replace(/\{([^}]+)\}/g, (_m, k) => (props[k] ?? ""));
+  if (!Array.isArray(value)) return null;
+  const [op, ...args] = value;
+  if (op === "get" && typeof args[0] === "string" && args.length === 1) return props[args[0]] ?? "";
+  if (op === "to-string") { const v = iconFor(args[0], props); return v === null ? null : String(v); }
+  if (op === "literal") return typeof args[0] === "string" ? args[0] : null;
+  if (op === "image") return iconFor(args[0], props);
+  if (op === "concat") {
+    const parts = args.map((a) => iconFor(a, props));
+    return parts.includes(null) ? null : parts.join("");
+  }
+  return null;
+}
+
+/** A collect function for renderMapCanvas: adds to `found` (name -> {icon, label}) the icons
+ *  drawn inside the box of the rendered tile (symbols hidden by collisions are not counted). */
+function symbolCollector(found) {
+  return (map, box) => {
+    const layers = (map.getStyle().layers || []).filter((l) => l.type === "symbol" && l.layout && l.layout["icon-image"] &&
+      l.layout.visibility !== "none");
+    if (!layers.length) return;
+    const byId = new Map(layers.map((l) => [l.id, l]));
+    for (const f of map.queryRenderedFeatures(box, { layers: [...byId.keys()] })) {
+      const icon = iconFor(byId.get(f.layer.id).layout["icon-image"], f.properties || {});
+      if (!icon || !map.hasImage(icon)) continue;
+      const label = symbolName(f.layer.id, icon);
+      if (label && !found.has(label)) found.set(label, { icon, label });
+    }
+  };
+}
+
+/** The key's entries, sorted by name, each with its icon cut from the style's sprite
+ *  (PNG data URL) and its size on the printed map in inches. */
+async function symbolKey(opts) {
+  if (!opts.symbols || !opts.symbols.size) return [];
+  const style = await loadStyle(opts.styleUrl);
+  const base = new URL(typeof opts.styleUrl === "string" ? opts.styleUrl : location.href, location.href);
+  const sprites = typeof style.sprite === "string" ? [{ id: "default", url: style.sprite }] : Array.isArray(style.sprite) ? style.sprite : [];
+  const sheets = {};
+  for (const sp of sprites) {
+    try {
+      const url = new URL(sp.url, base).href;
+      const [index, img] = await Promise.all([
+        fetch(`${url}@2x.json`).then((r) => r.json()),
+        fetch(`${url}@2x.png`).then((r) => r.blob()).then((b) => createImageBitmap(b)),
+      ]);
+      sheets[sp.id] = { index, img };
+    } catch (e) { console.warn("sprite for the key:", e); }
+  }
+  const out = [];
+  for (const { icon, label } of opts.symbols.values()) {
+    const [id, name] = icon.includes(":") ? icon.split(/:(.*)/) : ["default", icon];
+    const sheet = sheets[id] || (id === "default" ? Object.values(sheets)[0] : null);
+    const d = sheet && sheet.index[name];
+    if (!d) continue;
+    const c = document.createElement("canvas");
+    c.width = d.width; c.height = d.height;
+    c.getContext("2d").drawImage(sheet.img, d.x, d.y, d.width, d.height, 0, 0, d.width, d.height);
+    // CSS pixels are 1/100 inch on the printed map (renderMapPage).
+    const r = d.pixelRatio || 2;
+    out.push({ label, img: c.toDataURL("image/png"), w: d.width / r / 100, h: d.height / r / 100,
+      shield: SHIELDS.some(([re]) => re.test(name)) });
+  }
+  return out.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function hexRgb(hex) {

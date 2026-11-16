@@ -102,21 +102,21 @@
     <div id="arrow-list"></div>
     <h3>Shapes</h3>
     <div id="shape-list"></div>
+    <div class="row2 file-buttons">
+      <button id="save-drawings" class="secondary" title="Save the markers, arrows and shapes in the lists above to a file on this device. The map, its layers and the print settings are not saved.">Save markers, arrows &amp; shapes</button>
+      <button id="load-drawings" class="secondary" title="Add the markers, arrows and shapes from a saved file to the lists above">Load markers, arrows &amp; shapes</button>
+    </div>
+    <input id="load-file" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
+    <div id="file-hint" class="hint">These two buttons save and load only the markers, arrows and shapes above, not the map, its layers or the print settings. They are kept in this browser only: save them to a file to keep them safe, or to open them on another device. Loading a file adds its items to the ones already on the map.</div>
     <label class="check">
       <input id="shape-measure" type="checkbox">
       <span>Show measurements on the map: side lengths, circle radius, area</span>
     </label>
-    <div class="row2 file-buttons">
-      <button id="save-drawings" class="secondary" title="Save the markers, arrows and shapes to a file on this device">Save to a file</button>
-      <button id="load-drawings" class="secondary" title="Add the markers, arrows and shapes from a saved file to the map">Load from a file</button>
-    </div>
-    <input id="load-file" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
-    <div id="file-hint" class="hint">They are kept in this browser only. Save them to a file to keep them safe, or to open them on another device. Loading a file adds its items to the ones already on the map.</div>
   </section>
 
   <label class="check">
     <input id="list-page" type="checkbox">
-    <span>Add a list of markers, arrows and shapes (one page: after the index in an atlas, or page 2 of a single sheet)</span>
+    <span>Add a key page: the symbols on the map, then the list of markers, arrows and shapes (after the index in an atlas, or page 2 of a single sheet)</span>
   </label>
   <label class="check">
     <input id="binder" type="checkbox">
