@@ -2,6 +2,7 @@
 """Helper for scripts/build-detail.sh: a small area of 1 m hillshade from USGS lidar.
 
     detail-area.py find --bbox W S E N --out DIR [--max-km2 10000] [--zoom 17]
+    detail-area.py check --record FILE @LIST
 
 Checks the size of the box, asks The National Map (https://tnmaccess.nationalmap.gov) for the
 USGS 3DEP 1 m elevation tiles that touch it, and writes in DIR
@@ -12,10 +13,16 @@ USGS 3DEP 1 m elevation tiles that touch it, and writes in DIR
                Web Mercator, for tools/hillshade-raster.py
 The 1 m tiles are 10 km squares in UTM, one survey project at a time; where no project has
 flown yet there is no tile, and the area keeps its coarser hillshade.
+
+check: reads every raster of LIST (one path a line) through once, several at a time, and prints
+the path of each one that cannot be read to the end (a download that broke off, which older
+versions of build-detail.sh kept). The ones that can are added to FILE as "name size" and not
+read again in later runs.
 """
 import argparse
 import json
 import math
+import multiprocessing as mp
 import os
 import re
 import sys
@@ -90,6 +97,47 @@ def find(a):
         sys.exit("Error: USGS has no 1 m elevation data for this area yet.")
 
 
+def readable(path):
+    from osgeo import gdal
+    gdal.UseExceptions()
+    try:
+        ds = gdal.Open(path)
+        for b in range(1, ds.RasterCount + 1):
+            band = ds.GetRasterBand(b)
+            rows = band.GetBlockSize()[1] * 16
+            for y in range(0, ds.RasterYSize, rows):
+                band.ReadRaster(0, y, ds.RasterXSize, min(rows, ds.RasterYSize - y))
+        return path, True
+    except RuntimeError as err:
+        print(f"damaged: {os.path.basename(path)} ({str(err).splitlines()[0]})", file=sys.stderr, flush=True)
+        return path, False
+
+
+def check(a):
+    with open(a.list[1:] if a.list.startswith("@") else a.list) as f:
+        paths = [line.strip() for line in f if line.strip()]
+    sig = lambda p: f"{os.path.basename(p)} {os.path.getsize(p)}"
+    try:
+        with open(a.record) as f:
+            known = set(f.read().splitlines())
+    except OSError:
+        known = set()
+    todo = [p for p in paths if sig(p) not in known]
+    if not todo:
+        return
+    print(f"Checking {len(todo)} elevation tiles that were not read through yet", file=sys.stderr, flush=True)
+    t0 = time.time()
+    with mp.Pool(min(os.cpu_count() or 1, 8)) as pool, open(a.record, "a") as rec:
+        for i, (path, ok) in enumerate(pool.imap_unordered(readable, todo), 1):
+            if ok:
+                rec.write(sig(path) + "\n")
+                rec.flush()
+            else:
+                print(path, flush=True)
+            if i % 20 == 0 or i == len(todo):
+                print(f"  {i}/{len(todo)} checked, {time.time() - t0:.0f} s", file=sys.stderr, flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -98,7 +146,11 @@ def main():
     f.add_argument("--max-km2", type=float, default=10000)
     f.add_argument("--zoom", type=int, default=17)
     f.add_argument("--bbox", nargs=4, type=float, required=True)
-    find(ap.parse_args())
+    c = sub.add_parser("check")
+    c.add_argument("--record", required=True)
+    c.add_argument("list")
+    a = ap.parse_args()
+    (find if a.cmd == "find" else check)(a)
 
 
 if __name__ == "__main__":

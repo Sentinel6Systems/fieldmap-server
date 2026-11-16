@@ -77,6 +77,28 @@ while read -r url <&3; do
     fi
 done 3< "$WORK_DIR/tiles.txt"
 echo "Elevation tiles: $fetched downloaded, $((TILES - fetched)) already here."
+# A damaged tile would stop the hillshade halfway through: each one is read to the end once
+# (tools/detail-area.py check), and one that cannot be is downloaded again.
+for attempt in 1 2; do
+    python3 "$REPO_DIR/tools/detail-area.py" check --record "$DEM_DIR/checked.txt" \
+        "@$WORK_DIR/rasters.txt" > "$WORK_DIR/damaged.txt"
+    [ -s "$WORK_DIR/damaged.txt" ] || break
+    if [ "$attempt" = 2 ]; then
+        echo "Error: these elevation tiles are still damaged after a new download:" >&2
+        sed 's|.*/|  |' "$WORK_DIR/damaged.txt" >&2
+        echo "USGS may be serving a broken copy. Try again later, or choose another place for the very sharp area." >&2
+        exit 1
+    fi
+    while read -r path <&3; do
+        name="${path##*/}"
+        rm -f "$path"
+        if ! fetch_file "$(grep -F "/$name" "$WORK_DIR/tiles.txt" | head -1)" "$path"; then
+            echo "Error: $name is listed by USGS but could not be downloaded." >&2
+            exit 1
+        fi
+        echo "downloaded again: $name"
+    done 3< "$WORK_DIR/damaged.txt"
+done
 
 echo "Step 3/4: compute the hillshade"
 read -r xmin ymin xmax ymax res < "$WORK_DIR/grid.txt"

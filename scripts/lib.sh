@@ -510,7 +510,9 @@ terrain_estimate() {
 fetch_file() {
     local url="$1" dest="$2" code tries=0
     while :; do
-        code="$(curl -sSL -o "$dest.part" -w '%{http_code}' "$url" || true)"
+        # A connection that breaks off mid-file still has the 200 of its start: only curl's
+        # exit status tells that the file is cut short.
+        code="$(curl -sSL -o "$dest.part" -w '%{http_code}' "$url")" || code="${code:-000}, the connection broke off"
         case "$code" in
             200)
                 mv "$dest.part" "$dest"

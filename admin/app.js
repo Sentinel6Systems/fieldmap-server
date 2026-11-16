@@ -493,6 +493,7 @@ $("start").onclick = () => {
       return el("li", {}, el("b", { textContent: L.name }), now.present ? ` — replaces the one on this device${now.names ? ` (${now.names.join(", ")})` : ""}` : " — new"); }),
       ...(sel.options.terrain === "1m" ? [el("li", {}, el("b", { textContent: DETAIL.name }), ` — ${sel.options.detail.km} × ${sel.options.detail.km} km, drawn over the hillshade`)] : [])),
     ...(sel.options.fresh ? [el("p", { textContent: "The map data is downloaded again, the newest there is." })] : []),
+    ...(carriesOn(sel) ? [el("p", { textContent: "The parts the last build finished are kept: it carries on from where that one stopped." })] : []),
     el("p", { textContent: `It needs about ${gb(estimate.need_gb)} of space and takes ${hours(estimate.hours)}, plus download time. The maps you have now keep working until it is finished.` }));
   $("confirm").showModal();
 };
@@ -511,10 +512,52 @@ $("confirm-yes").onclick = async () => {
 
 // ---------- the running or last build ----------
 
+// The last build's choices (the server keeps them with the build), back in steps 1 and 2.
+async function repeatLast() {
+  const r = status.job.request, o = r.options || {};
+  chosen.clear();
+  for (const id of r.regions) if (REG[id]) chosen.add(id);
+  ticked.clear();
+  for (const k of r.layers) if (k !== "detail") ticked.add(k);
+  $("opt-terrain").value = o.terrain || "30m";
+  $("opt-units").value = o.units || "ft";
+  $("opt-language").value = o.language || "";
+  $("opt-world").checked = !!o.world;
+  $("opt-fresh").checked = false;           // for one build: the extracts are new enough now
+  if (o.detail) {
+    detail = { ...o.detail };
+    $("opt-detail-km").value = detail.km;
+    localStorage.setItem("detail", JSON.stringify(detail));
+  }
+  document.querySelector("details.more").open = o.terrain !== "30m" || !!o.world;
+  save();
+  dismissed = String(status.job.started); sessionStorage.setItem("dismissed", dismissed);
+  drawJob();
+  draw();
+  await refresh();
+  // Straight to the question "Start this build?", unless something is in the way (step 4 says what).
+  if (!$("start").disabled) $("start").click();
+  else $("step-build").scrollIntoView({ behavior: "smooth" });
+}
+$("repeat").onclick = $("repeat-last").onclick = repeatLast;
+
+// True when sel is the build that failed or was stopped last, so that it keeps what that one
+// finished: the same regions and settings (scripts/build-region.sh --staged).
+function carriesOn(sel) {
+  const job = status.job;
+  if (!job || !["failed", "cancelled"].includes(job.state)) return false;
+  const key = (regions, o) => JSON.stringify([[...regions].sort(), o.terrain, o.units, o.language || "", !!o.world,
+    o.terrain === "1m" && o.detail ? [o.detail.km, +o.detail.lon.toFixed(5), +o.detail.lat.toFixed(5)] : null]);
+  return key(sel.regions, sel.options) === key(job.request.regions, job.request.options);
+}
+
 let logAt = 0, logFor = null;
 function drawJob() {
   const job = status.job, show = job && (job.state === "running" || String(job.started) !== dismissed);
   $("progress").hidden = !show;
+  // In step 4 once the card of the last build is closed: one of the two buttons at a time.
+  $("repeat-last").hidden = $("repeat-what").hidden = !job || show;
+  if (job && !show) $("repeat-what").textContent = `The last build: ${job.request.names.join(", ")}, ${day(job.started)}.`;
   $("chooser").hidden = !!(job && job.state === "running");
   if (!show) return;
   const running = job.state === "running", names = job.request.names.join(", ");
@@ -530,7 +573,10 @@ function drawJob() {
     ? `Started ${ago(job.started)}. You can close this page and come back later: the build carries on. The maps you have now keep working until it is finished.`
     : job.finished ? `Ended ${ago(job.finished)}.` : "";
   $("cancel").hidden = !running;
-  $("again").hidden = running;
+  $("again").hidden = $("repeat").hidden = running;
+  $("repeat").textContent = job.state === "done" ? "Build the same again" : "Start it again";
+  $("repeat").title = job.state === "done" ? "Fills in the same regions, layers and options, and asks before it starts."
+    : "The same regions, layers and options. It carries on from where it stopped.";
   // Beside the viewer and the print tool when this page is /mapadmin/ on the web front; else on its own port.
   const base = location.pathname.startsWith("/mapadmin") ? location.origin
     : `${location.protocol}//${location.hostname}${status.web_port === 80 ? "" : ":" + status.web_port}`;

@@ -40,6 +40,7 @@
     <button class="danger" id="cancel" title="Stops the build. The maps on this device stay as they are.">Stop the build</button>
     <a class="button primary" id="open-map" hidden target="_blank" rel="noopener">Open the map</a>
     <a class="button" id="open-print" hidden target="_blank" rel="noopener">Print a map</a>
+    <button class="primary" id="repeat" hidden>Repeat this build</button>
     <button id="again" hidden>Build something else</button>
   </div>
   <details id="details">
@@ -165,8 +166,12 @@
     </ul>
   </div>
   <p class="error" id="build-error" role="alert"></p>
-  <button class="primary big" id="start" disabled>Start building</button>
+  <div class="row">
+    <button class="primary big" id="start" disabled>Start building</button>
+    <button class="big" id="repeat-last" hidden>Repeat the last build</button>
+  </div>
   <p class="quiet" id="start-why"></p>
+  <p class="quiet" id="repeat-what" hidden></p>
 </section>
 
 </div>

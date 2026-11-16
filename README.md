@@ -102,7 +102,8 @@ What a build from the page does (`tools/admin-server.py`):
 - The new files are written to `data/incoming` and moved into `data/` together when every step has finished, and
   the tile server is then restarted (or started, the first time). Until then, and if a step fails or the build is
   stopped, the maps in use stay untouched. The steps that did finish are kept: starting the same build again
-  carries on where it stopped (a different selection starts afresh).
+  carries on where it stopped (a different selection starts afresh). The page keeps the last build's choices:
+  **Start it again** (or **Repeat the last build** in step 4) fills them back in and asks before it starts.
 - The estimate is made before anything is downloaded, from the bundled list of regions (`admin/regions.json`:
   size of each OpenStreetMap extract, number of 1° elevation cells with land, land area) and the same rates as the
   build scripts' own checks. It is on the safe side; the build scripts still run their own checks at each step.
