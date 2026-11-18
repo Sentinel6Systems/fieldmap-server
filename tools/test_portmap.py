@@ -156,6 +156,34 @@ class PortmapTest(unittest.TestCase):
         finally:
             router.close()
 
+    def test_a_router_that_wants_the_same_port_outside_and_inside(self):
+        router = PretendRouter()
+        original = router.answer
+
+        def same_port(action, a):
+            if action == "AddPortMapping" and a["NewExternalPort"] != a["NewInternalPort"]:
+                return router.fault(724, "SamePortValuesRequired")
+            return original(action, a)
+        router.answer = same_port
+        try:
+            state = portmap.reach(41234, {}, discover=lambda local: [router.location], gateway_ip="127.0.0.1")
+            self.assertEqual(41234, state["ipv4"]["external_port"])
+            self.assertTrue(state["ipv4"]["ok"])
+        finally:
+            router.close()
+
+    def test_a_refusal_is_written_down_in_the_router_s_words(self):
+        router = PretendRouter()
+        original = router.answer
+        router.answer = lambda action, a: router.fault(501, "ActionFailed") if action == "AddPortMapping" else original(action, a)
+        try:
+            with mock.patch.object(portmap, "_natpmp", return_value=None):
+                state = portmap.reach(41234, {}, discover=lambda local: [router.location], gateway_ip="127.0.0.1")
+            self.assertEqual("router-refused", state["problem"])
+            self.assertEqual("AddPortMapping: 501 ActionFailed", state["ipv4"]["error"])
+        finally:
+            router.close()
+
     def test_a_router_that_only_takes_permanent_mappings(self):
         router = PretendRouter(permanent_only=True)
         try:
@@ -222,6 +250,22 @@ class PortmapTest(unittest.TestCase):
             state = portmap.reach(8443, {}, discover=lambda local: [], gateway_ip="127.0.0.1")
         self.assertEqual("router-closed", state["problem"])
         self.assertEqual([{"host": "[2001:db8:77::10]", "port": 8443}], portmap.endpoints(state, 8443))
+
+    def test_the_internet_address_from_a_stun_answer(self):
+        server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        server.bind(("127.0.0.1", 0))
+
+        def answer():
+            data, peer = server.recvfrom(64)
+            tid = data[8:20]
+            xor = struct.unpack("!I", socket.inet_aton("203.0.113.30"))[0] ^ 0x2112A442
+            attr = struct.pack("!HHBBHI", 0x0020, 8, 0, 1, 40000 ^ 0x2112, xor)
+            server.sendto(struct.pack("!HHI", 0x0101, len(attr), 0x2112A442) + tid + attr, peer)
+        threading.Thread(target=answer, daemon=True).start()
+        try:
+            self.assertEqual("203.0.113.30", portmap.stun_public_ip([("127.0.0.1", server.getsockname()[1])], timeout=2))
+        finally:
+            server.close()
 
     def test_address_kinds(self):
         self.assertEqual("public", portmap.kind("203.0.113.30"))

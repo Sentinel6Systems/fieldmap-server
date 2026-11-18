@@ -38,6 +38,8 @@
   .phone small { font: 12.5px var(--mono); color: var(--muted); }
   .error { color: var(--warn); font-weight: 600; }
   #code { max-width: 14em; }
+  #address { max-width: 20em; }
+  .forward { font: 600 17px var(--mono); padding: 12px 14px; border: 1px solid var(--sig); background: var(--panel2); margin: 12px 0 8px; overflow-wrap: anywhere; }
   .check { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; cursor: pointer; }
   .check input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
   ol { margin: 8px 0; padding-left: 1.3em; }
@@ -81,6 +83,24 @@
     <div class="row"><button id="recheck" type="button">Ask the router again</button><span class="quiet" id="checked"></span></div>
   </section>
 
+  <section class="card" id="forward-card">
+    <h2>Port forwarding</h2>
+    <label class="check"><input type="checkbox" id="manual"> <span>Forward the port on the router myself (for a router that does not
+      open it by itself, with UPnP)</span></label>
+    <div id="manual-box" hidden>
+      <p class="forward" id="forward-line"></p>
+      <div class="row"><button id="new-port" type="button">New random port</button><span class="quiet" id="port-note"></span></div>
+      <p class="quiet">Then give this box's internet address, as the router's status page shows it (or a name of
+        your own that points to it). Phones learn it when they are paired, and again whenever they are home.</p>
+      <div class="row">
+        <input id="address" type="text" autocomplete="off" spellcheck="false" placeholder="For example 203.0.113.30" aria-label="This box's internet address">
+        <button id="find" type="button" title="Asks one public server on the internet which address this network has">Find it</button>
+        <button id="save-address" type="button" class="primary">Save</button>
+      </div>
+    </div>
+    <p class="quiet" id="auto-text"></p>
+  </section>
+
   <section class="card" id="pair-card">
     <h2>Pair a phone</h2>
     <ol>
@@ -114,6 +134,7 @@
     });
   const when = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "not yet";
   let busy = false;
+  let addressEdited = false;
 
   function error(e) {
     $("error").hidden = !e;
@@ -146,7 +167,18 @@
     $("switch-text").textContent = on
       ? "Switch it off to keep this box completely to its own network: the router's port is closed, the box's firewall shuts the gateway, pairing stops. The paired phones stay on the list for when it is switched on again."
       : "Off: nothing outside can reach this box, and no phone can pair. Switch it on to let paired phones use the maps from anywhere; that also opens pairing for ten minutes.";
-    for (const id of ["outside-card", "pair-card"]) $(id).setAttribute("aria-disabled", String(!on));
+    for (const id of ["outside-card", "pair-card", "forward-card"]) $(id).setAttribute("aria-disabled", String(!on));
+    const fw = info.forwarding;
+    $("manual").checked = fw.manual;
+    $("manual-box").hidden = !fw.manual;
+    $("forward-line").textContent = fw.changingTo
+      ? `Moving to port ${fw.changingTo}…`
+      : `On your router, forward TCP port ${fw.port} to ${fw.boxAddress || "this box"}.`;
+    $("new-port").disabled = !!fw.changingTo;
+    $("port-note").textContent = fw.changingTo ? "This takes a few seconds." : "";
+    if (document.activeElement !== $("address") && !addressEdited) $("address").value = fw.address;
+    $("auto-text").textContent = fw.manual ? "" :
+      `The router is asked to open a port by itself. If it does not, tick the box above and forward port ${fw.port} by hand.`;
     $("auto-off").checked = info.autoOff.on;
     $("auto-off-text").textContent = `Switch off by itself after ${info.autoOff.days} days with no phone coming in from outside` +
       (info.autoOff.at ? ` (on ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })}, unless a phone comes in before)` : "");
@@ -180,6 +212,17 @@
     act("enabled", { on: !on });
   };
   $("auto-off").onchange = () => act("auto-off", { on: $("auto-off").checked });
+  $("manual").onchange = () => act("forwarding", { manual: $("manual").checked });
+  $("address").oninput = () => { addressEdited = true; };
+  $("save-address").onclick = () => { addressEdited = false; act("forwarding", { manual: true, address: $("address").value }); };
+  $("find").onclick = async () => {
+    $("find").disabled = true;
+    try { $("address").value = (await call("find-address", {})).address; addressEdited = true; error(null); } catch (e) { error(e); }
+    $("find").disabled = false;
+  };
+  $("new-port").onclick = () => {
+    if (confirm("Give the box a new port? Forward the new one on the router afterwards. Paired phones away from home find it once they have been home again.")) act("new-port", {});
+  };
   $("recheck").onclick = () => { $("checked").textContent = "Asking the router…"; act("recheck", {}); };
   $("pair").onclick = () => act("pairing", { open: true });
   $("pair-stop").onclick = () => act("pairing", { open: false });

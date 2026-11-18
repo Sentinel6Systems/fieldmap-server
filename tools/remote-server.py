@@ -482,10 +482,19 @@ def load_reach():
         return {}
 
 
+def forwarding():
+    """Forwarding by hand (the Phones page): {"manual": bool, "address": the box's internet address}."""
+    f = load_settings().get("forwarding") or {}
+    return {"manual": f.get("manual") is True, "address": str(f.get("address") or "")}
+
+
 def check_router():
     """Asks the router again (tools/portmap.py) and writes down what it said."""
     if not enabled():
         state = {"checked": int(time.time()), "ipv4": {}, "ipv6": {}, "problem": "switched-off"}
+    elif forwarding()["manual"]:
+        # Forwarded by hand: the router is not asked; the box's IPv6 addresses still count.
+        state = {"checked": int(time.time()), "ipv4": {}, "ipv6": {"addresses": portmap.global_ipv6()[:2]}, "problem": "manual"}
     elif setting("REMOTE_DIRECT").lower() == "off":
         state = {"checked": int(time.time()), "ipv4": {}, "ipv6": {}, "problem": "off"}
     else:
@@ -507,7 +516,81 @@ def manual_address():
         m = re.fullmatch(r"\s*([A-Za-z0-9.\-]+|\[[0-9A-Fa-f:]+\]):([0-9]{1,5})\s*", text or "")
         if m:
             out.append({"host": m.group(1), "port": int(m.group(2))})
+    f = forwarding()
+    if f["manual"] and f["address"]:
+        out.append({"host": f["address"], "port": gateway_port()})
     return out
+
+
+ADDRESS_RE = re.compile(r"^([A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})*|[0-9.]{7,15}|\[?[0-9A-Fa-f:]{2,39}\]?)$")
+
+
+def clean_address(text):
+    """The box's internet address as typed: a name or an IPv4 or IPv6 address, or "" if it is not one."""
+    text = str(text or "").strip()
+    text = re.sub(r"^[a-z]+://", "", text).split("/")[0]
+    if not ADDRESS_RE.match(text):
+        return ""
+    if ":" in text.strip("[]"):
+        return "[" + text.strip("[]") + "]"
+    return text
+
+
+def set_forwarding(manual, address=None):
+    """Switches between the router opening the port by itself and forwarding by hand. Going to
+    by hand, the port the router opened by itself is closed again."""
+    current = forwarding()
+    if address is None:
+        address = current["address"]
+    save_settings(forwarding={"manual": bool(manual), "address": clean_address(address)})
+    if manual and not current["manual"] and enabled():
+        state = load_reach()
+        try:
+            portmap.release(state)
+        except Exception as e:
+            print("Closing the router's port failed: %s" % e, flush=True)
+    if enabled():
+        threading.Thread(target=check_router, daemon=True).start()
+
+
+def free_port():
+    """A port between 20000 and 60999 that nothing on this machine uses."""
+    import random as _random
+    for _ in range(200):
+        port = _random.randint(20000, 60999)
+        s = socket.socket()
+        try:
+            s.bind(("", port))
+            return port
+        except OSError:
+            continue
+        finally:
+            s.close()
+    raise ValueError("No free port found.")
+
+
+ENV = os.path.join(ROOT, ".env")
+APPLY = os.path.join(REMOTE, "apply-request")     # fieldmap-remote-apply.path runs remote.sh setup
+
+
+def new_port():
+    """Gives the gateway a new random port: written to .env, then applied by remote.sh setup,
+    which fieldmap-remote-apply.path runs (as root) when APPLY changes. This service is
+    restarted by it."""
+    port = free_port()
+    try:
+        with open(ENV) as f:
+            lines = [l for l in f.read().splitlines() if not l.startswith("REMOTE_PORT=")]
+    except OSError:
+        lines = []
+    tmp = ENV + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines + ["REMOTE_PORT=%d" % port]) + "\n")
+    os.replace(tmp, ENV)
+    save_settings(changingPort=port)
+    write_private(APPLY, str(int(time.time())).encode())
+    os.chmod(APPLY, 0o644)
+    return port
 
 
 def endpoints():
@@ -524,13 +607,16 @@ def endpoints():
 
 PROBLEMS = {
     "router-closed": "The router does not open ports for the box by itself. Switch on UPnP (or NAT-PMP) in the "
-                     "router's settings, or forward one port to this box by hand (see the README).",
-    "router-refused": "The router answered, but did not open a port for the box.",
+                     "router's settings, or forward the port by hand (Port forwarding, below).",
+    "router-refused": "The router answered, but did not open a port for the box. Routers do this when another "
+                      "router or a modem stands in front of them, or when their UPnP settings leave this box out. "
+                      "Forwarding the port by hand (below) works around it, if nothing stands in front.",
     "double-nat": "There are two routers in a row. The one in front (often the provider's) would have to "
                   "pass the box's port on, or be set to bridge mode.",
     "shared-address": "Your internet provider shares one address among its customers (as Starlink and most "
                       "cellular home internet do), so nothing outside can reach the box over IPv4.",
     "off": "Opening a port on the router is switched off (REMOTE_DIRECT=off).",
+    "manual": "",
     "switched-off": "Remote access is switched off: nothing outside can reach the box, and no phone can pair.",
     "switched-off-idle": "Remote access switched itself off: no phone had come in from outside for %d days. Nothing "
                          "outside can reach the box until someone switches it on again." % IDLE_DAYS,
@@ -549,12 +635,19 @@ def report():
         return {"status": "off", "text": PROBLEMS["switched-off-idle" if idle else "switched-off"], "checked": state.get("checked", 0)}
     if newest_seen and time.time() - newest_seen < 7 * 86400:
         status, text = "confirmed", "A phone reached the box from outside on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
+    elif forwarding()["manual"] and not forwarding()["address"]:
+        status, text = "blocked", "Forwarding by hand: forward the port on the router, then give the box's internet address."
+    elif forwarding()["manual"]:
+        status, text = "expected", "Forwarded by hand. Not confirmed yet: no phone has come in from outside lately."
     elif manual or state.get("ipv4", {}).get("ok"):
         status, text = "expected", "The router lets phones in. Not confirmed yet: no phone has come in from outside lately."
     elif v6:
         status, text = "maybe", PROBLEMS.get(state.get("problem"), "") + " The box also has an IPv6 address, which may let phones in that have IPv6 too."
     elif state:
         status, text = "blocked", PROBLEMS.get(state.get("problem"), "Phones cannot reach the box from outside.")
+        said = state.get("ipv4", {}).get("error")
+        if said and state.get("problem") == "router-refused":
+            text += " (The router said: %s.)" % said
     else:
         status, text = "unknown", "The box has not asked its router yet."
     return {"status": status, "text": text.strip(), "checked": state.get("checked", 0)}
@@ -661,6 +754,8 @@ class Handler(BaseHTTPRequestHandler):
     def info(self):
         return {"service": "fieldmap-remote", "version": 2, "ready": ready(), "enabled": enabled(), "pin": bool(setting("REMOTE_PIN")),
                 "autoOff": {"on": auto_off(), "days": IDLE_DAYS, "at": auto_off_at()},
+                "forwarding": {**forwarding(), "port": gateway_port(), "boxAddress": portmap.lan_ipv4() or "",
+                               "changingTo": load_settings().get("changingPort") if load_settings().get("changingPort") != gateway_port() else None},
                 "pairing": {"open": pairing_left() > 0, "seconds": pairing_left()},
                 "endpoints": endpoints(), "reach": report(), "phones": len(load_devices())}
 
@@ -688,7 +783,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = self.body()
-        if self.path not in ("/enrol", "/pairing", "/remove", "/enabled", "/auto-off", "/recheck"):
+        if self.path not in ("/enrol", "/pairing", "/remove", "/enabled", "/auto-off", "/recheck", "/forwarding", "/find-address", "/new-port"):
             return self.send(404, {"error": "Not here."})
         if not lan(self.headers):
             return self.send(403, {"error": "Pairing is only possible on the box's own network."})
@@ -705,6 +800,20 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/recheck":
             check_router()
             return self.send(200, self.info())
+        if self.path == "/forwarding":
+            address = body.get("address")
+            if address is not None and str(address).strip() and not clean_address(address):
+                return self.send(400, {"error": "That is not an internet address: a number such as 203.0.113.30, or a name."})
+            set_forwarding(bool(body.get("manual")), address)
+            return self.send(200, self.info())
+        if self.path == "/find-address":
+            found = portmap.stun_public_ip()
+            if not found:
+                return self.send(502, {"error": "No answer from the internet. Read the address on the router's status page instead."})
+            return self.send(200, {"address": found})
+        if self.path == "/new-port":
+            new_port()
+            return self.send(202, self.info())
         if self.path == "/pairing":
             if body.get("open") and not enabled():
                 return self.send(409, {"error": "Remote access is switched off. Switch it on first."})

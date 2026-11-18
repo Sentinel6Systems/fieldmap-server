@@ -844,6 +844,10 @@ is managed:
 - **Remote access on or off** (off by default). Off keeps the box completely to its own network: the router is
   not asked for anything, the box's firewall shuts the gateway, nobody can pair. Switched off again, the router's
   port is closed; the paired phones stay on the list, and the app keeps them paired, for when it is switched on.
+- **Port forwarding**, for a router that does not open the port by itself: tick "Forward the port on the router
+  myself" and the page shows one line, *On your router, forward TCP port 41234 to 192.168.1.10*, with this box's
+  own port and home address. Give the box's internet address below it (**Find it** asks one public server on the
+  internet, only when pressed), or a name of your own. **New random port** gives the box another port.
 - **Switch off by itself after 90 days with no phone coming in from outside** (ticked by default), so that a
   forgotten box closes itself. The page shows the date it would happen; each phone that comes in moves it on.
 
@@ -879,7 +883,7 @@ No account, no outside service, nothing of anyone else's in between: the box tal
 The Phones page and `./scripts/remote.sh status` say which of these applies:
 
 - **The router does not open ports by itself** (UPnP switched off): switch UPnP or NAT-PMP on in the router's
-  settings, or forward one port by hand (below).
+  settings, or forward one port by hand (Port forwarding, on the Phones page).
 - **Two routers in a row** (the provider's and your own): put the provider's in bridge mode, or forward the port
   on both.
 - **The provider shares one address among customers** (Starlink, most cellular home internet, some fibre): no way
@@ -898,9 +902,7 @@ REMOTE_FIREWALL_ALLOW=22               # ports open from outside besides the gat
 REMOTE_RELAY=tailscale                 # also reach the gateway through Tailscale Funnel (sign the box in first)
 ```
 
-Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port by hand: any outside port to this
-box's gateway port (`REMOTE_PORT` in `.env`, chosen at random when it was set up), then set `REMOTE_ADDRESS` to
-`<your address>:<that port>`.
+Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port by hand, use the Phones page (above).
 
 ```bash
 ./scripts/remote.sh status          # can phones reach the box from outside, and how

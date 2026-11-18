@@ -332,6 +332,49 @@ class RemoteServerTest(unittest.TestCase):
         self.assertTrue(self.rs.enabled())
         self.assertTrue(self.post("/auto-off", {"on": True}).body["autoOff"]["on"])
 
+    def test_forwarding_by_hand(self):
+        os.environ["REMOTE_PORT"] = "41234"
+        try:
+            self.rs.write_private(self.rs.REACH, json.dumps({"checked": 1, "problem": "", "ipv4": {"ok": True, "method": "upnp",
+                "external_ip": "203.0.113.30", "external_port": 50000}, "ipv6": {}}).encode())
+            with mock.patch.object(self.rs.portmap, "release", return_value=[]) as release, \
+                    mock.patch.object(self.rs.portmap, "lan_ipv4", return_value="192.168.1.10"):
+                info = self.post("/forwarding", {"manual": True}).body
+                self.rs.time.sleep(0.2)
+                release.assert_called_once()      # the port the router opened by itself is closed
+                self.assertEqual({"manual": True, "address": "", "port": 41234, "boxAddress": "192.168.1.10", "changingTo": None}, info["forwarding"])
+                self.assertEqual("blocked", info["reach"]["status"], "no internet address given yet")
+                self.assertEqual(400, self.post("/forwarding", {"manual": True, "address": "not an address!"}).status)
+                info = self.post("/forwarding", {"manual": True, "address": " http://tak.example.com/ "}).body
+                self.rs.time.sleep(0.2)
+            self.assertEqual("tak.example.com", info["forwarding"]["address"])
+            self.assertIn({"host": "tak.example.com", "port": 41234}, info["endpoints"])
+            self.assertEqual("expected", info["reach"]["status"])
+            with mock.patch.object(self.rs.portmap, "reach") as reach, mock.patch.object(self.rs.portmap, "global_ipv6", return_value=["2001:db8:77::10"]):
+                state = self.rs.check_router()
+                reach.assert_not_called()         # the router is not asked while forwarding by hand
+            self.assertEqual("manual", state["problem"])
+            self.assertEqual([{"host": "tak.example.com", "port": 41234}, {"host": "[2001:db8:77::10]", "port": 41234}], self.rs.endpoints())
+            self.assertEqual("[2001:db8::30]", self.rs.clean_address("2001:db8::30"))
+            self.assertEqual("203.0.113.30", self.rs.clean_address("203.0.113.30"))
+        finally:
+            os.environ.pop("REMOTE_PORT", None)
+
+    def test_a_new_random_port_is_written_to_env_and_applied(self):
+        env = os.path.join(self.tmp.name, ".env")
+        with open(env, "w") as f:
+            f.write("TILESERVER_MEM_LIMIT=1g\nREMOTE_PORT=41234\n")
+        with mock.patch.object(self.rs, "ENV", env):
+            info = self.post("/new-port", {})
+        self.assertEqual(202, info.status)
+        lines = open(env).read().splitlines()
+        self.assertEqual("TILESERVER_MEM_LIMIT=1g", lines[0])
+        self.assertEqual(1, sum(l.startswith("REMOTE_PORT=") for l in lines))
+        port = int([l for l in lines if l.startswith("REMOTE_PORT=")][0].split("=")[1])
+        self.assertTrue(20000 <= port <= 60999 and port != 41234)
+        self.assertTrue(os.path.isfile(self.rs.APPLY), "remote.sh setup is asked to apply it")
+        self.assertEqual(port, info.body["forwarding"]["changingTo"])
+
     def test_switching_on_also_opens_pairing(self):
         os.remove(self.rs.SETTINGS)
         with mock.patch.object(self.rs.portmap, "reach", return_value={"checked": 1, "ipv4": {}, "ipv6": {}, "problem": "router-closed"}):

@@ -154,8 +154,10 @@ for _ in range(200):
     fi
     install_unit fieldmap-remote-update.service
     install_unit fieldmap-remote-update.timer
+    install_unit fieldmap-remote-apply.service
+    install_unit fieldmap-remote-apply.path
     $SUDO systemctl daemon-reload
-    $SUDO systemctl enable -q --now fieldmap-remote-update.timer
+    $SUDO systemctl enable -q --now fieldmap-remote-update.timer fieldmap-remote-apply.path
 
     echo "== The firewall on this box"
     if [ "$(setting REMOTE_FIREWALL on)" = off ]; then
@@ -238,7 +240,7 @@ off)
     fi
     as_owner rm -f data/remote/address
     "${COMPOSE[@]}" --profile remote stop remote >/dev/null 2>&1 || true
-    $SUDO systemctl disable -q --now fieldmap-remote fieldmap-remote-update.timer fieldmap-firewall.timer fieldmap-firewall.path 2>/dev/null || true
+    $SUDO systemctl disable -q --now fieldmap-remote fieldmap-remote-update.timer fieldmap-remote-apply.path fieldmap-firewall.timer fieldmap-firewall.path 2>/dev/null || true
     as_owner mkdir -p data/remote/run && as_owner touch data/remote/run/no-remote   # no Phones tab
     $SUDO ./scripts/firewall.sh off
     echo "Remote access is off: the gateway, the service and the box's firewall are stopped."

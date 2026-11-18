@@ -295,29 +295,39 @@ def reach(internal_port, state, discover=ssdp_search, gateway_ip=None):
         v4["method"] = "upnp"
         try:
             v4["external_ip"] = igd.external_ip()
-            for attempt in range(4):
+        except (Refused, OSError, ET.ParseError) as e:
+            v4["error"] = "GetExternalIPAddress: " + str(e)[:100]
+        try:
+            for attempt in range(5):
                 try:
                     v4["external_port"] = igd.map(want, internal_port, local)
+                    v4.pop("error", None)
                     break
                 except Refused as e:
                     if str(e).startswith("718") and attempt < 3:    # the port is taken: another one
                         want = random.randint(*PORTS)
                         continue
+                    if str(e).startswith("724") and want != internal_port:   # SamePortValuesRequired
+                        want = internal_port
+                        continue
                     raise
         except (Refused, OSError, ET.ParseError) as e:
-            v4["error"] = str(e)[:120]
-    elif gw:
+            v4["error"] = "AddPortMapping: " + str(e)[:100]
+    if gw and not v4.get("external_port"):
+        # No UPnP, or UPnP said no: the same router may still answer NAT-PMP, and it at least
+        # says which address it has outside, which tells why.
         try:
             ext = natpmp_external(gw)
             if ext:
-                v4["method"] = "natpmp"
-                v4["external_ip"] = ext
+                v4.setdefault("method", "natpmp")
+                v4.setdefault("external_ip", ext)
                 port = natpmp_map(gw, internal_port, want)
                 if port:
-                    v4["external_port"] = port
+                    v4["method"], v4["external_port"] = "natpmp", port
+                    v4.pop("error", None)
         except (Refused, OSError) as e:
-            v4["method"] = "natpmp"
-            v4["error"] = str(e)[:120]
+            v4.setdefault("method", "natpmp")
+            v4.setdefault("error", "NAT-PMP: " + str(e)[:100])
 
     address_kind = kind(v4.get("external_ip"))
     if not v4.get("method"):
@@ -382,6 +392,46 @@ def release(state, discover=ssdp_search, gateway_ip=None):
         except (Refused, OSError, ET.ParseError):
             left.append(address)
     return left
+
+
+# ---------- for forwarding by hand ----------
+
+def lan_ipv4():
+    """This machine's address on the home network: what a port is forwarded to."""
+    gw = default_gateway()
+    return local_ipv4(gw) if gw else None
+
+
+# Public STUN servers, asked only when someone presses "Find it" on the Phones page.
+STUN = (("stun.cloudflare.com", 3478), ("stun.l.google.com", 19302))
+
+
+def stun_public_ip(servers=STUN, timeout=3.0):
+    """The address this network has on the internet, as a STUN server sees it (RFC 5389), or None."""
+    for host, port in servers:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.settimeout(timeout)
+            tid = random.getrandbits(96).to_bytes(12, "big")
+            s.sendto(struct.pack("!HHI", 0x0001, 0, 0x2112A442) + tid, (host, port))
+            data, _ = s.recvfrom(2048)
+            if len(data) < 20 or data[:2] != b"\x01\x01" or data[8:20] != tid:
+                continue
+            pos, end = 20, 20 + struct.unpack("!H", data[2:4])[0]
+            while pos + 4 <= min(end, len(data)):
+                kind_, length = struct.unpack("!HH", data[pos:pos + 4])
+                value = data[pos + 4:pos + 4 + length]
+                if kind_ in (0x0020, 0x0001) and len(value) >= 8 and value[1] == 1:     # IPv4
+                    raw = struct.unpack("!I", value[4:8])[0]
+                    if kind_ == 0x0020:
+                        raw ^= 0x2112A442
+                    return socket.inet_ntoa(struct.pack("!I", raw))
+                pos += 4 + length + (-length % 4)
+        except (OSError, ValueError):
+            continue
+        finally:
+            s.close()
+    return None
 
 
 def endpoints(state, internal_port):

@@ -1,0 +1,9 @@
+# Runs scripts/remote.sh setup when the Phones page asks for a new gateway port
+# (fieldmap-remote-apply.path). Installed by scripts/remote.sh setup.
+[Unit]
+Description=fieldmap-server remote access setup, after a port change
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/fieldmap-server
+ExecStart=/opt/fieldmap-server/scripts/remote.sh setup
