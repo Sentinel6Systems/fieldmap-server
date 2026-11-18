@@ -22,6 +22,10 @@ Node.js that IIAB installs, and adds the nginx snippets. Open `http://<pi-host>/
 `http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.png` (see the main README). To update later, see "Updating" in
 the main README: `git pull && sudo ./scripts/install-pi.sh` in `<repo-dir>`.
 
+The Maps page is at `http://<pi-host>/maps/` and the print tool at `http://<pi-host>/mapprinter/`; each has a
+header with a link to the other. For a button back to the box's own start page, set `homeUrl` in
+`print/public/config.json` (see "The pages and their header" in the main README) and run the script again.
+
 Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty of RAM and disk; do that with
 `scripts/build-region.sh <region-file>` elsewhere and copy the `.mbtiles` files over.
 

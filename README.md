@@ -44,13 +44,16 @@ cp .env.example .env          # optional: ports, config file, image
 builder page (as a systemd service; that part asks for sudo). It ends with the addresses:
 
 ```
-Map viewer and styles   http://<address>/
+Maps                    http://<address>/
 Print a map             http://<address>/mapprinter/
 Tile server (TAK)       http://<address>:8080/
 Map builder             http://<address>/mapadmin/
 ```
 
-A new install has no maps yet, so the viewer is blank. Build them in one of two ways, a small area first to check
+The three pages share one look and one header, with a link to each of the others (see "The pages and their
+header").
+
+A new install has no maps yet, so the Maps page is blank and says so. Build them in one of two ways, a small area first to check
 that everything works, then your real region:
 
 - on the **map builder page**: choose regions and layers on a map and press the button (next section);
@@ -129,6 +132,42 @@ builds do.
 `tools/make-admin-regions.py` (run in the tool container) writes `admin/regions.json`, `admin/land.json` and
 `admin/places.json` again, to pick up new extracts and current download sizes.
 
+### The pages and their header
+
+| Page | Address | What it is |
+|---|---|---|
+| Maps | `/` (`/maps/` behind Internet-in-a-Box) | The interactive map, with a menu of the styles and, under **Use in another app**, the tile addresses for TAK clients and other map apps |
+| Print a map | `/mapprinter/` | The print tool |
+| Map builder | `/mapadmin/` | Choose and build the maps (not on a Raspberry Pi) |
+
+Every page has the same header: the name, a link to each of the other pages with the current one marked, and
+nothing else to learn. The header finds the other pages by itself on the address it was opened at (`ui/nav.js`): a
+page that is not installed gets no link, and the map builder is shown as "not running" when its service is
+stopped. The look (colours, type, buttons, form controls) is one file, `ui/fieldmap.css`, used by all three. It
+uses the fonts of the device and follows its light or dark setting; nothing is loaded from anywhere else.
+
+**A Home button.** If these pages sit behind a landing page of your own (a start page for the whole device, for
+example), set its address in `print/public/config.json` and the header of every page gets a button back to it:
+
+```json
+"homeUrl": "/",
+"homeName": "Home"
+```
+
+`homeUrl` is the address of your landing page (a path on the same device such as `/`, or a full `http://` address);
+`homeName` is the word on the button (`Home` when empty). Empty `homeUrl`, the default, means no button. Then run
+`./scripts/install.sh` again (`sudo ./scripts/install-pi.sh` on a Pi). To link the other way, point your landing
+page at `/` or `/maps/` (add `?style=<id>#<zoom>/<lat>/<lon>` to open a style at a place), `/mapprinter/` and
+`/mapadmin/`.
+
+**What keeps TileServer GL's own look.** The Maps page is TileServer GL's front page, replaced through its
+`frontPage` option (`ui/maps.tmpl`, set in `config.json` and `config-basic.json`), and the shared files reach it
+through its `files` folder. TileServer GL 5.7.0 has no option to replace its other pages, so these look as they
+always did and have no header: its style viewer (`/styles/<id>/`), its data inspector (`/data/<id>/`) and the WMTS
+and TileJSON documents. The Maps page replaces the viewer for everyday use; the Inspect, TileJSON and WMTS links
+under **Use in another app** say that they lead to the tile server's own pages. Opened on the tile server's own
+port (8080), the Maps page has no links to the print tool or the map builder, which live on the web port.
+
 ### Disk space
 
 Building needs much more space than the finished files take. Each build script estimates what its step needs and
@@ -151,6 +190,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 |---|---|
 | `docker-compose.yml`, `.env.example` | The services: `tileserver`, `web` (print tool + proxy) and `wmm` (magnetic model updates) |
 | `config.json`, `config-basic.json` | TileServer GL configs: all six styles and the `topo-usgs` scale bands, or `osm`+`overlay` with only a base map |
+| `ui/` | What every page shares: the look (`fieldmap.css`), the header (`nav.js`), and the Maps page (`maps.tmpl`) |
 | `styles/`, `fonts/`, `sprites/` | The styles and every asset they need, all local |
 | `planetiler/` | Custom Planetiler schema for the extras layers |
 | `scripts/`, `regions/`, `tools/` | `install.sh` (install and update), and the data builders (Planetiler, GDAL, Tippecanoe, Osmium in a tool container) |
@@ -760,6 +800,7 @@ http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.png
 ```
 
 Replace `topo-light` with `osm`, `topo-dark`, or `overlay` for the other styles.
+The Maps page lists these addresses ready to copy, for the address you opened it at: press **Use in another app**.
 For higher resolution screens, use `.../{z}/{x}/{y}@2x.png`.
 
 Both configs are set for devices with little RAM, such as a Raspberry Pi. No raster renderer starts with the server;
@@ -817,6 +858,14 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- One look and one header for every page: Maps, Print a map and Map builder link to each other, follow the
+  device's light or dark setting, and can carry a Home button back to a landing page of your own (`homeUrl` in
+  `print/public/config.json`). The shared files are in `ui/`.
+- The Maps page (`/`, or `/maps/` behind Internet-in-a-Box) replaces TileServer GL's front page: the map itself
+  with a menu of the styles, starting on the area the base map covers, and the tile addresses for TAK clients
+  under "Use in another app". Browsers without WebGL 2 get the same maps as pictures drawn by the server.
+- Print tool on a phone: the folded panel stays at the bottom. Map builder on a phone: the layer list and the
+  space table fit the screen.
 - Builds run at low CPU priority, so the maps stay usable while they run.
 - OpenStreetMap extracts are downloaded anew after 30 days, or at once with the map builder's "Get the newest map
   data" box (`OSM_REFRESH=yes`); the page shows how old the data on the device is.
