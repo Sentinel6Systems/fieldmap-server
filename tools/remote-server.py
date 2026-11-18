@@ -10,9 +10,11 @@ How it works:
   * Pairing: on the box's network the app asks to be let in (`POST /enrol` with a public key
     whose private half never leaves the phone) and gets a certificate for that key. Only
     requests from the local network are answered (see lan()), and only while pairing is
-    open: for a few minutes after someone presses "Pair a phone" on the box's Phones page
-    (phones/, at /phones/), or after the box starts with no phone paired yet. The page's
-    switch turns all of it off (set_enabled).
+    open: for ten minutes after someone switches remote access on, or presses "Pair a
+    phone", on the box's Phones page (phones/, at /phones/).
+  * Off by default: until someone switches it on on the Phones page, nothing outside can
+    reach the box, the router is not asked for anything, and no phone can pair
+    (set_enabled). Switched off again, it is all closed, and the paired phones are kept.
   * From outside, the app connects to the gateway (an nginx that demands such a
     certificate, see gateway_conf()), which asks this service for every request whether the
     certificate is still on the list (`GET /check`). Removing a phone locks it out at once.
@@ -83,7 +85,7 @@ DEVICE_DAYS = 1825
 SERVER_DAYS = 3650
 CA_DAYS = 7300
 PAIRING_SECONDS = 600           # how long "Pair a phone" keeps pairing open
-FIRST_PAIRING_SECONDS = 900     # open after start while no phone is paired yet
+IDLE_DAYS = 90                  # switched on, with no phone from outside this long: off by itself
 REACH_EVERY = 900               # how often the router is asked again
 SEEN_EVERY = 600                # how often "last used from outside" is written down
 
@@ -376,23 +378,68 @@ def write_seen():
 
 # ---------- the switch ----------
 
-def enabled():
-    """Remote access on (the default) or off, as the Phones page's switch says."""
+def load_settings():
+    """The Phones page's settings: "enabled" (off by default), "autoOff" (switch off by itself
+    after IDLE_DAYS with no phone from outside; on by default), "since" (when it was switched
+    on) and "offReason" ("idle" when it switched itself off)."""
     try:
         with open(SETTINGS) as f:
-            return json.load(f).get("enabled", True) is not False
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
+        return {}
+
+
+def save_settings(**changes):
+    data = {**load_settings(), **changes}
+    write_private(SETTINGS, json.dumps(data).encode())
+    os.chmod(SETTINGS, 0o644)       # the firewall reads it as root; nothing in it is secret
+    return data
+
+
+def enabled():
+    """Remote access on or off (the default), as the Phones page's switch says."""
+    return load_settings().get("enabled") is True
+
+
+def auto_off():
+    return load_settings().get("autoOff", True) is not False
+
+
+def idle_since():
+    """When remote access was last used: the newest of a phone coming in from outside and
+    the moment it was switched on."""
+    seen = [d.get("seen", 0) for d in load_devices()] + list(last_seen.values())
+    return max(seen + [load_settings().get("since", 0)])
+
+
+def auto_off_at():
+    """When it will switch itself off if nothing comes in from outside until then; 0 if it will not."""
+    if not (enabled() and auto_off()):
+        return 0
+    return int(idle_since() + IDLE_DAYS * 86400)
+
+
+def switch_off_if_idle(now=None):
+    at = auto_off_at()
+    if at and (now or time.time()) >= at:
+        set_enabled(False, reason="idle")
+        print(f"Remote access switched itself off: no phone came in from outside for {IDLE_DAYS} days.", flush=True)
         return True
+    return False
 
 
-def set_enabled(on):
+def set_enabled(on, reason=""):
     """Off is complete isolation: no pairing, no phone let in, the router's port closed, and the
     box's own firewall shuts the gateway's port (scripts/firewall.sh reads this file, and
     fieldmap-firewall.path applies it as soon as it changes). The paired phones are kept for
-    when it is switched on again."""
-    write_private(SETTINGS, json.dumps({"enabled": bool(on)}).encode())
-    os.chmod(SETTINGS, 0o644)       # the firewall reads it as root; nothing in it is secret
+    when it is switched on again. Switching on also opens pairing: one press, then the phone."""
     if on:
+        save_settings(enabled=True, since=int(time.time()), offReason="")
+    else:
+        save_settings(enabled=False, offReason=reason)
+    if on:
+        open_pairing()
         threading.Thread(target=check_router, daemon=True).start()
     else:
         close_pairing()
@@ -485,6 +532,8 @@ PROBLEMS = {
                       "cellular home internet do), so nothing outside can reach the box over IPv4.",
     "off": "Opening a port on the router is switched off (REMOTE_DIRECT=off).",
     "switched-off": "Remote access is switched off: nothing outside can reach the box, and no phone can pair.",
+    "switched-off-idle": "Remote access switched itself off: no phone had come in from outside for %d days. Nothing "
+                         "outside can reach the box until someone switches it on again." % IDLE_DAYS,
 }
 
 
@@ -496,7 +545,8 @@ def report():
     manual = manual_address()
     v6 = state.get("ipv6", {}).get("addresses", [])
     if not enabled():
-        return {"status": "off", "text": PROBLEMS["switched-off"], "checked": state.get("checked", 0)}
+        idle = load_settings().get("offReason") == "idle"
+        return {"status": "off", "text": PROBLEMS["switched-off-idle" if idle else "switched-off"], "checked": state.get("checked", 0)}
     if newest_seen and time.time() - newest_seen < 7 * 86400:
         status, text = "confirmed", "A phone reached the box from outside on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
     elif manual or state.get("ipv4", {}).get("ok"):
@@ -610,6 +660,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def info(self):
         return {"service": "fieldmap-remote", "version": 2, "ready": ready(), "enabled": enabled(), "pin": bool(setting("REMOTE_PIN")),
+                "autoOff": {"on": auto_off(), "days": IDLE_DAYS, "at": auto_off_at()},
                 "pairing": {"open": pairing_left() > 0, "seconds": pairing_left()},
                 "endpoints": endpoints(), "reach": report(), "phones": len(load_devices())}
 
@@ -637,7 +688,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = self.body()
-        if self.path not in ("/enrol", "/pairing", "/remove", "/enabled", "/recheck"):
+        if self.path not in ("/enrol", "/pairing", "/remove", "/enabled", "/auto-off", "/recheck"):
             return self.send(404, {"error": "Not here."})
         if not lan(self.headers):
             return self.send(403, {"error": "Pairing is only possible on the box's own network."})
@@ -647,6 +698,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(403, {"error": "That is not the box's code.", "pin": True})
         if self.path == "/enabled":
             set_enabled(bool(body.get("on")))
+            return self.send(200, self.info())
+        if self.path == "/auto-off":
+            save_settings(autoOff=bool(body.get("on")))
             return self.send(200, self.info())
         if self.path == "/recheck":
             check_router()
@@ -701,6 +755,7 @@ def keep_up():
                 next_router = now + (300 if state.get("problem") not in ("", "off") else REACH_EVERY)
             if now >= next_seen:
                 write_seen()
+                switch_off_if_idle(now)
                 next_seen = now + SEEN_EVERY
         except Exception as e:      # the service keeps running whatever the router does
             print("Router check failed: %s" % e, flush=True)
@@ -726,9 +781,7 @@ def serve(host, port):
         print(f"...and on http://{host}:{port}/", flush=True)
     # systemd stops the service with SIGTERM: leave through `finally`, which writes down who came in.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    if not load_devices():
-        open_pairing(FIRST_PAIRING_SECONDS)
-        print(f"No phone is paired yet: pairing is open for {FIRST_PAIRING_SECONDS // 60} minutes.", flush=True)
+    print("Remote access is " + ("on." if enabled() else "off: switch it on on the Phones page."), flush=True)
     threading.Thread(target=keep_up, daemon=True).start()
     try:
         by_socket.serve_forever()

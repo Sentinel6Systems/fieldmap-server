@@ -35,7 +35,11 @@
       const text = [el("span", { className: "fm-long", textContent: long }), el("span", { className: "fm-short", textContent: short })];
       if (key !== here && found[key] === "off") nav.append(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} is not running on this device.` }, ...text, el("small", { textContent: "not running" })));
       else if (key === here || found[key]) {
-        const a = el("a", { href: key === here ? own : found[key], ariaLabel: long }, ...text);
+        // Phones carries remote access's state at a glance: ON means reachable from outside.
+        const remote = key === "phones" && found.remote;
+        const tag = remote ? [el("small", { className: "fm-remote " + (remote.on ? "on" : "off"), textContent: remote.on ? "on" : "off" })] : [];
+        const label = remote ? `${long}: remote access ${remote.on ? "on" : "off"}` : long;
+        const a = el("a", { href: key === here ? own : found[key], ariaLabel: label, title: remote ? remote.text : "" }, ...text, ...tag);
         a.dataset.page = key;
         if (key === here) a.ariaCurrent = "page";
         nav.append(a);
@@ -71,12 +75,17 @@
         if (r && r.ok && (r.headers.get("Content-Type") || "").includes("css")) return "/mapadmin/";
         return r && r.status === 503 ? "off" : null;
       })(),
-      here === "phones" ? own : (async () => {
-        const r = await get("/phones/info");
+      (async () => {
+        // Asked on every page, its own included: the header shows whether remote access is on.
+        const root = here === "phones" ? own : "/phones/";
+        const r = await get(root + "info");
         let info = null;
         try { info = r && r.ok ? await r.json() : null; } catch { /* not the service */ }
-        if (info && info.service === "fieldmap-remote") return "/phones/";
-        return r && r.status === 503 ? "off" : null;
+        if (info && info.service === "fieldmap-remote") {
+          found.remote = { on: info.enabled === true, text: (info.reach && info.reach.text) || "" };
+          return root;
+        }
+        return here === "phones" ? own : r && r.status === 503 ? "off" : null;
       })(),
     ]);
     if (config && typeof config === "object") {
@@ -97,9 +106,13 @@
   let known = {};
   try { known = JSON.parse(sessionStorage.getItem(CACHE) || "{}"); } catch { /* start empty */ }
   draw(known);
-  find().then((found) => {
+  const refresh = () => find().then((found) => {
     const text = JSON.stringify(found);
     if (text !== JSON.stringify(known)) draw(found);
+    known = found;
     try { sessionStorage.setItem(CACHE, text); } catch { /* private window: found again on the next page */ }
   });
+  refresh();
+  // A page that changes what the header shows (the Phones page's switch) asks for it again.
+  window.fieldmapNavRefresh = refresh;
 })();

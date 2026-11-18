@@ -71,6 +71,11 @@ class RemoteServerTest(unittest.TestCase):
             self.rs.init("/maps/", "http://127.0.0.1:8080/", "8443", True)
         self.no_v6 = mock.patch.object(self.rs.portmap, "global_ipv6", return_value=[])
         self.no_v6.start()
+        # Most tests are about a box whose owner switched remote access on (it is off by default).
+        self.switch_on()
+
+    def switch_on(self):
+        self.rs.write_private(self.rs.SETTINGS, json.dumps({"enabled": True}).encode())
 
     def tearDown(self):
         self.no_v6.stop()
@@ -222,7 +227,7 @@ class RemoteServerTest(unittest.TestCase):
         _, other = phone_key()
         self.assertEqual(403, self.post("/enrol", {"name": "x", "publicKey": other}).status)
         self.assertEqual(1, len(self.rs.load_devices()), "the phones are kept")
-        self.assertEqual({"enabled": False}, json.load(open(self.rs.SETTINGS)))
+        self.assertFalse(json.load(open(self.rs.SETTINGS))["enabled"])
         self.assertEqual(0o644, os.stat(self.rs.SETTINGS).st_mode & 0o777, "the firewall reads it")
         with mock.patch.object(self.rs.portmap, "reach", return_value={"checked": 2, "ipv4": {"ok": True, "external_ip": "203.0.113.30",
                                                                                                 "external_port": 41000}, "ipv6": {}, "problem": ""}):
@@ -282,19 +287,59 @@ class RemoteServerTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.rs.gateway_conf(*bad)
 
-    def test_pairing_opens_by_itself_only_while_no_phone_is_paired(self):
-        self.rs.close_pairing()
+    def test_off_by_default_and_nothing_opens_by_itself(self):
+        os.remove(self.rs.SETTINGS)
+        self.assertFalse(self.rs.enabled())
+        self.assertEqual("off", self.rs.report()["status"])
+        self.assertEqual([], self.rs.endpoints())
+        with mock.patch.object(self.rs.portmap, "reach") as reach:
+            self.assertEqual("switched-off", self.rs.check_router()["problem"])
+            reach.assert_not_called()
         with mock.patch.object(self.rs, "SocketServer"), mock.patch.object(self.rs.threading, "Thread"), mock.patch.object(self.rs.signal, "signal"), \
                 contextlib.redirect_stdout(io.StringIO()), mock.patch.object(self.rs.os, "chmod"), mock.patch.object(self.rs.os, "chdir"):
             self.rs.serve("127.0.0.1", 0)
-        self.assertTrue(self.rs.pairing_left() > self.rs.PAIRING_SECONDS)
-        self.rs.close_pairing()
+        self.assertEqual(0, self.rs.pairing_left(), "starting the box opens nothing")
+        self.rs.open_pairing()
+        self.assertEqual(0, self.rs.pairing_left(), "pairing cannot open while it is off")
         _, public = phone_key()
-        self.rs.enrol("Phone", public)
-        with mock.patch.object(self.rs, "SocketServer"), mock.patch.object(self.rs.threading, "Thread"), mock.patch.object(self.rs.signal, "signal"), \
-                contextlib.redirect_stdout(io.StringIO()), mock.patch.object(self.rs.os, "chmod"), mock.patch.object(self.rs.os, "chdir"):
-            self.rs.serve("127.0.0.1", 0)
-        self.assertEqual(0, self.rs.pairing_left())
+        self.assertEqual(403, self.post("/enrol", {"name": "x", "publicKey": public}).status)
+
+    def test_it_switches_itself_off_after_90_days_without_a_phone_from_outside(self):
+        with mock.patch.object(self.rs.portmap, "reach", return_value={"checked": 1, "ipv4": {}, "ipv6": {}, "problem": ""}), \
+                mock.patch.object(self.rs.portmap, "release", return_value=[]):
+            self.rs.set_enabled(True)
+            self.rs.time.sleep(0.2)
+            day = 86400
+            switched_on = self.rs.load_settings()["since"]
+            self.assertEqual(switched_on + 90 * day, self.rs.auto_off_at())
+            self.assertFalse(self.rs.switch_off_if_idle(switched_on + 89 * day))
+            # A phone coming in from outside moves the date on.
+            _, public = phone_key()
+            device = self.rs.enrol("Phone", public)
+            self.rs.last_seen[device["id"]] = switched_on + 60 * day
+            self.assertFalse(self.rs.switch_off_if_idle(switched_on + 91 * day))
+            self.assertTrue(self.rs.switch_off_if_idle(switched_on + 151 * day))
+            self.rs.time.sleep(0.2)
+        self.assertFalse(self.rs.enabled())
+        self.assertIn("switched itself off", self.rs.report()["text"])
+        self.assertEqual(1, len(self.rs.load_devices()), "the phones are kept")
+
+    def test_the_automatic_switch_off_can_be_unticked(self):
+        self.assertTrue(self.rs.auto_off(), "ticked by default")
+        info = self.post("/auto-off", {"on": False}).body
+        self.assertEqual({"on": False, "days": 90, "at": 0}, info["autoOff"])
+        self.assertFalse(self.rs.switch_off_if_idle(self.rs.time.time() + 1000 * 86400))
+        self.assertTrue(self.rs.enabled())
+        self.assertTrue(self.post("/auto-off", {"on": True}).body["autoOff"]["on"])
+
+    def test_switching_on_also_opens_pairing(self):
+        os.remove(self.rs.SETTINGS)
+        with mock.patch.object(self.rs.portmap, "reach", return_value={"checked": 1, "ipv4": {}, "ipv6": {}, "problem": "router-closed"}):
+            info = self.post("/enabled", {"on": True}).body
+            self.rs.time.sleep(0.2)
+        self.assertTrue(info["enabled"])
+        self.assertTrue(info["pairing"]["open"])
+        self.assertTrue(0 < self.rs.pairing_left() <= self.rs.PAIRING_SECONDS)
 
 
 if __name__ == "__main__":

@@ -55,10 +55,10 @@ command -v nft >/dev/null || { echo "nftables is not installed: no firewall on t
 
 PORT="$(setting REMOTE_PORT 8443)"
 ALLOW="$(setting REMOTE_FIREWALL_ALLOW 22)"
-# The Phones page's switch (data/remote/settings.json): off closes the gateway's port as well.
+# The Phones page's switch (data/remote/settings.json, "enabled"): off, the default, closes the gateway's port as well.
 ON="$(python3 -c 'import json,sys
-try: print("no" if json.load(open(sys.argv[1])).get("enabled", True) is False else "yes")
-except Exception: print("yes")' "$REPO_DIR/data/remote/settings.json" 2>/dev/null || echo yes)"
+try: print("yes" if json.load(open(sys.argv[1])).get("enabled") is True else "no")
+except Exception: print("no")' "$REPO_DIR/data/remote/settings.json" 2>/dev/null || echo no)"
 if [ "$ON" = no ]; then PORT=""; GATEWAY_RULE="# remote access switched off: no gateway"; else GATEWAY_RULE="tcp dport 8443 accept"; fi
 OPEN="$(echo "$PORT $ALLOW" | tr ', ' '\n\n' | grep -E '^[0-9]{1,5}$' | sort -un | paste -sd, - || true)"
 

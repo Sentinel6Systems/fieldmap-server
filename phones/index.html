@@ -38,6 +38,8 @@
   .phone small { font: 12.5px var(--mono); color: var(--muted); }
   .error { color: var(--warn); font-weight: 600; }
   #code { max-width: 14em; }
+  .check { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; cursor: pointer; }
+  .check input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
   ol { margin: 8px 0; padding-left: 1.3em; }
   li { margin: 4px 0; }
 </style>
@@ -69,6 +71,7 @@
       <button id="toggle" type="button"></button>
     </div>
     <p class="quiet" id="switch-text"></p>
+    <label class="check"><input type="checkbox" id="auto-off"> <span id="auto-off-text"></span></label>
   </section>
 
   <section class="card" id="outside-card">
@@ -123,6 +126,7 @@
     try { await call(path, body); error(null); } catch (e) { error(e); }
     busy = false;
     show();
+    if (window.fieldmapNavRefresh) window.fieldmapNavRefresh();   // the header's on/off tag
   }
 
   async function show() {
@@ -141,8 +145,11 @@
     $("toggle").className = on ? "danger" : "primary";
     $("switch-text").textContent = on
       ? "Switch it off to keep this box completely to its own network: the router's port is closed, the box's firewall shuts the gateway, pairing stops. The paired phones stay on the list for when it is switched on again."
-      : "Nothing outside can reach this box, and no phone can pair. Switch it on to let paired phones use the maps from anywhere.";
+      : "Off: nothing outside can reach this box, and no phone can pair. Switch it on to let paired phones use the maps from anywhere; that also opens pairing for ten minutes.";
     for (const id of ["outside-card", "pair-card"]) $(id).setAttribute("aria-disabled", String(!on));
+    $("auto-off").checked = info.autoOff.on;
+    $("auto-off-text").textContent = `Switch off by itself after ${info.autoOff.days} days with no phone coming in from outside` +
+      (info.autoOff.at ? ` (on ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })}, unless a phone comes in before)` : "");
     $("reach").textContent = info.reach.text;
     $("reach").className = "reach " + info.reach.status;
     $("addresses").textContent = on && info.endpoints.length
@@ -172,6 +179,7 @@
     if (on && !confirm("Switch remote access off? Paired phones can then use these maps only on this network.")) return;
     act("enabled", { on: !on });
   };
+  $("auto-off").onchange = () => act("auto-off", { on: $("auto-off").checked });
   $("recheck").onclick = () => { $("checked").textContent = "Asking the router…"; act("recheck", {}); };
   $("pair").onclick = () => act("pairing", { open: true });
   $("pair-stop").onclick = () => act("pairing", { open: false });

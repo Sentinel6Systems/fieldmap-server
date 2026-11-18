@@ -829,20 +829,26 @@ Without the script, the cap is `1g`.
 ## Remote access for the Android app
 
 The [Fieldmap Android app](https://github.com/Sentinel6Systems/fieldmap-android) can use this box's maps away
-from home, while the box and the phone both have internet. Nothing to set up: the installers turn it on.
+from home, while the box and the phone both have internet. It is **off until you switch it on**: a box that nobody
+switched on cannot be reached from outside at all.
 
 1. Plug the box into your home router and install as above.
-2. On a phone on the same network: open the Fieldmap app, connect to the box, then **Menu › Server › Pair this
-   phone**. For the first 15 minutes after the box starts, while no phone is paired yet, that is all. Later,
-   first press **Pair a phone** on the box's **Phones** page: pairing is then open for ten minutes.
-3. Away from home the app reaches the box by itself; its strip reads **Remote**.
+2. On the box's network, open the **Phones** page and press **Switch on**. That also opens pairing for ten minutes.
+3. On the phone, on the same network: open the Fieldmap app, connect to the box, then **Menu › Server › Pair this
+   phone**. To pair another phone later, press **Pair a phone** on the Phones page first.
+4. Away from home the app reaches the box by itself; its strip reads **Remote**.
 
 The **Phones** page (`/phones/`, a tab in every page's header, on the box's own network only) is where all of this
 is managed:
 
-- **Remote access on or off.** Off keeps the box completely to its own network: the router's port is closed, the
-  box's firewall shuts the gateway, pairing stops. The paired phones stay on the list, and the app keeps them
-  paired, for when it is switched on again.
+- **Remote access on or off** (off by default). Off keeps the box completely to its own network: the router is
+  not asked for anything, the box's firewall shuts the gateway, nobody can pair. Switched off again, the router's
+  port is closed; the paired phones stay on the list, and the app keeps them paired, for when it is switched on.
+- **Switch off by itself after 90 days with no phone coming in from outside** (ticked by default), so that a
+  forgotten box closes itself. The page shows the date it would happen; each phone that comes in moves it on.
+
+Every page's header shows the state at a glance, beside the Phones tab: **on** (amber: the box can be reached from
+outside, by paired phones) or **off**; hovering over it gives the box's own words about it.
 - **From outside:** whether phones can reach the box, and if not, why, in plain words; the addresses phones are
   told to try; **Ask the router again**.
 - **Pair a phone**, and the **paired phones**, each with when it last came in from outside, and **Remove**.
@@ -961,8 +967,8 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
-- Remote access for the Fieldmap Android app, on by default: phones paired on the box's network can use the maps
-  from anywhere. The box opens a port on its own router (UPnP, NAT-PMP, IPv6), lets in only paired phones through a
+- Remote access for the Fieldmap Android app, off until the owner switches it on: phones paired on the box's
+  network can use the maps from anywhere. The box opens a port on its own router (UPnP, NAT-PMP, IPv6), lets in only paired phones through a
   gateway that serves only what the app needs, and puts a firewall on itself. No account or outside service. A new
   **Phones** page in the header switches it on and off, pairs phones and removes them.
   `./scripts/install.sh --no-remote` leaves it out.

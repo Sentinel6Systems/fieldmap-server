@@ -171,10 +171,9 @@ setup)
     echo
     "$0" status || true
     echo
-    echo "To pair a phone: on this box's network open the Phones page (in the header of the Maps page),"
-    echo "press Pair a phone, then in the Fieldmap app: Menu, Server, Pair this phone. Until the first"
-    echo "phone is paired, pairing stays open for 15 minutes after the box starts. The Phones page also"
-    echo "switches remote access off, for a box that should stay to its own network."
+    echo "Remote access is off until someone switches it on: on this box's network open the Phones page"
+    echo "(in the header of the Maps page) and press Switch on. That also opens pairing for ten minutes:"
+    echo "then, in the Fieldmap app on the phone, Menu, Server, Pair this phone."
     ;;
 
 status)
