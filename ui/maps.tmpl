@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<!-- The Maps page: TileServer GL's front page (options.frontPage in config.json), in the look
+     the other pages share. The map itself, a menu of the styles, and the tile addresses for
+     other apps. MapLibre and Leaflet are TileServer GL's own copies. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Maps</title>
+<link rel="stylesheet" href="{{public_url}}maplibre-gl.css">
+<link rel="stylesheet" href="{{public_url}}files/fieldmap.css">
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  #map { position: absolute; inset: var(--bar-h) 0 0 0; z-index: 0; background: var(--panel2); }
+  #panel {
+    position: absolute; z-index: 4; left: 12px; top: calc(var(--bar-h) + 12px); width: 280px;
+    display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px;
+    background: var(--panel); border: 1px solid var(--line); box-shadow: 0 2px 16px rgba(0,0,0,.35);
+  }
+  #panel label { font: 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  #panel select, #panel button { font-size: 14px; }
+  .notice {
+    position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100% - 24px));
+    padding: 18px 20px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 2px 16px rgba(0,0,0,.35);
+  }
+  .notice h1 { margin: 0 0 6px; font-size: 21px; line-height: 1.2; }
+  .notice p { margin: 0; color: var(--muted); }
+  dialog { padding: 0; width: 100%; max-width: min(680px, calc(100vw - 16px)); }
+  .dhead { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .dhead h1 { margin: 0; font-size: 20px; line-height: 1.2; }
+  .dhead button { margin-left: auto; }
+  .dbody { max-height: min(72vh, 680px); overflow-y: auto; padding: 14px 20px 20px; }
+  .dbody p { margin: 0 0 4px; color: var(--muted); font-size: 15px; }
+  .addr { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .addr:last-child { border-bottom: 0; }
+  .addr b { display: block; margin-bottom: 6px; }
+  .addr .copy { display: flex; gap: 8px; }
+  .addr .copy input { flex: 1; min-width: 0; font: 13px var(--mono); }
+  .addr .more, .data { font: 12.5px var(--mono); color: var(--muted); }
+  .addr .more { margin: 6px 0 0; }
+  .addr .more a, .data a { color: var(--sig); }
+  .data { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px 16px; }
+  .data span:nth-child(3n+1) { color: var(--ink); overflow-wrap: anywhere; }
+  @media (max-width: 640px) {
+    #panel { left: 8px; right: 8px; top: calc(var(--bar-h) + 8px); width: auto; flex-direction: row; align-items: center; padding: 8px; }
+    #panel label { display: none; }
+    #panel select { flex: 1; min-width: 0; }
+    #panel button { flex: none; }
+    /* MapLibre's and Leaflet's buttons sit below the style menu. */
+    .maplibregl-ctrl-top-right, .leaflet-top.leaflet-right { top: 64px; }
+    .dhead { padding: 12px; }
+    .dbody { padding: 10px 12px 16px; }
+  }
+</style>
+</head>
+<body>
+<header class="fm-bar" id="fm-bar" data-page="maps" data-root="{{public_url}}"></header>
+<script src="{{public_url}}files/nav.js"></script>
+<div id="map"></div>
+
+{{#if styles}}
+<aside id="panel">
+  <label for="style">Map style</label>
+  <select id="style">
+    {{#each styles}}{{#if serving_data}}<option value="{{@key}}"{{#if serving_rendered}} data-drawn{{/if}}>{{name}}</option>{{/if}}{{/each}}
+  </select>
+  <button id="apps" type="button" title="The tile addresses for ATAK, WinTAK, iTAK and other map apps">Use in another app</button>
+</aside>
+{{else}}
+<div class="notice"><h1>No map styles</h1><p>The tile server's configuration lists no styles.</p></div>
+{{/if}}
+
+<div class="notice" id="no-maps" hidden>
+  <h1>No maps on this device yet</h1>
+  <p>Build them on the Map builder page, or with scripts/build-region.sh on the device.</p>
+</div>
+
+<dialog id="addresses" aria-labelledby="addresses-title">
+  <div class="dhead"><h1 id="addresses-title">Use these maps in another app</h1><button id="addresses-close" type="button">Close</button></div>
+  <div class="dbody">
+    <p>ATAK, WinTAK, iTAK and other map apps take a tile address. Copy the one for the map you want. It works for devices that reach this server the way this device does now.</p>
+    <div class="fm-label">Map tiles</div>
+    <div id="tile-list">
+    {{#each styles}}{{#if serving_rendered}}
+    <div class="addr">
+      <b>{{name}}</b>
+      <div class="copy"><input type="text" readonly data-tiles="{{@key}}" aria-label="Tile address for {{name}}"><button type="button">Copy</button></div>
+      <p class="more"><a href="{{@root.public_url}}styles/{{@key}}.json">TileJSON</a> · <a href="{{@root.public_url}}styles/{{@key}}/wmts.xml">WMTS</a>{{#if serving_data}} · <a href="{{@root.public_url}}styles/{{@key}}/style.json">Style</a>{{/if}}</p>
+    </div>
+    {{/if}}{{/each}}
+    </div>
+    {{#if data}}
+    <div class="fm-label">Data files</div>
+    <div class="data">
+      {{#each data}}<span>{{@key}}{{#if formatted_filesize}} ({{formatted_filesize}}){{/if}}</span><a href="{{@root.public_url}}data/{{@key}}.json">TileJSON</a><a href="{{@root.public_url}}data/{{@key}}/">Inspect</a>{{/each}}
+    </div>
+    {{/if}}
+    <p style="margin-top:14px">TileJSON, WMTS, Style and Inspect open pages of the tile server itself ({{server_version}}), which look different.</p>
+  </div>
+</dialog>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const root = $("fm-bar").dataset.root;
+const sel = $("style");
+const KEY = "fieldmap.maps.style";
+const query = new URLSearchParams(location.search);
+const store = { get: () => { try { return localStorage.getItem(KEY); } catch { return null; } }, set: (v) => { try { localStorage.setItem(KEY, v); } catch { /* not kept */ } } };
+
+/* ---------- the tile addresses ---------- */
+const tiles = (id, size = "") => `${location.origin}${root}styles/${id}/${size}{z}/{x}/{y}.png`;
+for (const input of document.querySelectorAll("[data-tiles]")) {
+  input.value = tiles(input.dataset.tiles);
+  input.onfocus = () => input.select();
+  const button = input.nextElementSibling;
+  button.onclick = () => {
+    // Not navigator.clipboard: that needs https, which a server on a local network rarely has.
+    input.select();
+    const done = document.execCommand("copy");
+    button.textContent = done ? "Copied" : "Press Ctrl+C";
+    setTimeout(() => (button.textContent = "Copy"), 2500);
+  };
+}
+if ($("apps")) {
+  $("apps").onclick = () => $("addresses").showModal();
+  $("addresses-close").onclick = () => $("addresses").close();
+}
+
+/* ---------- the map ---------- */
+/** What the style's base map covers: its TileJSON, or null. */
+async function coverage(id) {
+  try {
+    const style = await (await fetch(`${root}styles/${id}/style.json`)).json();
+    const source = Object.values(style.sources).find((s) => s.type === "vector" && s.url);
+    const data = source ? await (await fetch(source.url)).json() : null;
+    // A new install has empty placeholder files (scripts/data-placeholders.sh): say so.
+    if (data && data.name === "empty placeholder") $("no-maps").hidden = false;
+    return data && data.bounds && data.bounds[2] - data.bounds[0] < 300 ? data.bounds : null;
+  } catch { return null; }
+}
+
+function webgl2() {
+  try { return !!document.createElement("canvas").getContext("webgl2"); } catch { return false; }
+}
+
+async function vector() {
+  const maplibregl = await import(`${root}maplibre-gl.mjs`);
+  maplibregl.setRTLTextPlugin(`${root}mapbox-gl-rtl-text.js`, true);
+  // Without a place in the address, start on the area the base map covers.
+  const bounds = await coverage(sel.value);
+  const start = !location.hash && bounds ? { bounds, fitBoundsOptions: { padding: 40 } } : {};
+  const map = new maplibregl.Map({ container: "map", style: `${root}styles/${sel.value}/style.json`, hash: true, maxPitch: 85, ...start });
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+  map.addControl(new maplibregl.ScaleControl(), "bottom-left");
+  return (id) => map.setStyle(`${root}styles/${id}/style.json`);
+}
+
+// A browser without WebGL 2 gets the same maps as pictures drawn by the server.
+async function raster() {
+  document.head.append(Object.assign(document.createElement("link"), { rel: "stylesheet", href: `${root}leaflet.css` }));
+  for (const file of ["leaflet.js", "leaflet-hash.js"]) {
+    await new Promise((ok, fail) => document.head.append(Object.assign(document.createElement("script"), { src: root + file, onload: ok, onerror: fail })));
+  }
+  for (const o of sel.options) o.disabled = !("drawn" in o.dataset);
+  if (sel.selectedOptions[0].disabled) sel.value = [...sel.options].find((o) => !o.disabled)?.value ?? sel.value;
+  const map = L.map("map", { minZoom: 1, zoomControl: false });
+  new L.Control.Zoom({ position: "topright" }).addTo(map);
+  let layer = null;
+  const show = (id) => {
+    if (layer) layer.remove();
+    layer = L.tileLayer(tiles(id, "512/"), { tileSize: 512, zoomOffset: -1, maxZoom: 20, attribution: "© OpenMapTiles © OpenStreetMap contributors" }).addTo(map);
+  };
+  show(sel.value);
+  const bounds = await coverage(sel.value);
+  if (!location.hash && bounds) map.fitBounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]]);
+  else if (!location.hash) map.setView([0, 0], 2);
+  new L.Hash(map);
+  return show;
+}
+
+if (sel) {
+  // TileServer GL lists the styles in the order it loaded them: put them in order of name.
+  const byName = (list) => list.append(...[...list.children].sort((a, b) => a.textContent.trim().localeCompare(b.textContent.trim(), "en", { numeric: true })));
+  byName(sel);
+  byName($("tile-list"));
+  sel.selectedIndex = 0;
+  const wanted = query.get("style") || store.get();
+  if ([...sel.options].some((o) => o.value === wanted)) sel.value = wanted;
+  const show = await (query.has("raster") || !webgl2() ? raster() : vector());
+  sel.onchange = () => {
+    store.set(sel.value);
+    const url = new URL(location.href);
+    url.searchParams.set("style", sel.value);
+    history.replaceState(history.state, "", url);
+    show(sel.value);
+  };
+}
+</script>
+</body>
+</html>

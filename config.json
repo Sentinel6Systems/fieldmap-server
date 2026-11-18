@@ -4,8 +4,10 @@
       "root": "",
       "fonts": "fonts",
       "styles": "styles",
-      "mbtiles": "data"
+      "mbtiles": "data",
+      "files": "ui"
     },
+    "frontPage": "ui/maps.tmpl",
     "maxScaleFactor": 2,
     "minRendererPoolSizes": [0, 0],
     "maxRendererPoolSizes": [2, 1]
