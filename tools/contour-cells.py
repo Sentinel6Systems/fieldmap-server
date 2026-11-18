@@ -122,10 +122,12 @@ def write_lines(arr, valid, gt, clip, base):
                              # The cut can leave a line in several pieces.
                              clipSrc=clip, geometryType="MULTILINESTRING",
                              SQLStatement=f"SELECT CAST(e AS {u['type']}) AS {u['attr']} FROM contour WHERE {where}")
-        # The cut can remove every line (a few short ones in the outer half pixel).
-        written = ogr.Open(part)
-        counts[i] = written.GetLayer(0).GetFeatureCount()
-        written = None
+        # The cut can remove every line (a few short ones in the outer half pixel). GDAL then
+        # leaves an empty file, which it cannot open again.
+        if os.path.getsize(part):
+            written = ogr.Open(part)
+            counts[i] = written.GetLayer(0).GetFeatureCount()
+            written = None
         if counts[i]:
             os.replace(part, path)
         else:
