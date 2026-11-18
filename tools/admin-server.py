@@ -6,7 +6,7 @@
 Runs on the machine itself, not in a container, because it starts the build scripts, which
 start containers. Python's standard library only. It listens on a Unix socket,
 data/admin/admin.sock, which the web front serves as /mapadmin/ (and on a port as well when
-ADMIN_PORT is set). It serves admin/ (the page) and:
+ADMIN_PORT is set). It serves admin/ (the page), ui/ (the look every page shares) and:
 
   GET  /api/status     free disk space, what is on the device, the running or last build
   POST /api/estimate   space and time a selection needs      {regions, layers, options}
@@ -50,6 +50,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
 ADMIN = os.path.join(DATA, "admin")
 STATIC = os.path.join(ROOT, "admin")
+SHARED = os.path.join(ROOT, "ui")
 JOB, STATE, LOG = (os.path.join(ADMIN, n) for n in ("job.json", "state.json", "build.log"))
 REGION_FILE = os.path.join(ADMIN, "region.env")
 # Written by Stop. The build looks for it as soon as it can be stopped, so that a Stop pressed
@@ -679,6 +680,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"from": start, "next": start + len(text), "text": text.decode(errors="replace")})
         name = "index.html" if url.path in ("/", "") else url.path.lstrip("/")
         path = os.path.join(STATIC, name)
+        if not os.path.isfile(path):
+            path = os.path.join(SHARED, name)       # the look and the header every page shares
         ext = os.path.splitext(name)[1]
         if "/" in name or ".." in name or ext not in TYPES or not os.path.isfile(path):
             return self.send(404, {"error": "not found"})
