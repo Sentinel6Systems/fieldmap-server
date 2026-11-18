@@ -12,7 +12,8 @@
 #   sudo ./scripts/firewall.sh off        remove them
 #
 # It is its own nftables table, beside whatever else the machine has (Internet-in-a-Box's
-# firewall, Docker's, ufw): it only ever adds a refusal, never an opening.
+# firewall, Docker's, ufw). The one opening it makes elsewhere: while remote access is on, the
+# gateway's port in iptables (see below).
 # Settings in .env: REMOTE_FIREWALL=off, REMOTE_PORT (written by scripts/remote.sh setup), REMOTE_FIREWALL_ALLOW
 # (ports open from outside besides the gateway, default 22; empty for none).
 set -euo pipefail
@@ -30,9 +31,32 @@ setting() {
 }
 [ "$(id -u)" -eq 0 ] || { echo "Run as root (sudo)." >&2; exit 1; }
 
+# Another firewall on the machine (Internet-in-a-Box's iiab-gen-iptables, ufw) may drop new
+# connections from the home network, which for a box plugged into a home router is its "WAN"
+# side. Then the gateway's port is let through it as well, by one rule of ours (marked with a
+# comment so that it can be found and taken out again), and only while remote access is on.
+# Re-applied with the rest every five minutes: Internet-in-a-Box rewrites its rules now and then.
+MARK="fieldmap-remote"
+iptables_close() {
+    command -v iptables >/dev/null || return 0
+    local rule
+    { iptables -S INPUT 2>/dev/null || true; } | { grep -- "--comment $MARK" || true; } | sed 's/^-A /-D /' |
+        while read -r rule; do eval "iptables $rule" 2>/dev/null || true; done
+}
+iptables_open() {
+    command -v iptables >/dev/null || return 0
+    iptables_close
+    if iptables -I INPUT 1 -p tcp --dport "$1" -m comment --comment "$MARK" -j ACCEPT 2>/dev/null; then
+        echo "Also let through this machine's other firewall: TCP $1."
+    else
+        echo "Could not add TCP $1 to this machine's other firewall (iptables)." >&2
+    fi
+}
+
 case "${1:-apply}" in
 off)
     if command -v nft >/dev/null; then nft delete table $TABLE 2>/dev/null || true; fi
+    iptables_close
     exit 0
     ;;
 show)
@@ -40,10 +64,21 @@ show)
     exit 0
     ;;
 apply) ;;
-*) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+*) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
 
-if [ "$(setting REMOTE_FIREWALL on)" = off ]; then exec "$0" off; fi
+PORT="$(setting REMOTE_PORT "")"
+# The Phones page's switch (data/remote/settings.json, "enabled"): off, the default, closes the gateway's port as well.
+ON="$(python3 -c 'import json,sys
+try: print("yes" if json.load(open(sys.argv[1])).get("enabled") is True else "no")
+except Exception: print("no")' "$REPO_DIR/data/remote/settings.json" 2>/dev/null || echo no)"
+if [ "$ON" = yes ] && [ -n "$PORT" ]; then iptables_open "$PORT"; else iptables_close; fi
+
+if [ "$(setting REMOTE_FIREWALL on)" = off ]; then
+    nft delete table $TABLE 2>/dev/null || true
+    echo "No firewall of its own on this box (REMOTE_FIREWALL=off)."
+    exit 0
+fi
 if ! command -v nft >/dev/null; then
     if command -v apt-get >/dev/null; then
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nftables >/dev/null
@@ -53,12 +88,7 @@ if ! command -v nft >/dev/null; then
 fi
 command -v nft >/dev/null || { echo "nftables is not installed: no firewall on this box." >&2; exit 0; }
 
-PORT="$(setting REMOTE_PORT "")"
 ALLOW="$(setting REMOTE_FIREWALL_ALLOW 22)"
-# The Phones page's switch (data/remote/settings.json, "enabled"): off, the default, closes the gateway's port as well.
-ON="$(python3 -c 'import json,sys
-try: print("yes" if json.load(open(sys.argv[1])).get("enabled") is True else "no")
-except Exception: print("no")' "$REPO_DIR/data/remote/settings.json" 2>/dev/null || echo no)"
 if [ "$ON" = no ]; then PORT=""; GATEWAY_RULE="# remote access switched off: no gateway"; else GATEWAY_RULE="tcp dport 8443 accept"; fi
 OPEN="$(echo "$PORT $ALLOW" | tr ', ' '\n\n' | grep -E '^[0-9]{1,5}$' | sort -un | paste -sd, - || true)"
 

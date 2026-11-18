@@ -875,7 +875,8 @@ No account, no outside service, nothing of anyone else's in between: the box tal
   the map builder, nothing else. It limits connections per visitor and takes nginx's security fixes every week.
 - **A firewall on the box itself** lets nothing in from outside the local network but the gateway and SSH, over
   IPv4 and IPv6, whatever the router does (`scripts/firewall.sh`). Devices at home, and the box's own connections
-  out, are not affected.
+  out, are not affected. Where the machine has a firewall already (Internet-in-a-Box's drops everything from the
+  home network but its own ports), the gateway's port is let through it too, only while remote access is on.
 - **Nothing gives the box away.** The names in its certificates are random letters.
 
 ### When it cannot work
