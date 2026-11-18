@@ -899,7 +899,8 @@ REMOTE_RELAY=tailscale                 # also reach the gateway through Tailscal
 ```
 
 Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port by hand: any outside port to this
-box's port 8443 (`REMOTE_PORT`), then set `REMOTE_ADDRESS` to `<your address>:<that port>`.
+box's gateway port (`REMOTE_PORT` in `.env`, chosen at random when it was set up), then set `REMOTE_ADDRESS` to
+`<your address>:<that port>`.
 
 ```bash
 ./scripts/remote.sh status          # can phones reach the box from outside, and how

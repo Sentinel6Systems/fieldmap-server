@@ -37,7 +37,7 @@ Settings in the environment (scripts/remote.sh reads them from .env):
   REMOTE_PIN         a code that pairing, opening pairing and removing a phone then ask for
   REMOTE_ADDRESS     host:port of the gateway from outside that you set up yourself (a port you
                      forwarded, a name of your own); offered to the phones before the others
-  REMOTE_PORT        the gateway's port on this machine (default 8443)
+  REMOTE_PORT        the gateway's port on this machine (scripts/remote.sh setup picks one at random)
   REMOTE_DIRECT      off: do not ask the router for anything
 """
 import argparse

@@ -13,7 +13,7 @@
 #
 # It is its own nftables table, beside whatever else the machine has (Internet-in-a-Box's
 # firewall, Docker's, ufw): it only ever adds a refusal, never an opening.
-# Settings in .env: REMOTE_FIREWALL=off, REMOTE_PORT (default 8443), REMOTE_FIREWALL_ALLOW
+# Settings in .env: REMOTE_FIREWALL=off, REMOTE_PORT (written by scripts/remote.sh setup), REMOTE_FIREWALL_ALLOW
 # (ports open from outside besides the gateway, default 22; empty for none).
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -53,7 +53,7 @@ if ! command -v nft >/dev/null; then
 fi
 command -v nft >/dev/null || { echo "nftables is not installed: no firewall on this box." >&2; exit 0; }
 
-PORT="$(setting REMOTE_PORT 8443)"
+PORT="$(setting REMOTE_PORT "")"
 ALLOW="$(setting REMOTE_FIREWALL_ALLOW 22)"
 # The Phones page's switch (data/remote/settings.json, "enabled"): off, the default, closes the gateway's port as well.
 ON="$(python3 -c 'import json,sys

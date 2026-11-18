@@ -26,7 +26,7 @@
 #      but the gateway and SSH (scripts/firewall.sh, fieldmap-firewall).
 #
 # Settings, in .env (see .env.example), all optional:
-#   REMOTE_PORT            the gateway's port on this machine (default 8443)
+#   REMOTE_PORT            the gateway's port on this machine (chosen at random by the first setup)
 #   REMOTE_PIN             a code that pairing then asks for
 #   REMOTE_ADDRESS         host:port of the gateway from outside that you set up yourself
 #   REMOTE_DIRECT=off      do not ask the router to open a port
@@ -52,7 +52,9 @@ SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO=sudo
 # The files belong to the owner of this folder, whoever runs the script.
 as_owner() { if [ "$(id -un)" = "$OWNER" ]; then "$@"; else sudo -u "$OWNER" "$@"; fi; }
 
-REMOTE_PORT="$(setting REMOTE_PORT 8443)"
+# The gateway's port on this machine: chosen at random by the first "setup" and kept in .env
+# (an uncommon port: nothing else on the box takes it, and it is not one scanners try first).
+REMOTE_PORT="$(setting REMOTE_PORT "")"
 SERVICE_PORT="$(setting REMOTE_SERVICE_PORT 8092)"
 RELAY="$(setting REMOTE_RELAY "")"
 # A Raspberry Pi behind Internet-in-a-Box (install-pi.sh copied this file here): the tile
@@ -108,6 +110,29 @@ setup)
         echo "This machine has no systemd: remote access for the app needs it. Skipped." >&2
         exit 2
     fi
+    if [ -z "$REMOTE_PORT" ]; then
+        # A port between 20000 and 60999 that nothing on this machine listens on.
+        REMOTE_PORT="$(python3 -c '
+import random, socket, subprocess
+used = subprocess.run(["ss", "-Hltn"], capture_output=True, text=True).stdout
+for _ in range(200):
+    port = random.randint(20000, 60999)
+    if ":%d " % port in used:
+        continue
+    s = socket.socket()
+    try:
+        s.bind(("", port)); print(port); break
+    except OSError:
+        continue
+    finally:
+        s.close()')"
+        [ -n "$REMOTE_PORT" ] || { echo "Error: found no free port for the gateway." >&2; exit 1; }
+        echo "REMOTE_PORT=$REMOTE_PORT" | as_owner tee -a .env >/dev/null
+        echo "The gateway's port on this box: $REMOTE_PORT (kept in .env as REMOTE_PORT)."
+    fi
+    export REMOTE_PUBLISH="$REMOTE_PORT"
+    [ "$RELAY" = tailscale ] && [ "$(setting REMOTE_DIRECT on)" = off ] && REMOTE_PUBLISH="127.0.0.1:$REMOTE_PORT"
+    if [ "$PI" = yes ]; then INIT=(--prefix /maps/ --upstream http://127.0.0.1:8080/ --listen "$REMOTE_PORT" --ipv6); fi
 
     echo "== Certificates and the gateway's configuration"
     server init "${INIT[@]}"
