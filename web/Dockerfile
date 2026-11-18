@@ -4,6 +4,7 @@ WORKDIR /src
 COPY print/package.json print/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY print/ ./
+COPY ui/ /ui/
 RUN node build.mjs
 
 FROM nginx:1.27-alpine

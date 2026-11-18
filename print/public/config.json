@@ -3,5 +3,7 @@
   "contourMajor": 200,
   "contourUnit": "ft",
   "terrainSource": "Copernicus GLO-30",
-  "dataDate": ""
+  "dataDate": "",
+  "homeUrl": "",
+  "homeName": ""
 }

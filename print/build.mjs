@@ -13,6 +13,8 @@ await build({
   target: ["es2022"], outfile: "dist/terrain-worker.js", logLevel: "info",
 });
 cpSync("public", "dist", { recursive: true });
+// The look and the header every page shares (../ui).
+for (const f of ["fieldmap.css", "nav.js"]) cpSync(`../ui/${f}`, `dist/${f}`);
 cpSync("node_modules/maplibre-gl/dist/maplibre-gl.css", "dist/maplibre-gl.css");
 cpSync("node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs", "dist/maplibre-gl-worker.js");
 console.log("built dist/");
