@@ -1,0 +1,116 @@
+/* fieldmap-server: the look every page shares (colours, type, the header, buttons, form
+   controls, cards). Each page adds its own layout on top of it:
+     the Maps page      ui/maps.tmpl          TileServer GL serves this folder at files/
+     the print tool     print/public/         print/build.mjs copies this folder into dist/
+     the map builder    admin/                tools/admin-server.py serves this folder too
+   System fonts only: nothing is fetched from anywhere. Follows the device's light or dark
+   setting. */
+:root {
+  color-scheme: dark;
+  --bg: #0e110f; --panel: #151a16; --panel2: #1b211c;
+  --ink: #e4e6df; --muted: #8e978c;
+  --line: #283028;            /* rules and card edges */
+  --edge: #3b463b;            /* edges of things you press or type in */
+  --sig: #a9c06a; --on-sig: #10140c;
+  --warn: #e0705c; --amber: #e2b13c;
+  --grid: rgba(169, 192, 106, .045);
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --bar-h: 52px;              /* the header */
+  --ctl-h: 40px;              /* buttons, selects, text fields */
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #ecebe4; --panel: #f8f7f2; --panel2: #e3e2d9;
+    --ink: #1a1e1a; --muted: #5d645b;
+    --line: #cfcdc2; --edge: #a9a798;
+    --sig: #4f6b1f; --on-sig: #fff;
+    --warn: #9a2a1c; --amber: #8a5f00;
+    --grid: rgba(40, 50, 35, .06);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--sans); }
+/* The faint grid behind a page of text and cards. */
+body.fm-plate {
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--sig); outline-offset: 2px; }
+
+/* ---------- the header (filled in by nav.js) ---------- */
+.fm-bar {
+  position: sticky; top: 0; z-index: 20; height: var(--bar-h);
+  display: flex; align-items: center; gap: 6px 18px; padding: 0 16px;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.fm-mark { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: .06em; white-space: nowrap; }
+.fm-mark svg { width: 26px; height: 26px; color: var(--sig); flex: none; }
+.fm-nav { display: flex; align-self: stretch; gap: 2px; min-width: 0; }
+.fm-nav a, .fm-nav span.fm-off {
+  display: flex; align-items: center; gap: 6px; padding: 0 12px; white-space: nowrap;
+  font: 12.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; text-decoration: none;
+  color: var(--muted); border-bottom: 2px solid transparent; border-top: 2px solid transparent;
+}
+.fm-nav a:hover { color: var(--sig); }
+.fm-nav a[aria-current=page] { color: var(--ink); border-bottom-color: var(--sig); }
+.fm-nav span.fm-off { opacity: .6; cursor: default; }
+.fm-nav span.fm-off small { font-size: 10.5px; letter-spacing: .06em; border: 1px solid var(--line); padding: 0 5px; }
+.fm-short { display: none; }
+.fm-home {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px;
+  border: 1px solid var(--edge); color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap;
+}
+.fm-home:hover { border-color: var(--sig); color: var(--sig); }
+@media (max-width: 640px) {
+  :root { --bar-h: 48px; }
+  .fm-bar { padding: 0 10px; gap: 6px; }
+  .fm-mark span { display: none; }
+  .fm-nav a, .fm-nav span.fm-off { padding: 0 8px; font-size: 12px; letter-spacing: .06em; }
+  .fm-long { display: none; }
+  .fm-short { display: inline; }
+  .fm-nav span.fm-off small { display: none; }
+  .fm-nav { flex: none; }
+  .fm-home { padding: 0 10px; min-width: 0; }
+  .fm-home span { overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* ---------- type ---------- */
+.fm-mono { font-family: var(--mono); }
+/* A small section label with a rule beside it. */
+.fm-label {
+  display: flex; align-items: center; gap: 12px; margin: 26px 0 12px;
+  font: 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+.fm-label::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* ---------- things you press or type in ---------- */
+button, .button, select, input[type=text], input[type=search], input[type=number], input[type=password] {
+  font: inherit; color: var(--ink); min-height: var(--ctl-h); border: 1px solid var(--edge); border-radius: 0;
+  background: var(--panel); padding: 0 12px;
+}
+select, input[type=text], input[type=search], input[type=number], input[type=password] { background: var(--bg); width: 100%; }
+input::placeholder { color: var(--muted); }
+button, .button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font-weight: 600; cursor: pointer; text-decoration: none;
+}
+button:hover:not(:disabled), .button:hover { border-color: var(--sig); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.primary { background: var(--sig); border-color: var(--sig); color: var(--on-sig); }
+.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.danger { color: var(--warn); }
+.danger:hover:not(:disabled) { border-color: var(--warn); }
+input[type=checkbox], input[type=radio], input[type=range] { accent-color: var(--sig); }
+
+/* ---------- cards ---------- */
+.fm-card { background: var(--panel); border: 1px solid var(--line); }
+dialog { border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+dialog::backdrop { background: rgba(5, 7, 5, .7); }
+
+/* MapLibre's own controls, squared to match. */
+.maplibregl-ctrl-group { border-radius: 0 !important; }
