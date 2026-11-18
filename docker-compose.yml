@@ -38,17 +38,19 @@ services:
       - ./data/remote/run:/run/fieldmap-remote
 
   # The gateway for the Fieldmap Android app away from this network: it demands a
-  # certificate this box issued and serves only the tile server. Not started by
-  # `docker compose up`: scripts/remote.sh setup makes its certificates and starts it.
+  # certificate this box issued and serves only what the app needs. Not started by
+  # `docker compose up`: scripts/remote.sh setup makes its certificates and starts it, and
+  # updates it every week (nginx's stable line, for its security fixes).
   remote:
-    image: ${REMOTE_IMAGE:-nginx:1.27-alpine}
+    image: ${REMOTE_IMAGE:-nginx:stable-alpine}
     container_name: fieldmap-remote
     profiles: ["remote"]
     restart: unless-stopped
     depends_on:
       - tileserver
     ports:
-      - "${REMOTE_BIND:-127.0.0.1}:${REMOTE_PORT:-8443}:8443"
+      # Every address of this machine, IPv4 and IPv6 (scripts/remote.sh sets REMOTE_PUBLISH).
+      - "${REMOTE_PUBLISH:-8443}:8443"
     volumes:
       - ./data/remote/gateway:/etc/fieldmap-remote:ro
       - ./data/remote/gateway/nginx:/etc/nginx/conf.d:ro

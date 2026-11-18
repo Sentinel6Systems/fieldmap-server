@@ -1,0 +1,11 @@
+# fieldmap-server: takes nginx's security fixes for the remote gateway, the part of the box that
+# faces the internet (scripts/remote.sh update-gateway). Installed by scripts/remote.sh setup.
+[Unit]
+Description=fieldmap-server remote gateway update
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/fieldmap-server
+ExecStart=/opt/fieldmap-server/scripts/remote.sh update-gateway

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<!-- The Phones page: remote access for the Fieldmap Android app. Served by tools/remote-server.py
+     at /phones/, on the box's own network only. The switch, whether phones can reach the box from
+     outside, pairing, and the paired phones. The look and the header are ui/fieldmap.css and
+     ui/nav.js, which the service serves beside this page. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phones</title>
+<link rel="stylesheet" href="fieldmap.css">
+<style>
+  h1 { font-size: clamp(26px, 3.6vw, 36px); line-height: 1.1; letter-spacing: -.01em; margin: 0 0 6px; }
+  h2 { font-size: 20px; line-height: 1.25; margin: 0 0 8px; }
+  p { margin: 6px 0; }
+  .lead, .quiet { color: var(--muted); }
+  .lead { font-size: 17px; max-width: 62ch; margin: 0; }
+  .top, main { max-width: 860px; margin: 0 auto; padding: 0 16px; }
+  .top { padding-top: clamp(20px, 3.5vw, 40px); }
+  main { padding-bottom: 60px; }
+  .card { background: var(--panel); border: 1px solid var(--line); padding: 18px 20px; margin-top: 16px; }
+  .card[aria-disabled=true] { opacity: .5; }
+  .switch { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .switch h2 { margin: 0; flex: 1; min-width: 12em; }
+  .switch button { min-width: 7em; min-height: 44px; font-size: 16px; }
+  .state { font: 12.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; padding: 4px 10px; border: 1px solid var(--edge); }
+  .state.on { color: var(--sig); border-color: var(--sig); }
+  .reach { padding: 10px 12px; border-left: 3px solid var(--muted); background: var(--panel2); margin: 10px 0; }
+  .reach.confirmed, .reach.expected { border-left-color: var(--sig); }
+  .reach.blocked, .reach.maybe { border-left-color: var(--amber); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+  .left { font: 13px var(--mono); color: var(--sig); }
+  .mono { font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+  .phone { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .phone:last-child { border-bottom: 0; }
+  .phone div { flex: 1; min-width: 0; }
+  .phone b { display: block; }
+  .phone small { font: 12.5px var(--mono); color: var(--muted); }
+  .error { color: var(--warn); font-weight: 600; }
+  #code { max-width: 14em; }
+  ol { margin: 8px 0; padding-left: 1.3em; }
+  li { margin: 4px 0; }
+</style>
+</head>
+<body class="fm-plate">
+
+<header class="fm-bar" id="fm-bar" data-page="phones"></header>
+<script src="nav.js"></script>
+
+<header class="top">
+  <h1>Phones</h1>
+  <p class="lead">Phones with the Fieldmap app that are paired here can use this box's maps from anywhere, also away
+    from this network. Only paired phones get in, and only the maps.</p>
+</header>
+
+<main>
+  <p class="error" id="error" role="alert" hidden></p>
+
+  <section class="card" id="code-card" hidden>
+    <h2>The box's code</h2>
+    <p class="quiet">Whoever set up this box gave it a code. It is needed to change anything on this page.</p>
+    <div class="row"><input id="code" type="password" autocomplete="off" aria-label="The box's code"></div>
+  </section>
+
+  <section class="card">
+    <div class="switch">
+      <h2>Remote access</h2>
+      <span class="state" id="state"></span>
+      <button id="toggle" type="button"></button>
+    </div>
+    <p class="quiet" id="switch-text"></p>
+  </section>
+
+  <section class="card" id="outside-card">
+    <h2>From outside</h2>
+    <p class="reach" id="reach"></p>
+    <p class="mono" id="addresses"></p>
+    <div class="row"><button id="recheck" type="button">Ask the router again</button><span class="quiet" id="checked"></span></div>
+  </section>
+
+  <section class="card" id="pair-card">
+    <h2>Pair a phone</h2>
+    <ol>
+      <li>Connect the phone to this network and open the Fieldmap app.</li>
+      <li>Press <b>Pair a phone</b> here.</li>
+      <li>In the app: <b>Menu, Server, Pair this phone</b>, within ten minutes.</li>
+    </ol>
+    <div class="row">
+      <button id="pair" type="button" class="primary">Pair a phone</button>
+      <button id="pair-stop" type="button" hidden>Stop</button>
+      <span class="left" id="pair-left"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Paired phones</h2>
+    <div id="phones"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  // The service answers the page's own folder: /phones/ (or /mapremote/, the same service).
+  const call = (path, body) => fetch(path, body === undefined ? { cache: "no-store" } :
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, pin: $("code").value }) })
+    .then(async (r) => {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw Object.assign(new Error(data.error || "The box did not answer (" + r.status + ")."), data);
+      return data;
+    });
+  const when = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "not yet";
+  let busy = false;
+
+  function error(e) {
+    $("error").hidden = !e;
+    $("error").textContent = e ? e.message : "";
+    if (e && e.pin) $("code-card").hidden = false;
+  }
+
+  async function act(path, body) {
+    busy = true;
+    try { await call(path, body); error(null); } catch (e) { error(e); }
+    busy = false;
+    show();
+  }
+
+  async function show() {
+    if (busy) return;
+    let info, list;
+    try {
+      [info, list] = await Promise.all([call("info"), call("devices")]);
+    } catch (e) {
+      return error(e);
+    }
+    if (info.pin) $("code-card").hidden = false;
+    const on = info.enabled;
+    $("state").textContent = on ? "On" : "Off";
+    $("state").className = "state" + (on ? " on" : "");
+    $("toggle").textContent = on ? "Switch off" : "Switch on";
+    $("toggle").className = on ? "danger" : "primary";
+    $("switch-text").textContent = on
+      ? "Switch it off to keep this box completely to its own network: the router's port is closed, the box's firewall shuts the gateway, pairing stops. The paired phones stay on the list for when it is switched on again."
+      : "Nothing outside can reach this box, and no phone can pair. Switch it on to let paired phones use the maps from anywhere.";
+    for (const id of ["outside-card", "pair-card"]) $(id).setAttribute("aria-disabled", String(!on));
+    $("reach").textContent = info.reach.text;
+    $("reach").className = "reach " + info.reach.status;
+    $("addresses").textContent = on && info.endpoints.length
+      ? "Phones are told to try: " + info.endpoints.map((e) => e.host + ":" + e.port).join(", ") : "";
+    $("checked").textContent = info.reach.checked ? "Last asked " + when(info.reach.checked) : "";
+    $("recheck").disabled = !on;
+    const left = info.pairing.seconds;
+    $("pair").hidden = left > 0;
+    $("pair").disabled = !on;
+    $("pair-stop").hidden = left <= 0;
+    $("pair-left").textContent = left > 0 ? `Pairing is open: ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left` : "";
+    $("phones").replaceChildren(...(list.devices.length ? list.devices.map((d) => {
+      const row = document.createElement("div");
+      row.className = "phone";
+      row.innerHTML = "<div><b></b><small></small></div><button type=\"button\" class=\"danger\">Remove</button>";
+      row.querySelector("b").textContent = d.name;
+      row.querySelector("small").textContent = `Paired ${d.added} · from outside: ${when(d.seen)}`;
+      row.querySelector("button").onclick = () => {
+        if (confirm(`Remove ${d.name}? It can no longer use these maps from outside until it is paired again.`)) act("remove", { id: d.id });
+      };
+      return row;
+    }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No phone is paired yet." })]));
+  }
+
+  $("toggle").onclick = () => {
+    const on = $("state").textContent === "On";
+    if (on && !confirm("Switch remote access off? Paired phones can then use these maps only on this network.")) return;
+    act("enabled", { on: !on });
+  };
+  $("recheck").onclick = () => { $("checked").textContent = "Asking the router…"; act("recheck", {}); };
+  $("pair").onclick = () => act("pairing", { open: true });
+  $("pair-stop").onclick = () => act("pairing", { open: false });
+  show();
+  setInterval(show, 1000);
+})();
+</script>
+</body>
+</html>

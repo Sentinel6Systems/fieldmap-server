@@ -3,7 +3,7 @@
 # server, the print tool and the map builder page are running, now and after every reboot.
 #
 # Usage:
-#   ./scripts/install.sh [--no-builder]
+#   ./scripts/install.sh [--no-builder] [--no-remote]
 #
 # Run it again after every `git pull`: it is the update step too. It
 #   1. writes empty data files for whatever has not been built yet, so that the tile
@@ -14,7 +14,9 @@
 #      the current config, styles and data;
 #   4. installs the map builder page (scripts/admin.sh) as a systemd service, which
 #      needs sudo. The page is then at /mapadmin/ beside the print tool. --no-builder
-#      leaves this step out, and removes the service if an earlier run installed it.
+#      leaves this step out, and removes the service if an earlier run installed it;
+#   5. sets up remote access for the Fieldmap Android app (scripts/remote.sh setup): phones
+#      paired on this network can then use the maps from anywhere. --no-remote leaves it out.
 # Then build your maps: on the map builder page, or with build-region.sh.
 #
 # A Raspberry Pi behind Internet-in-a-Box uses scripts/install-pi.sh instead.
@@ -24,11 +26,14 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
 BUILDER=yes
-case "${1:-}" in
-    "") ;;
-    --no-builder) BUILDER=no ;;
-    *) echo "Usage: $0 [--no-builder]" >&2; exit 1 ;;
-esac
+REMOTE=yes
+for arg in "$@"; do
+    case "$arg" in
+        --no-builder) BUILDER=no ;;
+        --no-remote) REMOTE=no ;;
+        *) echo "Usage: $0 [--no-builder] [--no-remote]" >&2; exit 1 ;;
+    esac
+done
 
 for tool in docker python3 curl; do
     command -v "$tool" >/dev/null || { echo "Error: $tool is not installed." >&2; exit 1; }
@@ -117,9 +122,21 @@ echo "  Maps                    $WEB/"
 echo "  Print a map             $WEB/mapprinter/"
 echo "  Tile server (TAK)       http://$ADDRESS:$TILE_PORT/"
 [ "$BUILDER" = yes ] && echo "  Map builder             $WEB/mapadmin/"
+[ "$REMOTE" = yes ] && echo "  Phones                  $WEB/phones/"
 if [ -z "$(find data -maxdepth 1 -name 'basemap.mbtiles' -size +100k 2>/dev/null)" ]; then
     echo "There are no maps on this device yet: the Maps page is blank until the first build."
     [ "$BUILDER" = yes ] && echo "Open the map builder to choose your regions and start it."
+fi
+
+echo
+echo "== Remote access for the Fieldmap app"
+if [ "$REMOTE" = yes ]; then
+    ./scripts/remote.sh setup || echo "WARNING: remote access for the app is not set up (see above). Everything else works." >&2
+elif [ -f /etc/systemd/system/fieldmap-remote.service ]; then
+    ./scripts/remote.sh off
+else
+    touch data/remote/run/no-remote      # no Phones tab in the header
+    echo "Left out (--no-remote)."
 fi
 
 # A firewall is the owner's to change: say what it needs, do not touch it.

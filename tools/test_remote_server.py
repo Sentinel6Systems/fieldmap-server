@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Tests for tools/remote-server.py. Run: python3 -m unittest tools/test_remote_server.py"""
+import contextlib
 import importlib.util
+import io
+import json
 import os
+import re
 import subprocess
 import tempfile
+import time
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -25,57 +31,101 @@ def phone_key():
     return private, public.decode()
 
 
+class FakeRequest:
+    """Just enough of BaseHTTPRequestHandler to call do_GET / do_POST directly. Files the
+    handler writes straight out (the page) are caught too."""
+
+    def __init__(self, rs, method, path, headers=None, body=None):
+        self.rs, self.path = rs, path
+        data = json.dumps(body).encode() if body is not None else b""
+        self.headers = dict(headers or {})
+        if data:
+            self.headers["Content-Length"] = str(len(data))
+        handler = rs.Handler.__new__(rs.Handler)
+        handler.path, handler.headers, handler.rfile = path, self.headers, io.BytesIO(data)
+        self.out = {}
+        handler.send = lambda status, payload=None: self.out.update(status=status, body=payload)
+        handler.send_response = lambda status: self.out.update(status=status)
+        handler.send_header = lambda *a: None
+        handler.end_headers = lambda: None
+        handler.wfile = io.BytesIO()
+        getattr(handler, "do_" + method)()
+
+    @property
+    def status(self):
+        return self.out["status"]
+
+    @property
+    def body(self):
+        return self.out["body"]
+
+
+LAN = {"X-Real-IP": "192.168.1.20"}
+
+
 class RemoteServerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.rs = load(self.tmp.name)
-        self.rs.init("/maps/", "http://127.0.0.1:8080/", "127.0.0.1:8443")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.rs.init("/maps/", "http://127.0.0.1:8080/", "8443", True)
+        self.no_v6 = mock.patch.object(self.rs.portmap, "global_ipv6", return_value=[])
+        self.no_v6.start()
 
     def tearDown(self):
+        self.no_v6.stop()
         self.tmp.cleanup()
-        os.environ.pop("REMOTE_ADDRESS", None)
+        for name in ("REMOTE_ADDRESS", "REMOTE_PIN"):
+            os.environ.pop(name, None)
 
-    def test_init_makes_everything_once(self):
+    def get(self, path, headers=LAN):
+        return FakeRequest(self.rs, "GET", path, headers)
+
+    def post(self, path, body, headers=LAN):
+        return FakeRequest(self.rs, "POST", path, headers, body)
+
+    # ---------- certificates ----------
+
+    def test_init_makes_everything_once_with_names_that_say_nothing(self):
         self.assertTrue(self.rs.ready())
         before = open(self.rs.CA_CRT).read()
-        self.rs.init("/", "http://tileserver:8080/", "8443")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.rs.init("/", "http://tileserver:8080/", "8443", False)
         self.assertEqual(before, open(self.rs.CA_CRT).read(), "a second init keeps the authority")
         self.assertEqual(0o600, os.stat(self.rs.CA_KEY).st_mode & 0o777)
         self.assertFalse(os.path.exists(os.path.join(self.rs.GATEWAY, "ca.key")), "the gateway never gets the authority's key")
+        name = self.rs.gateway_name()
+        self.assertRegex(name, r"^b[0-9a-f]{20}$")
+        for path in (self.rs.CA_CRT, os.path.join(self.rs.GATEWAY, "server.crt")):
+            text = subprocess.run(["openssl", "x509", "-in", path, "-noout", "-subject", "-ext", "subjectAltName"],
+                                  capture_output=True, text=True).stdout
+            self.assertNotRegex(text.lower(), "fieldmap|box", "nothing in a certificate names the project")
+        self.assertIn("DNS:" + name, subprocess.run(["openssl", "x509", "-in", os.path.join(self.rs.GATEWAY, "server.crt"),
+                                                     "-noout", "-ext", "subjectAltName"], capture_output=True, text=True).stdout)
 
-    def test_a_phone_is_let_in_with_a_certificate_for_its_own_key(self):
-        private, public = phone_key()
+    def test_a_phone_gets_a_certificate_for_its_own_key(self):
+        _, public = phone_key()
         device = self.rs.enrol("Test phone", public)
         self.assertTrue(self.rs.allowed(device["sha1"]))
-        self.assertTrue(self.rs.allowed(device["sha1"].upper()))
-        # The certificate verifies against the box's authority, is for the phone's key, and is for clients only.
         with tempfile.NamedTemporaryFile("w", suffix=".pem") as f:
             f.write(device["certificate"])
             f.flush()
             subprocess.run(["openssl", "verify", "-CAfile", self.rs.CA_CRT, "-purpose", "sslclient", f.name], capture_output=True, check=True)
             in_cert = subprocess.run(["openssl", "x509", "-in", f.name, "-noout", "-pubkey"], capture_output=True, check=True).stdout.decode()
             as_server = subprocess.run(["openssl", "verify", "-CAfile", self.rs.CA_CRT, "-purpose", "sslserver", f.name], capture_output=True)
+            subject = subprocess.run(["openssl", "x509", "-in", f.name, "-noout", "-subject"], capture_output=True, text=True).stdout
         self.assertEqual(public.strip(), in_cert.strip())
         self.assertNotEqual(0, as_server.returncode, "a phone's certificate cannot pose as the box")
+        self.assertNotIn("fieldmap", subject.lower())
 
-    def test_the_same_key_twice_is_one_device(self):
+    def test_the_same_key_twice_is_one_phone_and_removal_locks_out(self):
         _, public = phone_key()
         first = self.rs.enrol("Phone", public)
-        again = self.rs.enrol("Phone again", public)
-        self.assertEqual(first["id"], again["id"])
+        self.assertEqual(first["id"], self.rs.enrol("Phone again", public)["id"])
         self.assertEqual(1, len(self.rs.load_devices()))
-
-    def test_a_removed_phone_is_locked_out(self):
-        _, public = phone_key()
-        device = self.rs.enrol("Phone", public)
-        self.assertTrue(self.rs.remove(device["id"]))
-        self.assertFalse(self.rs.allowed(device["sha1"]))
-        self.assertFalse(self.rs.remove(device["id"]))
-
-    def test_unknown_and_empty_fingerprints_are_refused(self):
-        self.assertFalse(self.rs.allowed(""))
-        self.assertFalse(self.rs.allowed(None))
-        self.assertFalse(self.rs.allowed("0" * 40))
+        self.assertTrue(self.rs.remove(first["id"]))
+        self.assertFalse(self.rs.allowed(first["sha1"]))
+        self.assertFalse(self.rs.remove(first["id"]))
 
     def test_only_p256_public_keys_are_taken(self):
         with self.assertRaises(ValueError):
@@ -85,47 +135,166 @@ class RemoteServerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.rs.enrol("Phone", rsa_public)
 
-    def test_names_are_cleaned(self):
-        self.assertEqual("Phone", self.rs.clean_name(""))
-        self.assertEqual("ab", self.rs.clean_name(" a\x00\nb "))
-        self.assertEqual(40, len(self.rs.clean_name("x" * 100)))
+    # ---------- pairing ----------
 
-    def test_only_the_local_network_may_enrol(self):
-        lan = self.rs.lan_only
-        self.assertTrue(lan({"X-Real-IP": "192.168.1.20"}))
-        self.assertTrue(lan({"X-Real-IP": "10.0.0.7"}))
-        self.assertTrue(lan({"X-Real-IP": "172.20.1.1"}))
-        self.assertTrue(lan({"X-Real-IP": "127.0.0.1"}))
-        self.assertTrue(lan({"X-Real-IP": "fd00::5"}))
-        self.assertTrue(lan({"X-Real-IP": "::ffff:192.168.1.20"}))
-        self.assertFalse(lan({"X-Real-IP": "203.0.113.30"}), "an address on the internet")
-        self.assertFalse(lan({"X-Real-IP": "2001:db8::1"}), "an IPv6 address that is not local")
-        self.assertFalse(lan({"X-Real-IP": "100.64.0.9"}), "a relay network's address is not the local network")
-        self.assertFalse(lan({}), "not through the box's web server")
-        self.assertFalse(lan({"X-Real-IP": "nonsense"}))
-        self.assertFalse(lan({"X-Real-IP": "192.168.1.20", "X-Forwarded-For": "203.0.113.30"}), "came through a proxy or tunnel")
-        self.assertFalse(lan({"X-Real-IP": "127.0.0.1", "Tailscale-Funnel-Request": "?1"}))
+    def test_pairing_works_only_while_open(self):
+        _, public = phone_key()
+        closed = self.post("/enrol", {"name": "Phone", "publicKey": public})
+        self.assertEqual(403, closed.status)
+        self.assertTrue(closed.body["closed"])
+        self.assertEqual(200, self.post("/pairing", {"open": True}).status)
+        self.assertTrue(0 < self.rs.pairing_left() <= self.rs.PAIRING_SECONDS)
+        paired = self.post("/enrol", {"name": "Phone", "publicKey": public})
+        self.assertEqual(200, paired.status)
+        self.assertEqual(self.rs.gateway_name(), paired.body["gatewayName"])
+        self.assertIn("BEGIN CERTIFICATE", paired.body["ca"])
+        self.post("/pairing", {"open": False})
+        _, other = phone_key()
+        self.assertEqual(403, self.post("/enrol", {"name": "Other", "publicKey": other}).status)
 
-    def test_the_outside_address_comes_from_the_file_or_the_setting(self):
-        self.assertIsNone(self.rs.remote_address())
-        with open(self.rs.ADDRESS, "w") as f:
-            f.write("box.example.ts.net:443\n")
-        self.assertEqual({"host": "box.example.ts.net", "port": 443}, self.rs.remote_address())
+    def test_only_the_local_network_may_pair_or_manage(self):
+        self.rs.open_pairing()
+        _, public = phone_key()
+        outsiders = [{"X-Real-IP": "203.0.113.30"}, {"X-Real-IP": "100.64.0.9"}, {"X-Real-IP": "2001:db8::1"},
+                     {"X-Real-IP": "nonsense"}, {"X-Real-IP": "192.168.1.20", "X-Forwarded-For": "203.0.113.30"},
+                     {"X-Real-IP": "127.0.0.1", "Tailscale-Funnel-Request": "?1"}]
+        for headers in outsiders:
+            self.assertEqual(403, self.post("/enrol", {"name": "x", "publicKey": public}, headers).status, headers)
+            self.assertEqual(403, self.post("/pairing", {"open": True}, headers).status, headers)
+            self.assertEqual(403, self.post("/remove", {"id": "x"}, headers).status, headers)
+            self.assertEqual(403, self.get("/devices", headers).status, headers)
+            self.assertEqual(403, self.get("/info", headers).status, headers)
+        for headers in [{"X-Real-IP": "10.0.0.7"}, {"X-Real-IP": "172.20.1.1"}, {"X-Real-IP": "fd00::5"},
+                        {"X-Real-IP": "::ffff:192.168.1.20"}, {}]:
+            self.assertEqual(200, self.get("/info", headers).status, headers)
+
+    def test_phones_at_home_with_a_global_ipv6_address_count_as_local(self):
+        with mock.patch.object(self.rs.portmap, "global_ipv6", return_value=["2001:db8:77::10"]):
+            self.assertEqual(200, self.get("/info", {"X-Real-IP": "2001:db8:77::abcd"}).status)
+            self.assertEqual(403, self.get("/info", {"X-Real-IP": "2001:db8:78::abcd"}).status)
+
+    def test_the_box_code_guards_pairing_and_removal(self):
+        os.environ["REMOTE_PIN"] = "4711"
+        self.assertEqual(403, self.post("/pairing", {"open": True}).status)
+        self.assertEqual(200, self.post("/pairing", {"open": True, "pin": "4711"}).status)
+        _, public = phone_key()
+        self.assertTrue(self.post("/enrol", {"name": "x", "publicKey": public}).body.get("pin"))
+        self.assertEqual(200, self.post("/enrol", {"name": "x", "publicKey": public, "pin": " 4711 "}).status)
+
+    def test_the_check_answers_only_the_gateway(self):
+        _, public = phone_key()
+        device = self.rs.enrol("Phone", public)
+        self.assertEqual(204, self.get("/check", {"X-Fieldmap-Fingerprint": device["sha1"]}).status)
+        self.assertEqual(403, self.get("/check", {"X-Fieldmap-Fingerprint": device["sha1"], "X-Real-IP": "192.168.1.20"}).status,
+                         "not through the web server")
+        self.assertEqual(403, self.get("/check", {"X-Fieldmap-Fingerprint": "0" * 40}).status)
+        self.assertEqual(403, self.get("/check", {}).status)
+
+    def test_coming_in_from_outside_is_written_down(self):
+        _, public = phone_key()
+        device = self.rs.enrol("Phone", public)
+        self.get("/check", {"X-Fieldmap-Fingerprint": device["sha1"]})
+        self.assertTrue(self.get("/devices").body["devices"][0]["seen"] > 0, "shown at once")
+        self.assertEqual("confirmed", self.rs.report()["status"], "and counted at once")
+        self.rs.write_seen()
+        self.assertTrue(self.rs.load_devices()[0]["seen"] > 0, "and written down")
+        self.assertEqual("confirmed", self.rs.report()["status"])
+
+    # ---------- the switch ----------
+
+    def test_switched_off_is_complete_isolation_and_keeps_the_phones(self):
+        _, public = phone_key()
+        self.rs.open_pairing()
+        device = self.rs.enrol("Phone", public)
+        self.rs.write_private(self.rs.REACH, json.dumps({"checked": 1, "problem": "", "ipv4": {"ok": True, "external_ip": "203.0.113.30",
+                                                                                              "external_port": 41000}, "ipv6": {}}).encode())
+        with mock.patch.object(self.rs.portmap, "release", return_value=[]) as release:
+            off = self.post("/enabled", {"on": False})
+            self.rs.time.sleep(0.2)                 # the router is told in the background
+        self.assertEqual(200, off.status)
+        self.assertFalse(off.body["enabled"])
+        release.assert_called_once()
+        self.assertEqual(401, self.get("/check", {"X-Fieldmap-Fingerprint": device["sha1"]}).status, "401: switched off, not removed")
+        self.assertEqual([], self.get("/info").body["endpoints"])
+        self.assertEqual("off", self.get("/info").body["reach"]["status"])
+        self.assertEqual(0, self.rs.pairing_left(), "pairing closes")
+        self.assertEqual(409, self.post("/pairing", {"open": True}).status)
+        _, other = phone_key()
+        self.assertEqual(403, self.post("/enrol", {"name": "x", "publicKey": other}).status)
+        self.assertEqual(1, len(self.rs.load_devices()), "the phones are kept")
+        self.assertEqual({"enabled": False}, json.load(open(self.rs.SETTINGS)))
+        self.assertEqual(0o644, os.stat(self.rs.SETTINGS).st_mode & 0o777, "the firewall reads it")
+        with mock.patch.object(self.rs.portmap, "reach", return_value={"checked": 2, "ipv4": {"ok": True, "external_ip": "203.0.113.30",
+                                                                                                "external_port": 41000}, "ipv6": {}, "problem": ""}):
+            self.assertTrue(self.post("/enabled", {"on": True}).body["enabled"])
+            self.rs.time.sleep(0.2)
+        self.assertEqual(204, self.get("/check", {"X-Fieldmap-Fingerprint": device["sha1"]}).status)
+
+    def test_the_phones_page_and_its_header_are_served_on_the_local_network_only(self):
+        page = self.get("/")
+        self.assertEqual(200, page.status, page.out)
+        for path in ("/fieldmap.css", "/nav.js", "/index.html"):
+            self.assertEqual(200, self.get(path).status, path)
+        for path in ("/../tools/remote-server.py", "/devices.json", "/ca.key", "/x.py"):
+            self.assertEqual(404, self.get(path).status, path)
+        self.assertEqual(403, self.get("/", {"X-Real-IP": "203.0.113.30"}).status)
+
+    # ---------- addresses ----------
+
+    def test_addresses_from_the_router_and_set_by_hand(self):
+        self.rs.write_private(self.rs.REACH, json.dumps({"checked": 1, "problem": "", "ipv4": {"ok": True, "external_ip": "203.0.113.30", "external_port": 41000},
+                                                          "ipv6": {"addresses": ["2001:db8:77::10"]}}).encode())
         os.environ["REMOTE_ADDRESS"] = "tak.example.com:8443"
-        self.assertEqual({"host": "tak.example.com", "port": 8443}, self.rs.remote_address())
-        os.environ["REMOTE_ADDRESS"] = "not an address"
-        self.assertIsNone(self.rs.remote_address())
+        self.assertEqual([{"host": "tak.example.com", "port": 8443}, {"host": "203.0.113.30", "port": 41000},
+                          {"host": "[2001:db8:77::10]", "port": 8443}], self.get("/info").body["endpoints"])
+        self.assertEqual("expected", self.rs.report()["status"])
 
-    def test_the_gateway_configuration_demands_a_certificate_and_serves_only_the_maps(self):
-        conf = self.rs.gateway_conf("/maps/", "http://127.0.0.1:8080/", "127.0.0.1:8443")
+    def test_the_report_names_why_nothing_gets_in(self):
+        self.rs.write_private(self.rs.REACH, json.dumps({"checked": 1, "problem": "shared-address", "ipv4": {"ok": False}, "ipv6": {"addresses": []}}).encode())
+        r = self.rs.report()
+        self.assertEqual("blocked", r["status"])
+        self.assertIn("shares one address", r["text"])
+        self.rs.write_private(self.rs.REACH, json.dumps({"checked": 1, "problem": "router-closed", "ipv4": {}, "ipv6": {"addresses": ["2001:db8:77::10"]}}).encode())
+        self.assertEqual("maybe", self.rs.report()["status"])
+
+    # ---------- the gateway ----------
+
+    def test_the_gateway_serves_only_what_the_app_needs(self):
+        conf = self.rs.gateway_conf("/maps/", "http://127.0.0.1:8080/", "8443", True)
         self.assertIn("ssl_verify_client       on;", conf)
         self.assertIn("auth_request /_device;", conf)
-        self.assertIn("location /maps/ {", conf)
+        self.assertIn("listen [::]:8443 ssl;", conf)
+        self.assertIn("server_tokens off;", conf)
+        allowed = re.search(r'if \(\$uri !~ "(.*)"\)', conf).group(1)
+        for path in ["/maps/styles.json", "/maps/styles/topo-light/style.json", "/maps/styles/topo-light/sprite@2x.png",
+                     "/maps/fonts/Open Sans Regular,Open Sans Bold/0-255.pbf", "/maps/data/basemap.json",
+                     "/maps/data/basemap/14/8529/5974.pbf", "/maps/data/hillshade/12/2132/1493.webp"]:
+            self.assertRegex(path, allowed)
+        for path in ["/maps/styles/topo-light/14/8529/5974.png", "/maps/styles/topo-light/wmts.xml", "/maps/",
+                     "/maps/index.html", "/mapprinter/", "/mapadmin/", "/maps/data/basemap/", "/maps/../etc/passwd",
+                     "/maps/data/basemap/14/1/1.pbf/x", "/maps/files/nav.js"]:
+            self.assertNotRegex(path, allowed)
         self.assertIn("location / { return 404; }", conf)
-        self.assertNotIn("location / { return 404; }", self.rs.gateway_conf("/", "http://tileserver:8080/", "8443"))
+        root = self.rs.gateway_conf("/", "http://tileserver:8080/", "8443", False)
+        self.assertNotIn("listen [::]", root)
+        self.assertEqual(1, root.count("location / {"), "one catch-all only, or nginx refuses to start")
         for bad in (("maps/", "http://127.0.0.1:8080/", "8443"), ("/maps/", "127.0.0.1:8080", "8443"), ("/maps/", "http://127.0.0.1:8080/", "x")):
             with self.assertRaises(ValueError):
                 self.rs.gateway_conf(*bad)
+
+    def test_pairing_opens_by_itself_only_while_no_phone_is_paired(self):
+        self.rs.close_pairing()
+        with mock.patch.object(self.rs, "SocketServer"), mock.patch.object(self.rs.threading, "Thread"), mock.patch.object(self.rs.signal, "signal"), \
+                contextlib.redirect_stdout(io.StringIO()), mock.patch.object(self.rs.os, "chmod"), mock.patch.object(self.rs.os, "chdir"):
+            self.rs.serve("127.0.0.1", 0)
+        self.assertTrue(self.rs.pairing_left() > self.rs.PAIRING_SECONDS)
+        self.rs.close_pairing()
+        _, public = phone_key()
+        self.rs.enrol("Phone", public)
+        with mock.patch.object(self.rs, "SocketServer"), mock.patch.object(self.rs.threading, "Thread"), mock.patch.object(self.rs.signal, "signal"), \
+                contextlib.redirect_stdout(io.StringIO()), mock.patch.object(self.rs.os, "chmod"), mock.patch.object(self.rs.os, "chdir"):
+            self.rs.serve("127.0.0.1", 0)
+        self.assertEqual(0, self.rs.pairing_left())
 
 
 if __name__ == "__main__":

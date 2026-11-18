@@ -1,0 +1,12 @@
+# Applies the box's firewall again as soon as the Phones page's switch changes
+# (data/remote/settings.json), so that switching remote access off closes the gateway's port
+# at once. Installed by scripts/remote.sh setup, which fills in this folder.
+[Unit]
+Description=fieldmap-server firewall follows the remote access switch
+
+[Path]
+PathChanged=/opt/fieldmap-server/data/remote/settings.json
+Unit=fieldmap-firewall.service
+
+[Install]
+WantedBy=paths.target

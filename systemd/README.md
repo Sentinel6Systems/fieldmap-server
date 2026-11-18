@@ -46,6 +46,7 @@ To make the page ask for a code, set `ADMIN_PIN=<code>` in `.env` and restart th
 
 ## Remote access for the Android app
 
-`./scripts/remote.sh setup` installs `fieldmap-remote.service` for you, with this folder and its owner
-filled in. It runs `scripts/remote.sh serve`, which reads `REMOTE_PIN` and `REMOTE_ADDRESS` from `.env`;
-restart the service after changing them.
+`./scripts/remote.sh setup` (run by the installers) installs these with this folder and its owner filled in:
+`fieldmap-remote.service` (pairing, the list of phones, the router's port), `fieldmap-firewall.timer` (the box's
+own firewall, refreshed every five minutes) and `fieldmap-remote-update.timer` (the gateway's weekly update). The
+service reads `REMOTE_*` from `.env`; run `./scripts/remote.sh setup` again after changing them.

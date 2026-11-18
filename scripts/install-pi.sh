@@ -107,6 +107,13 @@ sed "s#/opt/fieldmap-server/#$REPO/#" pi/nginx/mapprinter-nginx.conf > /etc/ngin
 install -m 644 pi/nginx/maps-nginx.conf /etc/nginx/conf.d/maps-nginx.conf
 nginx -t && systemctl reload nginx
 
+echo "== Remote access for the Fieldmap app"
+# Phones paired on this network can then use the maps from anywhere (scripts/remote.sh).
+# REMOTE=no in the environment leaves it out.
+if [ "${REMOTE:-yes}" != no ]; then
+  ./scripts/remote.sh setup || echo "WARNING: remote access for the app is not set up (see above). Everything else works." >&2
+fi
+
 sleep 5
 echo "== Styles served:"
 curl -s http://127.0.0.1/maps/styles.json | grep -o '"id":"[^"]*"' || echo "(tile server not answering yet; try again in a minute)"

@@ -1,5 +1,5 @@
 // fieldmap-server: the header every page shares. A page carries
-//   <header class="fm-bar" id="fm-bar" data-page="maps|print|builder" data-root="<its own folder>"></header>
+//   <header class="fm-bar" id="fm-bar" data-page="maps|print|builder|phones" data-root="<its own folder>"></header>
 // and loads this file right after it. The header shows the name, a link to each page that
 // is there (the current one marked), and a Home button when the site sets one.
 //
@@ -7,6 +7,8 @@
 //   the print tool    /mapprinter/   (its config.json answers)
 //   the Maps page     /maps/ behind Internet-in-a-Box, else /   (styles.json answers)
 //   the map builder   /mapadmin/     (answers; "not running" when only its place is there)
+//   the Phones page   /phones/       (remote access for the Fieldmap app; the same, and only on the
+//                                    box's own network, where the page itself answers)
 // A page that is not found gets no link. Home is homeUrl (and homeName) in the print
 // tool's config.json: the address of a landing page in front of these pages, if any.
 (() => {
@@ -14,7 +16,7 @@
   if (!bar) return;
   const here = bar.dataset.page;
   const own = new URL(bar.dataset.root || "./", location.href).pathname;
-  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print a map", "Print"], ["builder", "Map builder", "Builder"]];
+  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print a map", "Print"], ["builder", "Map builder", "Builder"], ["phones", "Phones", "Phones"]];
   const CACHE = "fieldmap.nav";
 
   const el = (tag, props = {}, ...kids) => {
@@ -58,7 +60,7 @@
   async function find() {
     const found = {};
     const printRoot = here === "print" ? own : "/mapprinter/";
-    const [config, mapsRoot, builder] = await Promise.all([
+    const [config, mapsRoot, builder, phones] = await Promise.all([
       json(printRoot + "config.json"),
       here === "maps" ? own : (async () => {
         for (const root of ["/maps/", "/"]) if (Array.isArray(await json(root + "styles.json"))) return root;
@@ -67,6 +69,13 @@
       here === "builder" ? own : (async () => {
         const r = await get("/mapadmin/style.css");
         if (r && r.ok && (r.headers.get("Content-Type") || "").includes("css")) return "/mapadmin/";
+        return r && r.status === 503 ? "off" : null;
+      })(),
+      here === "phones" ? own : (async () => {
+        const r = await get("/phones/info");
+        let info = null;
+        try { info = r && r.ok ? await r.json() : null; } catch { /* not the service */ }
+        if (info && info.service === "fieldmap-remote") return "/phones/";
         return r && r.status === 503 ? "off" : null;
       })(),
     ]);
@@ -80,6 +89,7 @@
     }
     if (mapsRoot) found.maps = mapsRoot;
     if (builder) found.builder = builder;
+    if (phones) found.phones = phones;
     return found;
   }
 

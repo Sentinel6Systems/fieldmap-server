@@ -50,10 +50,11 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
 
 ## Remote access for the Android app
 
-Optional: `sudo ./scripts/remote.sh setup` lets phones that have been on the box's network use the maps from
-anywhere (see "Remote access for the Android app" in the main README). It adds `nginx/mapremote-nginx.conf` to
-`/etc/nginx/conf.d/`, a `fieldmap-remote` service, and a second container beside the tile server. Internet-in-a-Box
-installs Tailscale, which this uses; sign the box in first with `sudo tailscale up`.
+`install-pi.sh` also sets up remote access for the Fieldmap app (see "Remote access for the Android app" in the main
+README): it adds `nginx/mapremote-nginx.conf` to `/etc/nginx/conf.d/`, the `fieldmap-remote` service, a second
+container beside the tile server, and a firewall table of its own (`fieldmap_guard`) beside Internet-in-a-Box's.
+`sudo REMOTE=no ./scripts/install-pi.sh` leaves it out. Internet-in-a-Box's hotspot is often open: set `REMOTE_PIN`
+in `.env` if strangers could join it while pairing is open.
 
 ## Notes
 

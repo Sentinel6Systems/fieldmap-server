@@ -1,0 +1,11 @@
+# Once a week, at a random hour, and at the next start when the box was off at the time.
+[Unit]
+Description=fieldmap-server remote gateway weekly update
+
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=12h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

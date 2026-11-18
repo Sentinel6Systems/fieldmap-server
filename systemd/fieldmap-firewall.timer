@@ -1,0 +1,11 @@
+# Applies the box's firewall at boot, and every five minutes after: the home network's IPv6
+# prefix, which the rules name, can change.
+[Unit]
+Description=fieldmap-server firewall refresh
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

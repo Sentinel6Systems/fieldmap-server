@@ -17,9 +17,9 @@ services:
 
   # The gateway for the Fieldmap Android app away from this network (scripts/remote.sh setup
   # makes its certificates and starts it; `up -d` alone leaves it out). Host networking like
-  # the tile server; it listens on the address and port in its configuration (localhost).
+  # the tile server; it listens on REMOTE_PORT (8443), IPv4 and IPv6.
   remote:
-    image: ${REMOTE_IMAGE:-nginx:1.27-alpine}
+    image: ${REMOTE_IMAGE:-nginx:stable-alpine}
     container_name: fieldmap-remote
     profiles: ["remote"]
     restart: always

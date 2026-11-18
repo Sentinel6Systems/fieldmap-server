@@ -48,9 +48,10 @@ Maps                    http://<address>/
 Print a map             http://<address>/mapprinter/
 Tile server (TAK)       http://<address>:8080/
 Map builder             http://<address>/mapadmin/
+Phones                  http://<address>/phones/
 ```
 
-The three pages share one look and one header, with a link to each of the others (see "The pages and their
+The pages share one look and one header, with a link to each of the others (see "The pages and their
 header").
 
 A new install has no maps yet, so the Maps page is blank and says so. Build them in one of two ways, a small area first to check
@@ -139,6 +140,7 @@ builds do.
 | Maps | `/` (`/maps/` behind Internet-in-a-Box) | The interactive map, with a menu of the styles and, under **Use in another app**, the tile addresses for TAK clients and other map apps |
 | Print a map | `/mapprinter/` | The print tool |
 | Map builder | `/mapadmin/` | Choose and build the maps (not on a Raspberry Pi) |
+| Phones | `/phones/` | Remote access for the Fieldmap Android app: on or off, pairing, the paired phones (see "Remote access for the Android app") |
 
 Every page has the same header: the name, a link to each of the other pages with the current one marked, and
 nothing else to learn. The header finds the other pages by itself on the address it was opened at (`ui/nav.js`): a
@@ -199,7 +201,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
 | `pi/` | Raspberry Pi + Internet-in-a-Box deployment: compose file, nginx snippets, notes |
 | `systemd/` | Start the compose stack, and optionally the map builder page, at boot |
-| `scripts/remote.sh`, `tools/remote-server.py` | Optional remote access for the Android app: certificates, the gateway, the list of phones |
+| `phones/`, `scripts/remote.sh`, `scripts/firewall.sh`, `tools/remote-server.py`, `tools/portmap.py` | Remote access for the Android app: the Phones page, pairing, the router's port, the gateway, the box's firewall |
 | `data/` | Your mbtiles files (not in git) |
 
 ## The styles
@@ -827,71 +829,93 @@ Without the script, the cap is `1g`.
 ## Remote access for the Android app
 
 The [Fieldmap Android app](https://github.com/Sentinel6Systems/fieldmap-android) can use this box's maps away
-from its network, while both have an internet connection. A phone must have been on the box's own network once:
-there, one button in the app asks the box to let it in. Nobody else gets in, and the pages for browsers (Maps,
-Print a map, Map builder) are not opened to the internet at all.
+from home, while the box and the phone both have internet. Nothing to set up: the installers turn it on.
 
-Status: new. Tested with the gateway reached directly. The last leg, through Tailscale Funnel, has not been
-tested on a real Tailscale account yet.
+1. Plug the box into your home router and install as above.
+2. On a phone on the same network: open the Fieldmap app, connect to the box, then **Menu › Server › Pair this
+   phone**. For the first 15 minutes after the box starts, while no phone is paired yet, that is all. Later,
+   first press **Pair a phone** on the box's **Phones** page: pairing is then open for ten minutes.
+3. Away from home the app reaches the box by itself; its strip reads **Remote**.
+
+The **Phones** page (`/phones/`, a tab in every page's header, on the box's own network only) is where all of this
+is managed:
+
+- **Remote access on or off.** Off keeps the box completely to its own network: the router's port is closed, the
+  box's firewall shuts the gateway, pairing stops. The paired phones stay on the list, and the app keeps them
+  paired, for when it is switched on again.
+- **From outside:** whether phones can reach the box, and if not, why, in plain words; the addresses phones are
+  told to try; **Ask the router again**.
+- **Pair a phone**, and the **paired phones**, each with when it last came in from outside, and **Remove**.
+
+No account, no outside service, nothing of anyone else's in between: the box talks only to your own router.
 
 ### How it works
 
-- **The box is its own certificate authority.** `scripts/remote.sh setup` makes it; its key stays in
-  `data/remote/` on the box.
-- **A phone is let in on the local network only.** The app makes a key in the phone's key store (the private half
-  cannot be read out again), sends the public half to `/mapremote/enrol`, and gets a certificate for it. The box
-  answers that request only when it comes from a private address through the box's own web server, without
-  passing another proxy or tunnel. `REMOTE_PIN=<code>` in `.env` makes it ask for a code as well.
-- **The gateway demands that certificate.** It is an nginx container that listens on the box itself only,
-  refuses every visitor without a certificate this box issued, checks every request against the device list, and
-  serves only the tile server.
-- **A relay makes the gateway reachable.** [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) gives the box a
-  public name and passes the encrypted connection on to the gateway without being able to read it. Internet-in-a-Box
-  installs Tailscale already; the box needs a Tailscale account, the phones need neither the account nor the
-  Tailscale app. It works behind routers that cannot forward a port. Funnel has a bandwidth limit that Tailscale
-  does not state: the remote link is for looking at the map, and saving areas is best done at home.
+- **Pairing on the home network only.** The app makes a key in the phone's key store (the private half cannot be
+  read out again) and the box gives it a certificate for that key. The box is its own certificate authority; its
+  key stays in `data/remote/`. It pairs only while pairing is open, and only callers on the local network: a
+  request from outside, or one that came through any proxy or tunnel, is refused.
+- **The router opens one port.** The box asks the home router to forward a random outside port to its gateway,
+  the way games and video calls do (UPnP or NAT-PMP), renews it every quarter of an hour, and notes the address
+  the router has outside. It also offers its own IPv6 address, which needs no forwarding, and opens the router's
+  IPv6 firewall where the router lets it (UPnP IGD 2). The phone learns all these addresses whenever it is home.
+- **The gateway lets in only paired phones.** It is an nginx container that refuses everyone without a
+  certificate this box issued, checks every request against the list of phones, and serves only what the app
+  needs: styles, fonts, symbols and data tiles. Not the pictures the tile server draws, not the print tool, not
+  the map builder, nothing else. It limits connections per visitor and takes nginx's security fixes every week.
+- **A firewall on the box itself** lets nothing in from outside the local network but the gateway and SSH, over
+  IPv4 and IPv6, whatever the router does (`scripts/firewall.sh`). Devices at home, and the box's own connections
+  out, are not affected.
+- **Nothing gives the box away.** The names in its certificates are random letters.
 
-The app asks for the maps under the address it uses at home whichever way it reaches the box, so the areas saved
-on a phone are the same ones at home and away.
+### When it cannot work
 
-### Set it up
+The Phones page and `./scripts/remote.sh status` say which of these applies:
 
-```bash
-sudo tailscale up            # once: sign this box in to your Tailscale account (open the link it prints)
-./scripts/remote.sh setup    # with sudo on a Raspberry Pi behind Internet-in-a-Box
+- **The router does not open ports by itself** (UPnP switched off): switch UPnP or NAT-PMP on in the router's
+  settings, or forward one port by hand (below).
+- **Two routers in a row** (the provider's and your own): put the provider's in bridge mode, or forward the port
+  on both.
+- **The provider shares one address among customers** (Starlink, most cellular home internet, some fibre): no way
+  in over IPv4. The box's IPv6 address may still work for phones that have IPv6 at the time.
+- **The home address changed while a phone was away:** that phone finds the box again once it has been home.
+  Home addresses usually stay the same for weeks or months.
+
+### Optional
+
+```
+REMOTE_PIN=<code>                      # pairing, and removing a phone, ask for this code too
+REMOTE_ADDRESS=tak.example.com:8443    # an address of your own: a port you forwarded, a name of yours
+REMOTE_DIRECT=off                      # do not ask the router for anything
+REMOTE_FIREWALL=off                    # no firewall on the box (for a box that serves other things from outside)
+REMOTE_FIREWALL_ALLOW=22               # ports open from outside besides the gateway; empty for none
+REMOTE_RELAY=tailscale                 # also reach the gateway through Tailscale Funnel (sign the box in first)
 ```
 
-The first time, Tailscale prints a link to switch Funnel on for your account: open it, approve, and run the
-script again if it stopped there. It ends with the public name of the box. On a machine installed with
-`install.sh`, run that first after a `git pull`: it rebuilds the web front, which serves `/mapremote/`. Run
-`remote.sh setup` again after every update.
-
-Then, on each phone, on the box's network: **Menu › Server › Set up remote access**.
+Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port by hand: any outside port to this
+box's port 8443 (`REMOTE_PORT`), then set `REMOTE_ADDRESS` to `<your address>:<that port>`.
 
 ```bash
-./scripts/remote.sh status          # what is set up and whether it runs
-./scripts/remote.sh devices         # the phones that are let in
+./scripts/remote.sh status          # can phones reach the box from outside, and how
+./scripts/remote.sh pair            # open pairing for ten minutes
+./scripts/remote.sh devices         # the paired phones
 ./scripts/remote.sh remove <id>     # lock one out, at once
-./scripts/remote.sh off             # stop being reachable from outside; the list is kept
-```
-
-**Without Tailscale.** If you can forward a port to the box yourself, set in `.env` the address the phones should
-use and let the gateway listen on the network, then run `remote.sh setup`:
-
-```
-REMOTE_ADDRESS=tak.example.com:8443
-REMOTE_BIND=0.0.0.0
+./scripts/remote.sh off             # remove it (the service, the gateway, the firewall, the Phones tab); the phones are kept
+./scripts/install.sh --no-remote    # install without it (on a Pi: sudo REMOTE=no ./scripts/install-pi.sh)
 ```
 
 ### What to know
 
-- Anyone who can join the box's network can enrol a phone, unless `REMOTE_PIN` is set. Set it where the network is
-  not only yours.
-- A phone that was removed is told so by the app the next time it tries from outside, and can be set up again on
-  the box's network.
-- Back up `data/remote/` with the box. If it is lost, run `remote.sh setup` and set every phone up again.
-- The service is `tools/remote-server.py` (Python's standard library and `openssl`), run by
-  `fieldmap-remote.service`; its tests are `python3 -m unittest tools/test_remote_server.py`.
+- Anyone who can join the box's network while pairing is open can pair a phone. On an open hotspot, set
+  `REMOTE_PIN`. A VPN into the home network counts as the home network.
+- Pairing runs over the home network unencrypted: it assumes that network is trusted at that moment.
+- A phone that was removed is told so the next time it tries from outside, and can be paired again at home.
+- Back up `data/remote/` with the box. If it is lost, every phone has to be paired again.
+- The service is `tools/remote-server.py` with `tools/portmap.py` (Python's standard library, `openssl` and `ip`),
+  run by `fieldmap-remote.service`. Tests: `python3 -m unittest tools/test_remote_server.py tools/test_portmap.py`.
+- Tested against a pretend router (UPnP and NAT-PMP) and in containers (the firewall), not yet on many real
+  routers. If yours behaves differently, `./scripts/remote.sh status` and `journalctl -u fieldmap-remote` say what
+  it answered.
 
 ## Raspberry Pi behind Internet-in-a-Box
 
@@ -937,9 +961,11 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
-- Remote access for the Fieldmap Android app (`scripts/remote.sh setup`): a phone that has been on the box's
-  network can use the maps from anywhere, through a gateway that demands a certificate the box issued, reached
-  through Tailscale Funnel. Optional; nothing changes for a box that does not set it up.
+- Remote access for the Fieldmap Android app, on by default: phones paired on the box's network can use the maps
+  from anywhere. The box opens a port on its own router (UPnP, NAT-PMP, IPv6), lets in only paired phones through a
+  gateway that serves only what the app needs, and puts a firewall on itself. No account or outside service. A new
+  **Phones** page in the header switches it on and off, pairs phones and removes them.
+  `./scripts/install.sh --no-remote` leaves it out.
 - TAK tile addresses end in `.jpg` for the maps that fill the whole picture (the overlay stays `.png`), and
   `config.json` sets JPEG quality 60: about a fifth of the size of PNG tiles. `.png` addresses keep working.
 - One look and one header for every page: Maps, Print a map and Map builder link to each other, follow the
