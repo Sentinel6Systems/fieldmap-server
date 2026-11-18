@@ -73,6 +73,10 @@ if [ ! -f "$REGION_FILE" ]; then
     exit 1
 fi
 
+# LANGUAGE in the environment is the desktop's own setting for the language of program
+# messages (en_US or de:en, for example), not the label language of a build: only the
+# region file or --language sets that.
+unset LANGUAGE
 # shellcheck source=/dev/null
 source "$REGION_FILE"
 WORLD="${OPT_WORLD:-${WORLD:-no}}"

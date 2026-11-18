@@ -76,11 +76,12 @@ build_basemap() {
         run_planetiler "$osm" "${OUT_SUB}basemap.mbtiles" "$memory" "$@"
         return
     fi
-    local world
+    local world language=()
     world="$(world_file)"
     if [ ! -s "$REPO_DIR/data/$world" ]; then
         echo "No world layer yet ($world): building it first."
-        LANGUAGE="${LANGUAGE:-}" "$REPO_DIR/scripts/build-world.sh"
+        [ -n "${LANGUAGE:-}" ] && language=(--language "$LANGUAGE")
+        "$REPO_DIR/scripts/build-world.sh" "${language[@]}"
     else
         echo "World layer: reusing data/$world (delete it to rebuild)"
     fi

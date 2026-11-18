@@ -719,7 +719,8 @@ Downloads Geofabrik extracts to `data/sources/extracts` and merges them into
 ### World layer and label language
 
 Two options work the same for `build-region.sh` and `build-vector.sh` (in a region file: `WORLD=yes`,
-`LANGUAGE=<code>`; a flag on the command line wins):
+`LANGUAGE=<code>`; a flag on the command line wins). A `LANGUAGE` that your shell already has set (many Linux
+desktops set it, to `en_US` for example, for the language of program messages) is not taken as this option:
 
 - `--world`: the map covers the whole world from zoom 0 to 8, and your region from zoom 9 up. Zooming out past your
   region shows continents, countries, cities, major roads, borders and water everywhere, instead of empty space.

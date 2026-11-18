@@ -20,13 +20,15 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO_DIR/scripts/lib.sh"
 trap 'disk_full_hint "$REPO_DIR/data"' ERR
 
+# Only --language sets the label language: LANGUAGE in the environment is the desktop's
+# own setting for the language of program messages.
+LANGUAGE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --language) LANGUAGE="${2:-}"; shift 2 ;;
         *) echo "Usage: $0 [--language <code>]   (codes: $BUILD_LANGUAGES)" >&2; exit 1 ;;
     esac
 done
-LANGUAGE="${LANGUAGE:-}"
 check_language
 MEMORY="${PLANETILER_MEMORY:-8g}"
 
