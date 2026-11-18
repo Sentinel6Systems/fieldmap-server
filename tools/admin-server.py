@@ -183,11 +183,97 @@ def world_file(options):
     return os.path.join(DATA, f"world-z0-8{'-' + options['language'] if options['language'] else ''}.mbtiles")
 
 
+def dem_cell(name):
+    """South-west corner (lat, lon) of the 1 degree cell of a downloaded elevation file, or None."""
+    m = re.fullmatch(r"Copernicus_DSM_COG_10_([NS])(\d\d)_00_([EW])(\d\d\d)_00_DEM\.tif", name)
+    if m:
+        return int(m[2]) * (1 if m[1] == "N" else -1), int(m[4]) * (1 if m[3] == "E" else -1)
+    m = re.fullmatch(r"USGS_13_([ns])(\d\d)([ew])(\d\d\d)\.tif", name)     # named by its north-west corner
+    if m:
+        return int(m[2]) * (1 if m[1] == "n" else -1) - 1, int(m[4]) * (1 if m[3] == "e" else -1)
+    return None
+
+
+def touches(region, lat, lon):
+    """True when the 1 degree cell with its south-west corner at (lat, lon) overlaps the region's
+    outline (the simplified one of admin/regions.json)."""
+    w, s, e, n = lon, lat, lon + 1, lat + 1
+    for poly in region["geom"]:
+        inside = False
+        for ring in poly:
+            pts = list(zip(ring[0::2], ring[1::2]))
+            for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1]):
+                # An edge that enters the cell (Liang-Barsky clipping)...
+                t0, t1 = 0.0, 1.0
+                for p, q in ((x1 - x2, x1 - w), (x2 - x1, e - x1), (y1 - y2, y1 - s), (y2 - y1, n - y1)):
+                    if p == 0:
+                        if q < 0:
+                            t0 = 2
+                    elif p < 0:
+                        t0 = max(t0, q / p)
+                    else:
+                        t1 = min(t1, q / p)
+                if t0 <= t1:
+                    return True
+                # ...or the cell's middle inside the outline (even-odd rule over its rings).
+                if (y1 > lat + 0.5) != (y2 > lat + 0.5) and lon + 0.5 < x1 + (lat + 0.5 - y1) * (x2 - x1) / (y2 - y1):
+                    inside = not inside
+        if inside:
+            return True
+    return False
+
+
+def folder_gb(path):
+    total = 0
+    for folder, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(folder, f))
+            except OSError:
+                pass
+    return total / 1024 ** 3
+
+
+def on_hand(regions, layers, options):
+    """Space (GB) already taken on this device that a build gets back or uses again, by the part
+    of the build from which on it counts ("" from the start):
+    - the finished steps of a staged build that did not finish (data/incoming): the same build
+      carries on with them, any other deletes them first (build-region.sh);
+    - the merged map data of a selection (run_job deletes those of other selections);
+    - the elevation files of the chosen regions downloaded by earlier builds (download_dem in
+      scripts/lib.sh keeps them and does not fetch them again);
+    - the working files a terrain step left when it stopped: the step deletes them, or carries
+      on with them, before it needs room of its own."""
+    out = {"": folder_gb(os.path.join(DATA, "incoming")) +
+           sum(os.path.getsize(p) for p in glob.glob(os.path.join(DATA, "sources", "admin-*.osm.pbf"))) / 1024 ** 3}
+    if any(k in layers for k in ("contours", "hillshade", "elevation")):
+        dem = 0
+        for sub in ("dem", "dem-usgs") if options["terrain"] != "30m" else ("dem",):
+            folder = os.path.join(DATA, "cache", sub)
+            try:
+                names = os.listdir(folder)
+            except OSError:
+                continue
+            for name in names:
+                cell = dem_cell(name)
+                if cell and any(touches(r, *cell) for r in regions):
+                    dem += os.path.getsize(os.path.join(folder, name))
+        out["dem"] = dem / 1024 ** 3
+    for k in ("contours", "hillshade", "elevation"):
+        if k in layers:
+            out[k] = folder_gb(os.path.join(DATA, "cache", k))
+    if "contours" in layers:
+        out["contours"] += folder_gb(os.path.join(DATA, "cache", "contour-cells"))
+    return out
+
+
 def estimate(regions, layers, options):
     """Rough space (GB) and time (hours) of a build, from the sizes in admin/regions.json and
     the rates the build scripts' own disk checks and estimates use (scripts/, tools/region-outline.py).
     kept: on the drive when the build is over (downloads and the new files); temp: needed only
-    while that part runs. The largest temp is added to all that is kept."""
+    while that part runs. The parts run one after another, in the order of the list: the most
+    a build needs is the largest of (all kept so far + the temp of the part running), less what
+    on_hand() says it gets back by then."""
     cpus = os.cpu_count() or 2
     slow = 8 / cpus
     osm = sum(r["osm_mb"] for r in regions) / 1024
@@ -239,11 +325,25 @@ def estimate(regions, layers, options):
     if "usdata" in layers:
         states = sum(1 for r in regions if is_us(r)) if not any(r["id"] == "us" for r in regions) else 51
         add("usdata", "US government data layers", 0.05 + states * 0.08, 1 + states * 0.1, 0.1 + states * 0.05)
-    kept = sum(i["kept_gb"] for i in items)
-    need = kept + max((i["temp_gb"] for i in items), default=0)
+    have = on_hand(regions, layers, options)
+    have["dem"] = min(have.get("dem", 0), next((i["kept_gb"] for i in items if i["key"] == "dem"), 0))
+    need, kept, back = 0, 0, have[""]
+    for i in items:
+        kept += i["kept_gb"]
+        back += have.get(i["key"], 0)
+        need = max(need, kept + i["temp_gb"] - back)
+    # Afterwards: the new files, less what is already here and the files of the layers they replace.
+    replaced = sum(s["size_gb"] for k, s in layers_status().items() if k in layers and s["present"])
     free = shutil.disk_usage(DATA if os.path.isdir(DATA) else ROOT).free / 1024 ** 3
-    return {"items": items, "need_gb": round(need, 1), "kept_gb": round(kept, 1), "free_gb": round(free, 1),
-            "ok": need <= free, "hours": round(sum(i["hours"] for i in items), 1), "cpus": cpus}
+    out = {"items": items, "need_gb": round(max(need, 0.1), 1), "kept_gb": round(kept, 1),
+           "more_after_gb": round(kept - back - replaced, 1), "on_hand_gb": round(back, 1),
+           "free_gb": round(free, 1), "ok": need <= free, "hours": round(sum(i["hours"] for i in items), 1),
+           "cpus": cpus}
+    # The sharper terrain takes roughly ten times the space of the standard one: what that would need.
+    if us_cells and any(k in layers for k in ("contours", "hillshade", "elevation")):
+        out["standard_need_gb"] = estimate(regions, [k for k in layers if k != "detail"],
+                                           {**options, "terrain": "30m", "detail": None})["need_gb"]
+    return out
 
 
 def lon_span(spans):

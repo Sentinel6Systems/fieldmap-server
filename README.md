@@ -104,9 +104,16 @@ What a build from the page does (`tools/admin-server.py`):
   stopped, the maps in use stay untouched. The steps that did finish are kept: starting the same build again
   carries on where it stopped (a different selection starts afresh). The page keeps the last build's choices:
   **Start it again** (or **Repeat the last build** in step 4) fills them back in and asks before it starts.
+  **Clear my choices** in step 4 takes every region off and sets the layers and options back to the first visit's.
 - The estimate is made before anything is downloaded, from the bundled list of regions (`admin/regions.json`:
   size of each OpenStreetMap extract, number of 1° elevation cells with land, land area) and the same rates as the
   build scripts' own checks. It is on the safe side; the build scripts still run their own checks at each step.
+  It follows every change on the page, and the free space on the device. The steps run one after another, so it
+  counts the working room of one step at a time. Elevation data that earlier builds downloaded for the chosen
+  regions, and what a build that did not finish left behind, are already on the device and not counted again.
+  The sharper terrain (USGS 10 m) needs roughly ten times the space of the standard one, mostly for the download
+  (about 0.35 to 0.5 GB per 1° cell) and the contour lines' working room; when it is most of the total, the page
+  says what the standard terrain would need.
 
 The page is open to everyone who can reach the device, like the tile server and the print tool: it is meant for a
 network you trust. Whoever can open it can replace the maps and fill the disk, so on any other network start it

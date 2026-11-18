@@ -36,7 +36,8 @@ let view = "";                // the region whose parts the map shows; "" is the
 let status = null, estimate = null, hot = null;
 let dismissed = sessionStorage.getItem("dismissed");   // the finished build the user has closed
 const chosen = new Set(JSON.parse(localStorage.getItem("chosen") || "[]"));
-const ticked = new Set(JSON.parse(localStorage.getItem("ticked") || '["basemap","contours","hillshade","elevation","extras","usdata"]'));
+const ALL_LAYERS = ["basemap", "contours", "hillshade", "elevation", "extras", "usdata"];
+const ticked = new Set(JSON.parse(localStorage.getItem("ticked") || JSON.stringify(ALL_LAYERS)));
 
 // ---------- talking to the server ----------
 
@@ -85,6 +86,17 @@ const save = () => {
   localStorage.setItem("options", JSON.stringify({ terrain: $("opt-terrain").value, units: $("opt-units").value, language: $("opt-language").value, world: $("opt-world").checked }));
   // "Get the newest map data" is not kept: it is for one build.
 };
+// The options of "More options"; those o leaves out get their first-visit values.
+function setOptions(o) {
+  $("opt-terrain").value = o.terrain || "30m";
+  $("opt-units").value = o.units || "ft";
+  // Place names: the browser's language when the build can keep it, else every language.
+  const own = navigator.language.slice(0, 2);
+  $("opt-language").value = typeof o.language === "string" ? o.language : status.languages.includes(own) ? own : "";
+  $("opt-world").checked = !!o.world;
+  $("opt-fresh").checked = false;           // for one build only
+  document.querySelector("details.more").open = $("opt-terrain").value !== "30m" || !!o.world;
+}
 
 // ---------- step 1: the map ----------
 
@@ -470,9 +482,15 @@ async function refresh() {
   $("meter-need").style.width = `${Math.min(100, share * 100)}%`;
   $("meter").setAttribute("aria-label", `Needs ${gb(e.need_gb)} of ${gb(e.free_gb)} free`);
   $("verdict").className = `verdict ${cls}`;
-  $("verdict").textContent = cls === "over"
-    ? `This does not fit. It needs about ${gb(e.need_gb)} and only ${gb(e.free_gb)} is free. Choose fewer or smaller regions, or untick a layer.`
-    : `${cls === "tight" ? "This fits, but only just" : "This fits"}: it needs about ${gb(e.need_gb)} while it works, and ${gb(e.free_gb)} is free. About ${gb(e.kept_gb)} stays in use afterwards.`;
+  // When the sharper terrain is most of it, that is the choice to change, not the small layers.
+  const terrain = e.standard_need_gb !== undefined && e.standard_need_gb < e.need_gb * 0.7 && cls !== "ok";
+  $("verdict").textContent = (cls === "over"
+    ? `This does not fit. It needs about ${gb(e.need_gb)} and only ${gb(e.free_gb)} is free.` + (terrain ? "" : " Choose fewer or smaller regions, or untick a layer.")
+    : `${cls === "tight" ? "This fits, but only just" : "This fits"}: it needs about ${gb(e.need_gb)} while it works, and ${gb(e.free_gb)} is free. ` +
+      (e.more_after_gb >= 0.05 ? `Afterwards about ${gb(e.more_after_gb)} more is in use than now.` : "Afterwards no more space is in use than now.")) +
+    (terrain ? ` Most of it is for the sharper terrain: with “Standard” in “How detailed the terrain is” (More options), it needs about ${gb(e.standard_need_gb)}.` : "");
+  $("space-have").textContent = e.on_hand_gb >= 0.05
+    ? `${gb(e.on_hand_gb)} of it is on this device already (elevation data from earlier builds, or parts of a build that did not finish): it is not counted again.` : "";
   $("time").textContent = `It will take ${hours(e.hours)} on this device, plus the time to download (that depends on your internet connection).`;
   const body = $("space-table").tBodies[0];
   body.replaceChildren();
@@ -519,17 +537,12 @@ async function repeatLast() {
   for (const id of r.regions) if (REG[id]) chosen.add(id);
   ticked.clear();
   for (const k of r.layers) if (k !== "detail") ticked.add(k);
-  $("opt-terrain").value = o.terrain || "30m";
-  $("opt-units").value = o.units || "ft";
-  $("opt-language").value = o.language || "";
-  $("opt-world").checked = !!o.world;
-  $("opt-fresh").checked = false;           // for one build: the extracts are new enough now
+  setOptions({ ...o, language: o.language || "" });
   if (o.detail) {
     detail = { ...o.detail };
     $("opt-detail-km").value = detail.km;
     localStorage.setItem("detail", JSON.stringify(detail));
   }
-  document.querySelector("details.more").open = o.terrain !== "30m" || !!o.world;
   save();
   dismissed = String(status.job.started); sessionStorage.setItem("dismissed", dismissed);
   drawJob();
@@ -540,6 +553,25 @@ async function repeatLast() {
   else $("step-build").scrollIntoView({ behavior: "smooth" });
 }
 $("repeat").onclick = $("repeat-last").onclick = repeatLast;
+
+// Steps 1 and 2 as on a first visit: no regions, every layer ticked, the first options.
+$("clear").onclick = () => {
+  chosen.clear();
+  ticked.clear();
+  for (const k of ALL_LAYERS) ticked.add(k);
+  detail = null;
+  for (const k of ["chosen", "ticked", "options", "detail"]) localStorage.removeItem(k);
+  setOptions({});
+  $("opt-detail-km").value = 20;
+  setPlacing(false);
+  closeSheet();
+  $("search").value = "";
+  view = "";
+  draw();
+  fit();
+  refresh();
+  $("step-regions").scrollIntoView({ behavior: "smooth" });
+};
 
 // True when sel is the build that failed or was stopped last, so that it keeps what that one
 // finished: the same regions and settings (scripts/build-region.sh --staged).
@@ -557,7 +589,7 @@ function drawJob() {
   $("progress").hidden = !show;
   // In step 4 once the card of the last build is closed: one of the two buttons at a time.
   $("repeat-last").hidden = $("repeat-what").hidden = !job || show;
-  if (job && !show) $("repeat-what").textContent = `The last build: ${job.request.names.join(", ")}, ${day(job.started)}.`;
+  if (job && !show) $("repeat-what").textContent = `The last build${{ failed: ", which did not finish", cancelled: ", which was stopped" }[job.state] || ""}: ${job.request.names.join(", ")}, ${day(job.started)}.`;
   $("chooser").hidden = !!(job && job.state === "running");
   if (!show) return;
   const running = job.state === "running", names = job.request.names.join(", ");
@@ -624,6 +656,8 @@ async function poll() {
   drawJob();
   const running = !!(status.job && status.job.state === "running");
   if (wasRunning && !running) refresh();        // free space and what is on the device have changed
+  // Space freed or taken on the device by something else: the estimate follows.
+  else if (!running && estimate && Math.abs(status.free_gb - estimate.free_gb) >= 1) refresh();
   wasRunning = running;
 }
 
@@ -641,14 +675,7 @@ async function start() {
     for (const id of [...chosen]) if (!REG[id]) chosen.delete(id);
     const lang = { "": "every language (largest)", en: "English", zh: "Chinese", hi: "Hindi", es: "Spanish", ar: "Arabic", fr: "French", bn: "Bengali", pt: "Portuguese", ru: "Russian", id: "Indonesian" };
     for (const code of ["", ...status.languages]) $("opt-language").append(el("option", { value: code, textContent: lang[code] || code }));
-    // The browser's language when the build can keep it, else every language.
-    $("opt-language").value = status.languages.includes(navigator.language.slice(0, 2)) ? navigator.language.slice(0, 2) : "";
-    const o = JSON.parse(localStorage.getItem("options") || "{}");
-    if (o.terrain) $("opt-terrain").value = o.terrain;
-    if (o.units) $("opt-units").value = o.units;
-    if (typeof o.language === "string") $("opt-language").value = o.language;
-    $("opt-world").checked = !!o.world;
-    document.querySelector("details.more").open = (o.terrain && o.terrain !== "30m") || !!o.world;
+    setOptions(JSON.parse(localStorage.getItem("options") || "{}"));
     setInterval(poll, 3000);
   }
   draw();
