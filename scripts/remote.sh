@@ -142,8 +142,9 @@ setup)
         install_unit fieldmap-firewall.path
         $SUDO systemctl daemon-reload
         $SUDO systemctl enable -q --now fieldmap-firewall.timer fieldmap-firewall.path
-        $SUDO systemctl start fieldmap-firewall.service
-        echo "From outside the local network only the gateway (port $REMOTE_PORT) and $(setting REMOTE_FIREWALL_ALLOW 22) get in."
+        # Applied here as well as by the service, so that what it says is printed: the gateway's
+        # port is open only while remote access is switched on.
+        $SUDO ./scripts/firewall.sh apply
     fi
 
     sleep 3
