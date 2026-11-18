@@ -791,16 +791,24 @@ TileServer GL serves rendered raster tiles for each style, on x86 and ARM alike.
 Add a map source in ATAK/WinTAK/iTAK with this URL pattern:
 
 ```
-http://<server-host>:8080/styles/topo-light/{z}/{x}/{y}.png
+http://<server-host>:8080/styles/topo-light/{z}/{x}/{y}.jpg
 ```
 
 On a Raspberry Pi installed with `scripts/install-pi.sh`, the tile server sits behind nginx at `/maps/` instead:
 
 ```
-http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.png
+http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.jpg
 ```
 
-Replace `topo-light` with `osm`, `topo-dark`, or `overlay` for the other styles.
+Replace `topo-light` with `osm` or `topo-dark` for the other styles. For higher resolution screens, use
+`.../{z}/{x}/{y}@2x.jpg`. `overlay` is see-through and needs PNG, which JPEG cannot do: `.../overlay/{z}/{x}/{y}.png`.
+
+Every style answers both endings, so map sources that already use `.png` keep working. JPEG is the one to use for
+the maps that fill the whole picture: at the quality set in `config.json` (`formatOptions.jpeg.quality`, 60 here;
+TileServer GL's own default is 80) a tile is about a fifth of the size of the same tile as PNG, which matters for
+the storage of the devices that keep them and on a weak connection. At 60 soft colour areas show faint squares when
+a tile is enlarged past its own zoom level; raise the number for cleaner tiles (70 is about 20% larger, 80 about
+50% larger), then restart the tile server. If a map source file names the tile type, it must match the ending.
 The Maps page lists these addresses ready to copy, for the address you opened it at: press **Use in another app**.
 For higher resolution screens, use `.../{z}/{x}/{y}@2x.png`.
 
@@ -859,6 +867,8 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- TAK tile addresses end in `.jpg` for the maps that fill the whole picture (the overlay stays `.png`), and
+  `config.json` sets JPEG quality 60: about a fifth of the size of PNG tiles. `.png` addresses keep working.
 - One look and one header for every page: Maps, Print a map and Map builder link to each other, follow the
   device's light or dark setting, and can carry a Home button back to a landing page of your own (`homeUrl` in
   `print/public/config.json`). The shared files are in `ui/`.

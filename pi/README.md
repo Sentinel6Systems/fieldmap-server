@@ -19,7 +19,7 @@ sudo ./scripts/install-pi.sh
 
 That installs Docker if needed, starts TileServer GL on localhost, builds the print tool on the Pi with the
 Node.js that IIAB installs, and adds the nginx snippets. Open `http://<pi-host>/mapprinter/`; TAK clients use
-`http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.png` (see the main README). To update later, see "Updating" in
+`http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.jpg` (see the main README). To update later, see "Updating" in
 the main README: `git pull && sudo ./scripts/install-pi.sh` in `<repo-dir>`.
 
 The Maps page is at `http://<pi-host>/maps/` and the print tool at `http://<pi-host>/mapprinter/`; each has a

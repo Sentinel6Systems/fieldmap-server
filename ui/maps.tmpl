@@ -62,7 +62,7 @@
 <aside id="panel">
   <label for="style">Map style</label>
   <select id="style">
-    {{#each styles}}{{#if serving_data}}<option value="{{@key}}"{{#if serving_rendered}} data-drawn{{/if}}>{{name}}</option>{{/if}}{{/each}}
+    {{#each styles}}{{#if serving_data}}<option value="{{@key}}"{{#if serving_rendered}} data-drawn{{/if}} data-ground="{{styleJSON.layers.[0].type}}">{{name}}</option>{{/if}}{{/each}}
   </select>
   <button id="apps" type="button" title="The tile addresses for ATAK, WinTAK, iTAK and other map apps">Use in another app</button>
 </aside>
@@ -84,7 +84,7 @@
     {{#each styles}}{{#if serving_rendered}}
     <div class="addr">
       <b>{{name}}</b>
-      <div class="copy"><input type="text" readonly data-tiles="{{@key}}" aria-label="Tile address for {{name}}"><button type="button">Copy</button></div>
+      <div class="copy"><input type="text" readonly data-tiles="{{@key}}" data-ground="{{styleJSON.layers.[0].type}}" aria-label="Tile address for {{name}}"><button type="button">Copy</button></div>
       <p class="more"><a href="{{@root.public_url}}styles/{{@key}}.json">TileJSON</a> · <a href="{{@root.public_url}}styles/{{@key}}/wmts.xml">WMTS</a>{{#if serving_data}} · <a href="{{@root.public_url}}styles/{{@key}}/style.json">Style</a>{{/if}}</p>
     </div>
     {{/if}}{{/each}}
@@ -108,9 +108,13 @@ const query = new URLSearchParams(location.search);
 const store = { get: () => { try { return localStorage.getItem(KEY); } catch { return null; } }, set: (v) => { try { localStorage.setItem(KEY, v); } catch { /* not kept */ } } };
 
 /* ---------- the tile addresses ---------- */
-const tiles = (id, size = "") => `${location.origin}${root}styles/${id}/${size}{z}/{x}/{y}.png`;
+// A style that starts with a background fills every pixel, so its tiles can be JPEG: about
+// a third of the size of PNG (a fifth at the quality config.json sets). A style without one
+// is an overlay and needs PNG, which can be see-through.
+const filled = (el) => el.dataset.ground === "background";
+const tiles = (id, jpeg, size = "") => `${location.origin}${root}styles/${id}/${size}{z}/{x}/{y}.${jpeg ? "jpg" : "png"}`;
 for (const input of document.querySelectorAll("[data-tiles]")) {
-  input.value = tiles(input.dataset.tiles);
+  input.value = tiles(input.dataset.tiles, filled(input));
   input.onfocus = () => input.select();
   const button = input.nextElementSibling;
   button.onclick = () => {
@@ -168,7 +172,7 @@ async function raster() {
   let layer = null;
   const show = (id) => {
     if (layer) layer.remove();
-    layer = L.tileLayer(tiles(id, "512/"), { tileSize: 512, zoomOffset: -1, maxZoom: 20, attribution: "© OpenMapTiles © OpenStreetMap contributors" }).addTo(map);
+    layer = L.tileLayer(tiles(id, filled(sel.selectedOptions[0]), "512/"), { tileSize: 512, zoomOffset: -1, maxZoom: 20, attribution: "© OpenMapTiles © OpenStreetMap contributors" }).addTo(map);
   };
   show(sel.value);
   const bounds = await coverage(sel.value);

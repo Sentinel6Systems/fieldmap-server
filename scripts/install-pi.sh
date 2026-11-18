@@ -112,7 +112,7 @@ echo "== Styles served:"
 curl -s http://127.0.0.1/maps/styles.json | grep -o '"id":"[^"]*"' || echo "(tile server not answering yet; try again in a minute)"
 echo
 echo "Done. Maps: http://<pi-host>/maps/   Map printer: http://<pi-host>/mapprinter/"
-echo "TAK clients: http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.png"
+echo "TAK clients: http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.jpg"
 
 if [ "$NEED_REBOOT" = 1 ]; then
   echo
