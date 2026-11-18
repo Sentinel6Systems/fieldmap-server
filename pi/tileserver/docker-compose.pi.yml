@@ -14,3 +14,17 @@ services:
     volumes:
       - ./:/data:ro
     command: --config /data/config.json --bind 127.0.0.1 --port 8080 --public_url /maps/
+
+  # The gateway for the Fieldmap Android app away from this network (scripts/remote.sh setup
+  # makes its certificates and starts it; `up -d` alone leaves it out). Host networking like
+  # the tile server; it listens on the address and port in its configuration (localhost).
+  remote:
+    image: ${REMOTE_IMAGE:-nginx:1.27-alpine}
+    container_name: fieldmap-remote
+    profiles: ["remote"]
+    restart: always
+    network_mode: host
+    volumes:
+      - ./data/remote/gateway:/etc/fieldmap-remote:ro
+      - ./data/remote/gateway/nginx:/etc/nginx/conf.d:ro
+      - ./data/remote/run:/run/fieldmap-remote

@@ -43,3 +43,9 @@ sudo systemctl enable --now fieldmap-admin
 ```
 
 To make the page ask for a code, set `ADMIN_PIN=<code>` in `.env` and restart the service.
+
+## Remote access for the Android app
+
+`./scripts/remote.sh setup` installs `fieldmap-remote.service` for you, with this folder and its owner
+filled in. It runs `scripts/remote.sh serve`, which reads `REMOTE_PIN` and `REMOTE_ADDRESS` from `.env`;
+restart the service after changing them.

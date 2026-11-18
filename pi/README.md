@@ -48,6 +48,13 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
    as the repository's owner, allowed to write only `data/wmm/`; nginx passes `/mapprinter/wmm-api/` to it. It backs
    the print tool's "Update magnetic model" button (see "Magnetic model updates" in the main README).
 
+## Remote access for the Android app
+
+Optional: `sudo ./scripts/remote.sh setup` lets phones that have been on the box's network use the maps from
+anywhere (see "Remote access for the Android app" in the main README). It adds `nginx/mapremote-nginx.conf` to
+`/etc/nginx/conf.d/`, a `fieldmap-remote` service, and a second container beside the tile server. Internet-in-a-Box
+installs Tailscale, which this uses; sign the box in first with `sudo tailscale up`.
+
 ## Notes
 
 - The Pi runs the same full TileServer GL image and `config.json` as an x86 machine (the image is built for arm64),

@@ -199,6 +199,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
 | `pi/` | Raspberry Pi + Internet-in-a-Box deployment: compose file, nginx snippets, notes |
 | `systemd/` | Start the compose stack, and optionally the map builder page, at boot |
+| `scripts/remote.sh`, `tools/remote-server.py` | Optional remote access for the Android app: certificates, the gateway, the list of phones |
 | `data/` | Your mbtiles files (not in git) |
 
 ## The styles
@@ -823,6 +824,75 @@ The tile server container also has a hard memory cap with no swap, `TILESERVER_M
 If the cap is reached, only the tile server is killed and Docker restarts it within seconds.
 Without the script, the cap is `1g`.
 
+## Remote access for the Android app
+
+The [Fieldmap Android app](https://github.com/Sentinel6Systems/fieldmap-android) can use this box's maps away
+from its network, while both have an internet connection. A phone must have been on the box's own network once:
+there, one button in the app asks the box to let it in. Nobody else gets in, and the pages for browsers (Maps,
+Print a map, Map builder) are not opened to the internet at all.
+
+Status: new. Tested with the gateway reached directly. The last leg, through Tailscale Funnel, has not been
+tested on a real Tailscale account yet.
+
+### How it works
+
+- **The box is its own certificate authority.** `scripts/remote.sh setup` makes it; its key stays in
+  `data/remote/` on the box.
+- **A phone is let in on the local network only.** The app makes a key in the phone's key store (the private half
+  cannot be read out again), sends the public half to `/mapremote/enrol`, and gets a certificate for it. The box
+  answers that request only when it comes from a private address through the box's own web server, without
+  passing another proxy or tunnel. `REMOTE_PIN=<code>` in `.env` makes it ask for a code as well.
+- **The gateway demands that certificate.** It is an nginx container that listens on the box itself only,
+  refuses every visitor without a certificate this box issued, checks every request against the device list, and
+  serves only the tile server.
+- **A relay makes the gateway reachable.** [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) gives the box a
+  public name and passes the encrypted connection on to the gateway without being able to read it. Internet-in-a-Box
+  installs Tailscale already; the box needs a Tailscale account, the phones need neither the account nor the
+  Tailscale app. It works behind routers that cannot forward a port. Funnel has a bandwidth limit that Tailscale
+  does not state: the remote link is for looking at the map, and saving areas is best done at home.
+
+The app asks for the maps under the address it uses at home whichever way it reaches the box, so the areas saved
+on a phone are the same ones at home and away.
+
+### Set it up
+
+```bash
+sudo tailscale up            # once: sign this box in to your Tailscale account (open the link it prints)
+./scripts/remote.sh setup    # with sudo on a Raspberry Pi behind Internet-in-a-Box
+```
+
+The first time, Tailscale prints a link to switch Funnel on for your account: open it, approve, and run the
+script again if it stopped there. It ends with the public name of the box. On a machine installed with
+`install.sh`, run that first after a `git pull`: it rebuilds the web front, which serves `/mapremote/`. Run
+`remote.sh setup` again after every update.
+
+Then, on each phone, on the box's network: **Menu › Server › Set up remote access**.
+
+```bash
+./scripts/remote.sh status          # what is set up and whether it runs
+./scripts/remote.sh devices         # the phones that are let in
+./scripts/remote.sh remove <id>     # lock one out, at once
+./scripts/remote.sh off             # stop being reachable from outside; the list is kept
+```
+
+**Without Tailscale.** If you can forward a port to the box yourself, set in `.env` the address the phones should
+use and let the gateway listen on the network, then run `remote.sh setup`:
+
+```
+REMOTE_ADDRESS=tak.example.com:8443
+REMOTE_BIND=0.0.0.0
+```
+
+### What to know
+
+- Anyone who can join the box's network can enrol a phone, unless `REMOTE_PIN` is set. Set it where the network is
+  not only yours.
+- A phone that was removed is told so by the app the next time it tries from outside, and can be set up again on
+  the box's network.
+- Back up `data/remote/` with the box. If it is lost, run `remote.sh setup` and set every phone up again.
+- The service is `tools/remote-server.py` (Python's standard library and `openssl`), run by
+  `fieldmap-remote.service`; its tests are `python3 -m unittest tools/test_remote_server.py`.
+
 ## Raspberry Pi behind Internet-in-a-Box
 
 See [pi/README.md](pi/README.md): clone onto the Pi, copy your `.mbtiles` files in, run `sudo ./scripts/install-pi.sh`.
@@ -867,6 +937,9 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- Remote access for the Fieldmap Android app (`scripts/remote.sh setup`): a phone that has been on the box's
+  network can use the maps from anywhere, through a gateway that demands a certificate the box issued, reached
+  through Tailscale Funnel. Optional; nothing changes for a box that does not set it up.
 - TAK tile addresses end in `.jpg` for the maps that fill the whole picture (the overlay stays `.png`), and
   `config.json` sets JPEG quality 60: about a fifth of the size of PNG tiles. `.png` addresses keep working.
 - One look and one header for every page: Maps, Print a map and Map builder link to each other, follow the

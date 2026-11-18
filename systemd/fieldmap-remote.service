@@ -1,0 +1,22 @@
+# Systemd unit for remote access by the Fieldmap Android app (scripts/remote.sh serve):
+# the service that lets phones in on the local network and keeps the list of them.
+#
+# scripts/remote.sh setup installs this file with the path of your clone and its owner
+# filled in. It may write only data/remote/, where the box's certificate authority is.
+
+[Unit]
+Description=fieldmap-server remote access for the Android app
+After=network.target
+
+[Service]
+User=fieldmap
+WorkingDirectory=/opt/fieldmap-server
+ExecStart=/opt/fieldmap-server/scripts/remote.sh serve
+Restart=on-failure
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/fieldmap-server/data/remote
+
+[Install]
+WantedBy=multi-user.target

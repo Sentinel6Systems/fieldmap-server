@@ -65,6 +65,10 @@ if [ -n "$(find data/admin -maxdepth 0 ! -user "$OWNER" 2>/dev/null)" ]; then
     $SUDO chown -R "$OWNER" data/admin
 fi
 
+# The web front mounts the remote access service's folder (scripts/remote.sh); made here so
+# that it belongs to $OWNER and not to root, as Docker would make it.
+mkdir -p data/remote/run
+
 echo "== Tile server and print tool"
 ./scripts/mem-limit.sh
 docker compose up -d --build --quiet-pull

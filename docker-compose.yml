@@ -34,6 +34,25 @@ services:
       - ./data/wmm:/usr/share/nginx/wmm:ro
       # The map builder's socket (scripts/admin.sh), served as /mapadmin/.
       - ./data/admin:/run/fieldmap-admin
+      # The remote access service's socket (scripts/remote.sh), served as /mapremote/.
+      - ./data/remote/run:/run/fieldmap-remote
+
+  # The gateway for the Fieldmap Android app away from this network: it demands a
+  # certificate this box issued and serves only the tile server. Not started by
+  # `docker compose up`: scripts/remote.sh setup makes its certificates and starts it.
+  remote:
+    image: ${REMOTE_IMAGE:-nginx:1.27-alpine}
+    container_name: fieldmap-remote
+    profiles: ["remote"]
+    restart: unless-stopped
+    depends_on:
+      - tileserver
+    ports:
+      - "${REMOTE_BIND:-127.0.0.1}:${REMOTE_PORT:-8443}:8443"
+    volumes:
+      - ./data/remote/gateway:/etc/fieldmap-remote:ro
+      - ./data/remote/gateway/nginx:/etc/nginx/conf.d:ro
+      - ./data/remote/run:/run/fieldmap-remote
 
   # Downloads a newer World Magnetic Model when the print tool's "Update magnetic model"
   # button asks for one (tools/wmm-update.py). Reached only through the web container.
