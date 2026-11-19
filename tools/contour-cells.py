@@ -103,7 +103,11 @@ def write_lines(arr, valid, gt, clip, base):
     ras.SetGeoTransform(gt)
     ras.SetProjection(srs.ExportToWkt())
     band = ras.GetRasterBand(1)
-    band.WriteArray(np.where(valid, arr.astype(np.float32) * np.float32(u["scale"]), np.float32(NODATA)))
+    # Only the valid pixels are scaled: a USGS tile can hold a no-data value of -3.4e38 that it
+    # does not declare, and scaling that to feet overflows float32 (harmless, but it warns).
+    heights = np.full(arr.shape, NODATA, dtype=np.float32)
+    heights[valid] = arr[valid] * u["scale"]
+    band.WriteArray(heights)
     band.SetNoDataValue(NODATA)
     mem = gdal.GetDriverByName("Memory").Create("", 0, 0, 0, gdal.GDT_Unknown)
     layer = mem.CreateLayer("contour", srs, ogr.wkbLineString)
