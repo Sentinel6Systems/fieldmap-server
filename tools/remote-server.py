@@ -1037,9 +1037,10 @@ def netbird_report():
     out["seen"] = newest("netbird")
     try:
         with open(NETBIRD_PROBLEM) as f:
-            problem = f.read().split()[:1]
+            lines = f.read().splitlines()
+        problem, said = lines[:1], " ".join(lines[1:]).strip()
     except OSError:
-        problem = []
+        problem, said = [], ""
     if state and state["connected"]:
         text = "The box is connected to the NetBird network. The address of the box in the NetBird network is %s." % state["address"]
         try:
@@ -1057,7 +1058,11 @@ def netbird_report():
         return {**out, "status": "connected", "text": text}
     if problem and problem[0] in NETBIRD_PROBLEMS:
         text = NETBIRD_PROBLEMS[problem[0]]
-        return {**out, "status": "blocked", "text": text % management if "%s" in text else text}
+        text = text % management if "%s" in text else text
+        if problem[0] == "start" and said:
+            # Docker's own words, for the person who helps: short, and only from the box itself.
+            text += " The box said: %s" % re.sub(r"[\x00-\x1f]", " ", said)[:200]
+        return {**out, "status": "blocked", "text": text}
     try:
         asked = os.path.getmtime(NETBIRD_APPLY)
     except OSError:

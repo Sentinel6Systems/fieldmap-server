@@ -691,6 +691,13 @@ class RemoteServerTest(unittest.TestCase):
         with open(self.rs.NETBIRD_PROBLEM, "w") as f:
             f.write("download\n")
         self.assertIn("cannot download NetBird", self.rs.netbird_report()["text"])
+        # Docker refused to start the container: said at once, with Docker's reason.
+        with open(self.rs.NETBIRD_PROBLEM, "w") as f:
+            f.write("start\nError response from daemon: unknown log opt 'max-size' for journald log driver\n")
+        r = self.rs.netbird_report()
+        self.assertEqual("blocked", r["status"])
+        self.assertIn("NetBird did not start", r["text"])
+        self.assertIn("The box said: Error response from daemon: unknown log opt", r["text"])
         os.remove(self.rs.NETBIRD_PROBLEM)
         old = time.time() - 3600
         os.utime(self.rs.NETBIRD_APPLY, (old, old))
@@ -737,6 +744,11 @@ class RemoteServerTest(unittest.TestCase):
         for never in ("--allow-server-ssh", "--allow-remote-jobs", "--setup-key "):
             self.assertNotIn(never, script, "never on, and the key never on a command line")
         self.assertEqual(0, subprocess.run(["bash", "-n", os.path.join(HERE, "netbird-run.sh")]).returncode)
+        # Log options need their driver named: a machine whose Docker logs to journald by default refuses them.
+        for compose in ("docker-compose.yml", os.path.join("pi", "tileserver", "docker-compose.pi.yml")):
+            text = open(os.path.join(HERE, "..", compose)).read()
+            for block in re.findall(r"\n    logging:\n((?:      .*\n)+)", text):
+                self.assertIn("driver: json-file", block, compose)
         firewall = open(os.path.join(HERE, "..", "scripts", "firewall.sh")).read()
         self.assertIn('NB_IF="nb-fieldmap"', firewall)
         self.assertIn('INTERFACE="${FIELDMAP_NETBIRD_INTERFACE:-nb-fieldmap}"', script, "the firewall's rule is for this name")

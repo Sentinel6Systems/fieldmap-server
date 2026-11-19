@@ -54,7 +54,10 @@ services:
       - ./tools:/fieldmap-tools:ro
       - ./data/remote/netbird:/fieldmap
       - ./data/remote/netbird/state:/var/lib/netbird
+    # Its own small log files, whatever the machine's default is: Docker's journald driver,
+    # which some machines use by default, refuses these options and the container would not start.
     logging:
+      driver: json-file
       options:
         max-size: "5m"
         max-file: "2"

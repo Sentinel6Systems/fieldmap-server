@@ -295,16 +295,24 @@ netbird-apply)
         fi
         $SUDO mkdir -p "$NETBIRD_DIR/state"
         echo "$management" | $SUDO tee "$NETBIRD_DIR/state/.management" >/dev/null
+        $SUDO rm -f "$NETBIRD_DIR/problem"          # what was wrong last time may be right now
         if ! "${COMPOSE[@]}" --profile netbird pull -q netbird >/dev/null 2>&1 &&
            ! docker image inspect "$(setting NETBIRD_IMAGE netbirdio/netbird:latest)" >/dev/null 2>&1; then
-            printf 'download
-' | $SUDO tee "$NETBIRD_DIR/problem" >/dev/null
+            printf 'download\n' | $SUDO tee "$NETBIRD_DIR/problem" >/dev/null
             echo "Error: NetBird could not be downloaded. Check the internet connection of this box." >&2
             exit 1
         fi
         docker stop -t 20 fieldmap-netbird >/dev/null 2>&1 || true
         $SUDO rm -f "$NETBIRD_DIR/status.json" "$NETBIRD_DIR/status.for" "$NETBIRD_DIR/key-check"
-        "${COMPOSE[@]}" --profile netbird up -d --force-recreate netbird
+        # Docker's own complaint goes to the Remote access page at once (it says "did not start"
+        # with the reason), not only after the page stops waiting.
+        if ! out="$("${COMPOSE[@]}" --profile netbird up -d --force-recreate netbird 2>&1)"; then
+            printf 'start\n%s\n' "$(printf '%s' "$out" | grep -v '^ *Container ' | tail -2 | tr '\n' ' ' | cut -c1-300)" |
+                $SUDO tee "$NETBIRD_DIR/problem" >/dev/null
+            echo "$out" >&2
+            echo "Error: NetBird did not start." >&2
+            exit 1
+        fi
         echo "NetBird is started. The Remote access page says if it is connected."
     else
         netbird_stop
