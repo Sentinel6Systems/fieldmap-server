@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <!-- Two pages in one file, served by tools/remote-server.py on the box's own network only:
-     /phones/             Devices: get the app, pair a device, the paired devices, and sharing
+     /phones/             Admin, Devices: get the app, pair a device, the paired devices, and sharing
                           positions and markers between them (another service, tools/share-server.py,
                           asked beside this page at /mapshare/admin);
      /phones/remote.html  Admin, Remote access: the switch, whether devices can reach the box from
@@ -151,7 +151,7 @@
       <li>Connect the device to the box's network.</li>
       <li>Open the Fieldmap app on the device.</li>
       <li>Press <b>Pair a device</b> on this page.</li>
-      <li>In the app, press <b>Menu</b>, <b>Server</b>, <b>Pair this device</b>. Do this in 10 minutes or less.</li>
+      <li>In the app, press <b>Menu</b>, <b>Box</b>, <b>Pair this device</b>. Do this in 10 minutes or less.</li>
     </ol>
     <div class="row">
       <button id="pair" type="button" class="primary">Pair a device</button>
@@ -208,7 +208,6 @@
     try { await call(path, body); error(null); } catch (e) { error(e); }
     busy = false;
     show();
-    if (window.fieldmapNavRefresh) window.fieldmapNavRefresh();   // the header's on/off tag
   }
 
   async function show() {

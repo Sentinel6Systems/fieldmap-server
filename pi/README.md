@@ -40,7 +40,8 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
    `--public_url /maps/`, so URLs work under whatever hostname the client used.
 3. **nginx.** Copy `nginx/maps-nginx.conf` and `nginx/mapprinter-nginx.conf` to `/etc/nginx/conf.d/` (IIAB includes that
    folder and does not overwrite files it did not create), `sudo nginx -t && sudo systemctl reload nginx`.
-   Maps are now at `http://<pi-host>/maps/`.
+   Maps are now at `http://<pi-host>/maps/`, and the User Guide at `http://<pi-host>/guide/` (the second file serves
+   `guide/` from the clone).
 4. **Print tool.** `cd print && npm ci && node build.mjs` on the Pi; nginx serves `print/dist` from the clone.
    (`scripts/deploy-print-pi.sh <user>@<pi-host> <repo-dir>` does the same build on a workstation and rsyncs the
    result, handy while developing.) Open `http://<pi-host>/mapprinter/`. `/print/` is left free, for example for CUPS.

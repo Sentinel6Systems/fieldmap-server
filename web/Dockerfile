@@ -1,4 +1,5 @@
-# Builds the print tool and serves it with nginx, which also fronts TileServer GL.
+# Builds the print tool and serves it with nginx, which also fronts TileServer GL. Serves the
+# User Guide too, with the look and the header every page shares.
 FROM node:22-alpine AS build
 WORKDIR /src
 COPY print/package.json print/package-lock.json ./
@@ -10,3 +11,5 @@ RUN node build.mjs
 FROM nginx:1.27-alpine
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/dist /usr/share/nginx/html/mapprinter
+COPY guide/ /usr/share/nginx/html/guide/
+COPY ui/fieldmap.css ui/nav.js /usr/share/nginx/html/guide/

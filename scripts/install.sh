@@ -20,7 +20,7 @@
 #   6. sets up remote access for the Fieldmap Android app (scripts/remote.sh setup): phones
 #      paired on this network can then use the maps from anywhere, and the phones can share
 #      positions and markers with each other. Both are off until switched on (Admin, Remote
-#      access; and the Devices page). Devices on this network can install the app from the Devices page
+#      access; and Admin, Devices). Devices on this network can install the app from the Devices page
 #      (scripts/app.sh fetch puts it on the box). --no-remote leaves all of it out.
 # Then build your maps: on the map builder page, or with build-region.sh.
 #
@@ -145,7 +145,7 @@ if [ "$REMOTE" = yes ]; then
 elif [ -f /etc/systemd/system/fieldmap-remote.service ]; then
     ./scripts/remote.sh off               # keeps the firewall
 else
-    touch data/remote/run/no-remote      # no Devices tab in the header
+    touch data/remote/run/no-remote      # no Devices page under Admin
     echo "Left out (--no-remote)."
     echo "== The firewall on this box"
     $SUDO ./scripts/firewall.sh install

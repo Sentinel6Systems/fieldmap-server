@@ -139,16 +139,17 @@ builds do.
 |---|---|---|---|
 | Maps | Maps | `/` (`/maps/` behind Internet-in-a-Box) | The interactive map, with a menu of the styles and, under **Use in another app**, the tile addresses for TAK clients and other map apps |
 | Print a map | Print a map | `/mapprinter/` | The print tool |
-| Devices | Devices | `/phones/` | The Fieldmap Android app: get it from the box, pair a device, the paired devices, and the switch for sharing positions and markers between them (see "Sharing positions and markers between phones") |
-| Admin | Map builder | `/mapadmin/` | Choose and build the maps (not on a Raspberry Pi) |
+| User Guide | User Guide | `/guide/` | How to use the box, in plain words (ASD-STE100, about 80 %), for someone with no other help at hand: `guide/index.html` |
 | Admin | Remote access | `/phones/remote.html` | Remote access for the app on or off, whether devices can reach the box from outside, port forwarding (see "Remote access for the Android app") |
+| Admin | Devices | `/phones/` | The Fieldmap Android app: get it from the box, pair a device, the paired devices, and the switch for sharing positions and markers between them (see "Sharing positions and markers between phones") |
+| Admin | Map builder | `/mapadmin/` | Choose and build the maps (not on a Raspberry Pi) |
 
-Every page has the same header: the name, **Maps**, **Print a map**, **Devices** and **Admin**, with the current one
-marked, and nothing else to learn. **Admin** holds what not everyone needs: the map builder and remote access, and
-whatever comes later. The Admin tab opens the first of them that is running; on those pages a second row names
+Every page has the same header: the name, **Maps**, **Print a map**, **User Guide** and **Admin**, with the current one
+marked, and nothing else to learn. **Admin** holds what not everyone needs: remote access, the devices and the map
+builder, and whatever comes later. The Admin tab opens the first of them that is running; on those pages a second row names
 each of them (when the box has more than one). The header finds the pages by itself on the address it was opened
 at (`ui/nav.js`): a page that is not installed gets no link, and the map builder is shown as "not running" when its
-service is stopped. The look (colours, type, buttons, form controls) is one file, `ui/fieldmap.css`, used by all three. It
+service is stopped. The look (colours, type, buttons, form controls) is one file, `ui/fieldmap.css`, used by every page. It
 uses the fonts of the device and follows its light or dark setting; nothing is loaded from anywhere else.
 
 **A Home button.** If these pages sit behind a landing page of your own (a start page for the whole device, for
@@ -901,13 +902,9 @@ Two pages, both on the box's own network only, manage it:
   own port and home address. Give the box's internet address below it (**Find it** asks one public server on the
   internet, only when pressed), or a name of your own. **New random port** gives the box another port.
 
-**Devices** (`/phones/`, its own tab in the header), for everyone: **Get the Fieldmap app**, **Pair a device**
+**Devices** (`/phones/`, under **Admin**): **Get the Fieldmap app**, **Pair a device**
 (while remote access is on), the **paired devices**, each with when it last came in from outside, and **Remove**;
 and sharing positions and markers (below).
-
-Every page's header shows the state at a glance, beside the Admin tab (and beside Remote access on the Admin
-pages): **on** (amber: the box can be reached from outside, by paired devices) or **off**; hovering over it gives
-the box's own words about it.
 
 No account, no outside service, nothing of anyone else's in between: the box talks only to your own router.
 

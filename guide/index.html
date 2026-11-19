@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<!-- The User Guide: how to use the box, for a person who has no other help at hand. One static
+     page, served at /guide/ by the web front (web/Dockerfile) or, on a Raspberry Pi, by nginx
+     from this folder (pi/nginx/mapprinter-nginx.conf), with ui/fieldmap.css and ui/nav.js beside it.
+     The words follow ASD-STE100 at about 80 %: short sentences, one instruction in each, one word
+     for each thing (box, device, app, page, tab, the box's network, outside, pair, switch on). -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>User Guide</title>
+<link rel="stylesheet" href="fieldmap.css">
+<style>
+  h1 { font-size: clamp(26px, 3.6vw, 36px); line-height: 1.1; letter-spacing: -.01em; margin: 0 0 6px; }
+  h2 { font-size: 22px; line-height: 1.25; margin: 0 0 10px; }
+  h3 { font-size: 17px; line-height: 1.3; margin: 20px 0 4px; }
+  p { margin: 8px 0; max-width: 70ch; }
+  .lead, .quiet { color: var(--muted); }
+  .lead { font-size: 17px; max-width: 62ch; margin: 0; }
+  .top, main { max-width: 860px; margin: 0 auto; padding: 0 16px; }
+  .top { padding-top: clamp(20px, 3.5vw, 40px); }
+  main { padding-bottom: 60px; }
+  .card { background: var(--panel); border: 1px solid var(--line); padding: 18px 20px; margin-top: 16px; }
+  ol, ul { margin: 8px 0; padding-left: 1.4em; max-width: 70ch; }
+  li { margin: 5px 0; }
+  .toc { columns: 2 16em; column-gap: 32px; padding-left: 1.4em; }
+  .toc li { break-inside: avoid; }
+  a { color: var(--sig); }
+  .note { padding: 10px 14px; border-left: 3px solid var(--sig); background: var(--panel2); margin: 12px 0; max-width: 70ch; }
+  .caution { padding: 10px 14px; border-left: 3px solid var(--amber); background: var(--panel2); margin: 12px 0; max-width: 70ch; }
+  .note b:first-child, .caution b:first-child { display: block; font: 12.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; margin-bottom: 2px; }
+  .addr { font: 600 16px var(--mono); overflow-wrap: anywhere; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 15px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { font: 12.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 400; }
+  td:first-child { width: 34%; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+  .back { font: 12.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; text-decoration: none; }
+  @media (max-width: 640px) {
+    .card { padding: 14px 14px; }
+    td:first-child { width: 40%; }
+  }
+  /* On paper: black on white, no header, no links back to the top. */
+  @media print {
+    body, body.fm-plate { background: #fff; color: #000; }
+    .fm-bar, .fm-sub, .row, .back { display: none !important; }
+    .card { background: none; border: 0; border-top: 1px solid #999; padding: 12px 0; break-inside: auto; }
+    .note, .caution { background: none; border-left-color: #000; }
+    .lead, .quiet, th { color: #333; }
+    a { color: #000; text-decoration: none; }
+    h2, h3 { break-after: avoid; }
+  }
+</style>
+</head>
+<body class="fm-plate">
+
+<header class="fm-bar" id="fm-bar" data-page="guide"></header>
+<script src="nav.js"></script>
+
+<header class="top">
+  <h1>User Guide</h1>
+  <p class="lead">This guide tells you how to use the box. You do not need the internet to read it. You do not need
+    other help.</p>
+</header>
+
+<main>
+
+  <section class="card" id="contents">
+    <h2>Contents</h2>
+    <ol class="toc">
+      <li><a href="#about">About the box</a></li>
+      <li><a href="#open">Open the pages of the box</a></li>
+      <li><a href="#maps">Look at the maps</a></li>
+      <li><a href="#print">Print a map</a></li>
+      <li><a href="#other-apps">Use the maps in ATAK and other apps</a></li>
+      <li><a href="#app">The Fieldmap app</a></li>
+      <li><a href="#share">Share positions and markers</a></li>
+      <li><a href="#admin">Admin: for the person who looks after the box</a></li>
+      <li><a href="#care">Take care of the box</a></li>
+      <li><a href="#problems">Problems and what to do</a></li>
+      <li><a href="#words">Words in this guide</a></li>
+    </ol>
+    <div class="row"><button type="button" id="print-guide">Print this guide</button>
+      <span class="quiet">Keep a paper copy with the box.</span></div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="about">
+    <h2>1. About the box</h2>
+    <p>The box is a small computer that keeps maps. It shows the maps to computers, phones and tablets near it. It
+      does not need the internet to do this.</p>
+    <p>With the box, you can:</p>
+    <ul>
+      <li>Look at the maps in a browser.</li>
+      <li>Print paper maps, or make PDF files of the maps.</li>
+      <li>Use the maps in the Fieldmap app on Android phones and tablets.</li>
+      <li>Use the maps in ATAK, WinTAK, iTAK and other map apps.</li>
+      <li>See where the other people are, and share markers with them.</li>
+    </ul>
+    <p>In this guide, a <b>device</b> is a phone or a tablet. The <b>box's network</b> is the Wi-Fi or the cable
+      network that the box is on. <a href="#words">Section 11</a> gives the meaning of more words.</p>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="open">
+    <h2>2. Open the pages of the box</h2>
+    <ol>
+      <li>Connect your computer or device to the box's network.</li>
+      <li>Open the browser. For example, open Chrome, Firefox, Edge or Safari.</li>
+      <li>Type the address of the box in the address bar at the top. Press Enter.</li>
+    </ol>
+    <p>This guide is on the box now. So you can use this address for the other pages too:</p>
+    <p class="addr" id="here">the address in the address bar of this browser</p>
+    <p>If you do not know the address, ask the person who set up the box. Write the address on the box or on a card.
+      Save the page as a bookmark in the browser.</p>
+
+    <h3>The tabs</h3>
+    <p>Each page of the box has a header at the top. The header has a tab for each page. Press a tab to open its
+      page. The tab of the page that is open has a line under it.</p>
+    <table>
+      <tr><th>Tab</th><th>What it does</th></tr>
+      <tr><td><b>Maps</b></td><td>Shows the maps. You can move and zoom the map.</td></tr>
+      <tr><td><b>Print a map</b></td><td>Prints a map on paper, or makes a PDF file.</td></tr>
+      <tr><td><b>User Guide</b></td><td>This guide.</td></tr>
+      <tr><td><b>Admin</b></td><td>Pages for the person who looks after the box: <b>Remote access</b>,
+        <b>Devices</b> and <b>Map builder</b>. A second row of tabs under the header shows these pages.</td></tr>
+    </table>
+    <p>Some boxes do not have all the pages. A tab that shows <b>not running</b> is a page that is on the box but does
+      not work now. See <a href="#problems">Problems and what to do</a>.</p>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="maps">
+    <h2>3. Look at the maps</h2>
+    <p>Press the <b>Maps</b> tab. The map fills the page.</p>
+
+    <h3>Move and zoom the map</h3>
+    <table>
+      <tr><th>To do this</th><th>With a mouse</th><th>On a touch screen</th></tr>
+      <tr><td>Move the map</td><td>Drag the map.</td><td>Drag the map with one finger.</td></tr>
+      <tr><td>Zoom in or out</td><td>Turn the mouse wheel. Or press <b>+</b> and <b>−</b>.</td><td>Move two fingers
+        apart or together.</td></tr>
+      <tr><td>Turn or tilt the map</td><td>Drag with the right mouse button.</td><td>Turn two fingers. To tilt, drag
+        two fingers up or down.</td></tr>
+      <tr><td>Put north at the top again</td><td colspan="2">Press the compass button under <b>+</b> and <b>−</b>.</td></tr>
+    </table>
+
+    <h3>Change the map style</h3>
+    <p>The <b>Map style</b> list is at the top left. Choose a style from the list. The box can have different styles,
+      for example a light map for the day and a dark map for the night. The browser keeps your choice.</p>
+
+    <h3>Keep a place</h3>
+    <p>The address in the address bar changes when you move the map. The address keeps the place and the zoom. Save
+      it as a bookmark to come back to the same place. When you go to <b>Print a map</b>, that page opens at the same
+      place.</p>
+
+    <div class="note"><b>Note</b>The map shows only the regions that the box has. Outside them, the map is empty or
+      shows only the large features of the world.</div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="print">
+    <h2>4. Print a map</h2>
+    <p>Press the <b>Print a map</b> tab. The map fills the page. A panel beside the map has the settings. A blue
+      rectangle on the map shows the area of the sheet. To hide the panel, press <b>▾</b> at the top of the panel.</p>
+
+    <h3>Print one sheet</h3>
+    <ol>
+      <li>In <b>Map style</b>, choose the style of the map.</li>
+      <li>In <b>Scale</b>, choose the scale. A large number shows more ground with less detail.</li>
+      <li>In <b>Paper</b>, choose the size of the paper in your printer.</li>
+      <li>In <b>Orientation</b>, choose <b>Portrait</b> (tall) or <b>Landscape</b> (wide).</li>
+      <li>Move the sheet to the place that you want. Drag the blue rectangle. Or tap the map outside the rectangle.
+        The sheet then moves to that point.</li>
+      <li>Type a title in <b>Title</b> if you want one.</li>
+      <li>In <b>Quality</b>, choose <b>Standard</b> or <b>Best</b>. Best gives sharper lines but takes more time.</li>
+      <li>Press <b>Print</b>. The browser opens its print window. Choose the printer and print.</li>
+    </ol>
+    <p>To make a PDF file and not print, press <b>Download PDF</b>. You can print the file later, or send it to
+      another person.</p>
+    <p><b>Bring sheet here</b> moves the sheet to the middle of the map on the screen. <b>Fit map to sheet</b>
+      moves the map on the screen to show all of the sheet.</p>
+    <p>Under the settings, <b>Ground area</b> shows the size of the ground on the sheet. <b>Grid</b> shows the grid on
+      the sheet. <b>Centre</b> shows the position of the middle of the sheet.</p>
+
+    <h3>Print many sheets (an atlas)</h3>
+    <p>An atlas is a set of sheets that join together, with an index page. In <b>Pages</b>, choose an atlas size,
+      for example <b>Atlas 2 × 2</b>. The blue rectangle then shows all the sheets.</p>
+    <div class="caution"><b>Caution</b>Use a laptop or a desktop computer for an atlas. On a phone or a tablet, the
+      browser can stop. The browser makes every sheet itself, and an atlas needs much memory.</div>
+    <p>To put the sheets in a 3-ring binder, tick <b>Make the left margin of atlas pages wider</b>.</p>
+
+    <h3>Show or hide parts of the map</h3>
+    <p>Open <b>Layers</b>. Each switch shows or hides one part of the map, for example contour lines or buildings.
+      The change shows on the screen and on the paper. <b>Show everything</b> shows all parts again.</p>
+
+    <h3>Add markers, arrows and shapes</h3>
+    <ol>
+      <li>Choose a colour under <b>Colour for new items</b>.</li>
+      <li>Press <b>Add marker</b>, <b>Add arrow</b>, <b>Circle</b>, <b>Rectangle</b> or <b>Polygon</b>.</li>
+      <li>Read the hint under the buttons. It tells you where to tap. For example, an arrow needs a tap at its start
+        and a tap at its end.</li>
+      <li>For a polygon, tap each corner. Then press <b>Finish shape</b>.</li>
+    </ol>
+    <p>The items show in the lists <b>Markers</b>, <b>Arrows</b> and <b>Shapes</b>. There you can give each item a
+      name, or remove it. <b>Remove all</b> removes all of them. <b>Units</b> sets feet and miles or metres and
+      kilometres. To show the lengths and the areas of the shapes, tick <b>Show measurements on the map</b>.</p>
+    <p>To print a list of the items and the map symbols, tick <b>Add a key page</b>.</p>
+    <div class="caution"><b>Caution</b>Save your markers, arrows and shapes to a file if you need them later. Only
+      this browser keeps them. Another browser or another computer does not show them.</div>
+    <p>To save them, press <b>Save markers, arrows &amp; shapes</b>. To open a saved file, press <b>Load markers,
+      arrows &amp; shapes</b>. The file does not keep the map or the print settings.</p>
+
+    <h3>Terrain: what you can see, and where a radio can reach</h3>
+    <p>Some boxes have height data. Then the panel has a <b>Terrain</b> section.</p>
+    <ul>
+      <li><b>Viewshed</b> shows what a person can see from a point.</li>
+      <li><b>Radio</b> shows where a VHF or UHF radio can probably reach from a point. It can also check one link
+        between two points.</li>
+    </ul>
+    <p>Press <b>Place</b>. Then tap the map to put the point. You can drag a point to move it. The colours on the map
+      show the result. You can print them with the map.</p>
+    <div class="caution"><b>Caution</b>Do not trust the result without a check on the ground. The result is an
+      estimate from the shape of the ground. Trees, buildings and weather can make the real result worse.</div>
+
+    <h3>The magnetic model</h3>
+    <p>The printed map shows the difference between true north and magnetic north. This difference changes slowly
+      each year. When the model on the box is old, the panel shows a message. Press <b>Update magnetic model</b>
+      to download a new model. This works only when the box has a connection to the internet.</p>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="other-apps">
+    <h2>5. Use the maps in ATAK and other apps</h2>
+    <p>ATAK, WinTAK, iTAK and many other map apps can show the maps of the box. They need a tile address.</p>
+    <ol>
+      <li>On the <b>Maps</b> page, press <b>Use in another app</b>.</li>
+      <li>Find the map style that you want. Press <b>Copy</b> beside its address.</li>
+      <li>In the other app, add a new map source from a tile address. Each app does this in a different way.
+        Look for words such as "map source", "custom map", "XYZ" or "URL" in its settings.</li>
+      <li>Paste the address.</li>
+    </ol>
+    <p>The address works for devices that connect to the box in the same way as your browser does now.</p>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="app">
+    <h2>6. The Fieldmap app</h2>
+    <p>Fieldmap is an app for Android phones and tablets. It shows the maps of the box. It can keep parts of the
+      map on the device, for use away from the box. It can also share your position with the other devices.</p>
+
+    <h3>Get the app</h3>
+    <p>You get the app from the box. You do not need an app store or an account.</p>
+    <ol>
+      <li>Connect the device to the box's network.</li>
+      <li>In the browser of the device, open the address of the box.</li>
+      <li>Press the <b>Admin</b> tab. Then press <b>Devices</b>.</li>
+      <li>Do the steps under <b>Get the Fieldmap app</b>.</li>
+    </ol>
+    <p>If the Devices page has no app, the person who looks after the box must add it first.</p>
+
+    <h3>Connect the app to the box</h3>
+    <ol>
+      <li>Connect the device to the box's network.</li>
+      <li>Open the app. Press <b>Menu</b>. Press <b>Box</b>.</li>
+      <li>Press <b>Find the box</b>. Or type the address of the box and press <b>Connect</b>.</li>
+    </ol>
+    <p>When the app connects, the map shows. To change the map style, press <b>Menu</b>, <b>Map style</b>.</p>
+
+    <h3>Show your position</h3>
+    <p>Press <b>Follow</b>. The first time, Android asks for permission to use the location. Allow it. The map then
+      shows your position as a blue dot and moves with you. North is at the top (<b>North up</b>). Press the button
+      again to turn the map in the direction that you face (<b>Head up</b>). When you move the map with your finger,
+      the map stops following you.</p>
+
+    <h3>Keep maps on the device (map areas)</h3>
+    <p>A map area is a part of the map that the app keeps on the device. You can use it when there is no connection
+      to the box. Save map areas before you go away from the box.</p>
+    <ol>
+      <li>Connect to the box.</li>
+      <li>Press <b>Menu</b>, <b>Map areas</b>, <b>Save a map area</b>.</li>
+      <li>Move and zoom the map. Put the area that you want in the frame.</li>
+      <li>Type a name. Choose the <b>Detail</b>. A lower number gives a smaller download with less detail.</li>
+      <li>Read the size and the free space. Then press <b>Download</b>.</li>
+    </ol>
+    <p>When the box gets new maps, press <b>Menu</b>, <b>Map areas</b>, <b>Update all map areas</b>. Keep the app
+      open until the download is complete.</p>
+
+    <h3>Markers</h3>
+    <ul>
+      <li>To add a marker, touch and hold the map for 2 seconds.</li>
+      <li>To add a marker at your position, touch and hold the blue dot.</li>
+      <li>To change a marker, tap it. You can give it a name and a colour. You can <b>Move</b> or <b>Delete</b> it.</li>
+      <li>To see all markers, press <b>Menu</b>, <b>Markers</b>.</li>
+    </ul>
+    <p>On the Markers screen, <b>Save to a file</b> saves the markers in a GeoJSON file. <b>Add from a file</b>
+      opens one. You can open the same file on the <b>Print a map</b> page with <b>Load markers, arrows &amp;
+      shapes</b>.</p>
+
+    <h3>Use the app away from the box's network</h3>
+    <p>Away from the box's network, the app uses its map areas. With remote access, a paired device can also use
+      the box through the internet. The person who looks after the box must switch on remote access first. See
+      <a href="#pair">Pair a device</a>.</p>
+
+    <h3>Close the app</h3>
+    <p>To stop the app fully, press <b>Menu</b>, <b>Close Fieldmap</b>. This also stops the sharing of your
+      position.</p>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="share">
+    <h2>7. Share positions and markers</h2>
+    <p>Each person who shares can see the positions of the others on the map. Shared markers show on all the
+      devices.</p>
+    <p>Sharing has two switches. The person who looks after the box switches on sharing on the box first. See
+      <a href="#admin-share">Switch on sharing</a>. Then each person switches on sharing in the app.</p>
+
+    <h3>Share your position</h3>
+    <ol>
+      <li>Connect the app to the box.</li>
+      <li>Press <b>Menu</b>, <b>Sharing</b>.</li>
+      <li>Type your name in <b>Your name on the map</b>. The others see this name.</li>
+      <li>Press <b>Share my position</b>.</li>
+    </ol>
+    <p>Sharing continues when you leave the app or when the screen goes off. To stop, press <b>Stop sharing my
+      position</b>. Or press <b>Menu</b>, <b>Close Fieldmap</b>.</p>
+    <p>The <b>Sharing</b> screen lists the other devices that share. Tap a name to see the position and when it
+      came. A position that is old shows a different look. The person can be at a different place now.</p>
+
+    <h3>Share a marker</h3>
+    <ol>
+      <li>Tap the marker.</li>
+      <li>Tick <b>Share with the other devices</b>.</li>
+    </ol>
+    <p>All devices on the box then show the marker. All of them can change it or delete it. Untick to keep the
+      marker on your device only.</p>
+    <div class="note"><b>Note</b>The box does not keep the positions. A device that stops sharing goes off the map of
+      the others in about 2 minutes. The box keeps the shared markers.</div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="admin">
+    <h2>8. Admin: for the person who looks after the box</h2>
+    <p>The <b>Admin</b> tab has three pages. Most people do not need them. Some boxes ask for the box's code on these
+      pages. The person who set up the box has the code.</p>
+
+    <h3 id="remote">Remote access</h3>
+    <p>With remote access, paired devices can use the box from outside the box's network, through the internet.
+      Only paired devices can come in. Remote access is off when you get the box.</p>
+    <ol>
+      <li>Press <b>Admin</b>, <b>Remote access</b>.</li>
+      <li>Press <b>Switch on</b>. Pairing then opens for 10 minutes.</li>
+      <li>Read <b>From outside</b>. It tells you if devices can reach the box from outside.</li>
+    </ol>
+    <p>The box asks the router to open a port. Some routers do not do this. Then tick <b>I forward the port on the
+      router myself</b>. The page shows the port and the address to type on the router. Type the internet address of
+      the router in the field below it. Then press <b>Save</b>. The status page of the router shows its internet
+      address.</p>
+    <p>To stop remote access, press <b>Switch off</b>. The box then closes the port on the router. The paired devices
+      stay on the list.</p>
+    <div class="caution"><b>Caution</b>Switch off remote access when nobody needs it. Then nothing outside the box's
+      network can use the box.</div>
+
+    <h3 id="pair">Pair a device</h3>
+    <p>A paired device can use the box from outside. Pair each device one time, on the box's network.</p>
+    <ol>
+      <li>Make sure that remote access is on.</li>
+      <li>Connect the device to the box's network. Open the Fieldmap app on it.</li>
+      <li>On a computer or on the device, open <b>Admin</b>, <b>Devices</b>.</li>
+      <li>Press <b>Pair a device</b>.</li>
+      <li>In the app, press <b>Menu</b>, <b>Box</b>, <b>Pair this device</b>. Do this in 10 minutes or less.</li>
+    </ol>
+    <p>The device then shows under <b>Paired devices</b>. To stop a device from outside, press <b>Remove</b> beside
+      it. Do this at once if a device is lost.</p>
+
+    <h3 id="admin-share">Switch on sharing</h3>
+    <ol>
+      <li>Press <b>Admin</b>, <b>Devices</b>.</li>
+      <li>In <b>Sharing positions and markers</b>, press <b>Switch on</b>.</li>
+    </ol>
+    <p>The card then lists the devices that share now, and the number of shared markers. Press <b>Switch off</b> to
+      stop sharing for all devices.</p>
+    <div class="caution"><b>Caution</b>Do not switch on sharing on a network that strangers can join. All devices on
+      the box's network can then see the shared positions.</div>
+
+    <h3 id="builder">Map builder</h3>
+    <p>The Map builder puts maps on the box. The box downloads the map data one time. After that, the maps work without
+      the internet. Some boxes do not have the Map builder. On these boxes, the person who set up the box adds the
+      maps.</p>
+    <ol>
+      <li>Press <b>Admin</b>, <b>Map builder</b>.</li>
+      <li><b>Choose your regions.</b> Click a region on the map, for example a state. Click it again to remove it.
+        You can also find a region by its name.</li>
+      <li><b>Choose what to build.</b> Each line is one layer of the map. Press <b>?</b> beside a line to read about
+        it.</li>
+      <li><b>Check the space and time.</b> The page shows the space on the drive and the time that the build
+        needs.</li>
+      <li><b>Build.</b> Read the notes. Press <b>Start the build</b>. Then press <b>Yes, start the build</b>.</li>
+    </ol>
+    <div class="caution"><b>Caution</b>Choose all the regions that you want to keep. A new build replaces the old
+      maps of the layers that you build. If the box has one region and you build a different one, the box then has
+      only the new region.</div>
+    <p>A build needs the internet all the time. It can take hours or days. You can close the page. The build
+      continues. The old maps work until the build is complete. If the build stops before the end, the maps do not
+      change. To stop a build, press <b>Stop the build</b>.</p>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="care">
+    <h2>9. Take care of the box</h2>
+    <ul>
+      <li>Keep the box on when people use it. The devices cannot get maps from a box that is off.</li>
+      <li>Keep the box in a dry, cool place with air around it.</li>
+      <li>Do not remove the power during a build. The build stops and you must start it again.</li>
+      <li>Keep the address of the box and the box's code on paper, in a safe place.</li>
+      <li>Keep a paper copy of this guide with the box. Press <b>Print this guide</b> at the top of this page.</li>
+    </ul>
+    <div class="note"><b>Note</b>The box keeps its maps when it is off. After you switch it on again, wait some
+      minutes. The pages then open again.</div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="problems">
+    <h2>10. Problems and what to do</h2>
+    <table>
+      <tr><th>Problem</th><th>What to do</th></tr>
+      <tr><td>The page of the box does not open.</td><td>Make sure that the device is on the box's network. Make sure
+        that the address is correct. Make sure that the box is on. Wait some minutes after you switch on the box.</td></tr>
+      <tr><td>The map is empty or grey.</td><td>Move to a region that the box has. If the page says <b>The box has no
+        maps yet</b>, build the maps with the Map builder.</td></tr>
+      <tr><td>A tab shows <b>not running</b>.</td><td>That part of the box does not work now. Switch the box off and
+        on again. If this does not help, tell the person who set up the box.</td></tr>
+      <tr><td>The <b>Devices</b> page or the <b>Remote access</b> page does not open.</td><td>These pages open only on
+        the box's network. Connect to the box's network.</td></tr>
+      <tr><td><b>Print</b> does nothing.</td><td>The browser blocked the print window. Press <b>Download PDF</b>.
+        Then print the file.</td></tr>
+      <tr><td>An atlas stops, or the browser closes.</td><td>Use a laptop or a desktop computer. Choose a smaller
+        atlas, or <b>Standard</b> quality.</td></tr>
+      <tr><td>The markers on <b>Print a map</b> are gone.</td><td>Only the browser that made them keeps them. Open the
+        page in the same browser. Or load the file that you saved.</td></tr>
+      <tr><td>The app says <b>No box answered at this address</b>.</td><td>Connect the device to the box's network.
+        Then press <b>Find the box</b>.</td></tr>
+      <tr><td>The app shows <b>Offline</b>.</td><td>There is no connection to the box. The app shows only the map
+        areas on the device. Go back to the box's network, or use remote access.</td></tr>
+      <tr><td>The app cannot pair.</td><td>Switch on remote access. Press <b>Pair a device</b> on the Devices page.
+        Then pair in 10 minutes or less.</td></tr>
+      <tr><td>A paired device cannot connect from outside.</td><td>Make sure that remote access is on. Read <b>From
+        outside</b> on the Remote access page. Connect the device to the box's network one time. The app then gets
+        the new address of the box.</td></tr>
+      <tr><td>Nobody sees my position.</td><td>Make sure that sharing is on, on the box and in the app. The others
+        must also switch on sharing.</td></tr>
+      <tr><td>The page asks for a code.</td><td>Type the box's code. The person who set up the box has it.</td></tr>
+    </table>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="words">
+    <h2>11. Words in this guide</h2>
+    <table>
+      <tr><th>Word</th><th>Meaning</th></tr>
+      <tr><td>address</td><td>The numbers or the name that you type in the browser to open the box, for example
+        192.168.1.10.</td></tr>
+      <tr><td>app</td><td>The Fieldmap app for Android phones and tablets.</td></tr>
+      <tr><td>atlas</td><td>A set of printed sheets that join together, with an index page.</td></tr>
+      <tr><td>box</td><td>The small computer that keeps the maps.</td></tr>
+      <tr><td>the box's network</td><td>The Wi-Fi or the cable network that the box is on.</td></tr>
+      <tr><td>browser</td><td>The app that opens web pages, for example Chrome, Firefox, Edge or Safari.</td></tr>
+      <tr><td>build</td><td>To make the maps on the box from map data on the internet.</td></tr>
+      <tr><td>code</td><td>A number that the person who set up the box chose. Some pages ask for it.</td></tr>
+      <tr><td>device</td><td>A phone or a tablet.</td></tr>
+      <tr><td>GeoJSON file</td><td>A file that keeps markers and shapes. Many map apps can open it.</td></tr>
+      <tr><td>layer</td><td>One part of the map, for example contour lines or hillshade.</td></tr>
+      <tr><td>map area</td><td>A part of the map that the app keeps on the device.</td></tr>
+      <tr><td>map style</td><td>The look of the map: its colours and what it shows.</td></tr>
+      <tr><td>marker</td><td>A point that a person puts on the map.</td></tr>
+      <tr><td>MGRS</td><td>A grid of letters and numbers that gives a position. Many maps for the field use it.</td></tr>
+      <tr><td>outside</td><td>Not on the box's network, for example on mobile data.</td></tr>
+      <tr><td>pair</td><td>To give a device permission to use the box from outside.</td></tr>
+      <tr><td>port</td><td>A number that the router uses to send a connection to the box.</td></tr>
+      <tr><td>position</td><td>Where a device is now, from its GPS.</td></tr>
+      <tr><td>region</td><td>An area of the world that the Map builder builds, for example a state.</td></tr>
+      <tr><td>remote access</td><td>The function that lets paired devices use the box from outside.</td></tr>
+      <tr><td>router</td><td>The device between the box's network and the internet.</td></tr>
+      <tr><td>sheet</td><td>One printed page of a map.</td></tr>
+      <tr><td>tab</td><td>A link in the header at the top of each page.</td></tr>
+    </table>
+    <p><a class="back" href="#contents">Back to the contents</a></p>
+  </section>
+
+</main>
+
+<script>
+  // The address that opened this guide is the address of the box.
+  document.getElementById("here").textContent = location.protocol + "//" + location.host + "/";
+  document.getElementById("print-guide").onclick = () => window.print();
+</script>
+</body>
+</html>
