@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -72,6 +73,11 @@ class RemoteServerTest(unittest.TestCase):
             self.rs.init("/maps/", "http://127.0.0.1:8080/", "8443", True)
         self.no_v6 = mock.patch.object(self.rs.portmap, "global_ipv6", return_value=[])
         self.no_v6.start()
+        # The router is never really asked (tests that look at it patch these again).
+        self.no_router = [mock.patch.object(self.rs.portmap, "release", return_value=[]),
+                          mock.patch.object(self.rs.portmap, "reach", return_value={"checked": 1, "ipv4": {}, "ipv6": {}, "problem": "router-closed"})]
+        for p in self.no_router:
+            p.start()
         # Most tests are about a box whose owner switched remote access on (it is off by default).
         self.switch_on()
 
@@ -79,6 +85,9 @@ class RemoteServerTest(unittest.TestCase):
         self.rs.write_private(self.rs.SETTINGS, json.dumps({"enabled": True}).encode())
 
     def tearDown(self):
+        self.rs.time.sleep(0.05)            # the router is told in the background
+        for p in self.no_router:
+            p.stop()
         self.no_v6.stop()
         self.tmp.cleanup()
         for name in ("REMOTE_ADDRESS", "REMOTE_PIN"):
@@ -435,7 +444,7 @@ class RemoteServerTest(unittest.TestCase):
         self.assertTrue(0 < self.rs.pairing_left() <= self.rs.PAIRING_SECONDS)
 
 
-    # ---------- NetBird, the second way in ----------
+    # ---------- NetBird, the other way in ----------
 
     KEY = "test-setup-key-for-fieldmap-0001"
 
@@ -601,6 +610,7 @@ class RemoteServerTest(unittest.TestCase):
         self.assertIn("A device connected to the box through NetBird on", self.rs.netbird_report()["text"])
         self.assertEqual(204, self.get("/check", {**mine, "X-Fieldmap-Peer": "198.51.100.7"}).status)
         self.assertTrue(self.rs.newest("direct") > 0)
+        self.post("/way", {"way": "direct"})
         self.assertEqual("confirmed", self.rs.report()["status"])
         self.rs.write_seen()
         saved = self.rs.load_devices()[0]
@@ -611,27 +621,60 @@ class RemoteServerTest(unittest.TestCase):
         self.assertTrue(self.rs.newest("direct") > 0)
         self.assertEqual(0, self.rs.newest("netbird"))
 
-    def test_the_port_on_the_router_can_be_switched_off_as_a_way_in(self):
+    def test_one_way_in_at_a_time(self):
         os.environ["REMOTE_ADDRESS"] = "tak.example.com:8443"
+        _, public = phone_key()
+        device = self.rs.enrol("Phone", public)
+        mine = {"X-Fieldmap-Fingerprint": device["sha1"]}
         self.rs.write_private(self.rs.REACH, json.dumps({"checked": 1, "problem": "", "ipv4": {"ok": True, "external_ip": "203.0.113.30",
                                                                                               "external_port": 41000}, "ipv6": {}}).encode())
+        self.assertEqual("direct", self.get("/info").body["way"], "the port on the router is the way in by default")
         self.assertEqual(2, len(self.rs.endpoints()))
+        self.assertEqual(400, self.post("/way", {"way": "netbird"}).status, "NetBird needs a setup key first")
+        self.assertEqual(400, self.post("/way", {"way": "both"}).status)
+        # NetBird chosen: the router's port is given back, no direct address is offered, the firewall closes it.
         with mock.patch.object(self.rs.portmap, "release", return_value=[]) as release, mock.patch.object(self.rs.portmap, "reach") as reach:
-            info = self.post("/direct", {"on": False}).body
+            info = self.connect_netbird().body
             self.rs.time.sleep(0.2)
-            release.assert_called_once()            # the port the router opened is closed
+            release.assert_called_once()
             self.assertEqual("direct-off", self.rs.check_router()["problem"])
             reach.assert_not_called()               # and the router is not asked again
-        self.assertFalse(info["direct"])
-        self.assertEqual([], self.rs.endpoints())
-        self.assertFalse(json.load(open(self.rs.SETTINGS))["direct"], "the firewall closes the gateway's port to the world")
+        self.assertEqual(("netbird", False), (info["way"], info["direct"]))
+        self.assertEqual([], info["endpoints"])
+        self.assertEqual(("netbird", True), (json.load(open(self.rs.SETTINGS))["way"], json.load(open(self.rs.SETTINGS))["netbird"]))
+        self.assertIn("FIELDMAP_NETBIRD=on", open(self.rs.NETBIRD_CLIENT).read())
         self.assertEqual("off", self.rs.report()["status"])
-        self.assertIn("does not use a port on the router", self.rs.report()["text"])
+        self.assertIn("because devices come in through NetBird", self.rs.report()["text"])
+        self.netbird_says()
+        self.assertIsNotNone(self.get("/gateway/netbird", mine).body["netbird"])
+        # Back to the router's port: NetBird stops, its firewall rule goes, devices get no block.
         with mock.patch.object(self.rs.portmap, "reach", return_value={"checked": 2, "ipv4": {"ok": True, "external_ip": "203.0.113.30",
-                                                                                                "external_port": 41000}, "ipv6": {}, "problem": ""}):
-            self.assertTrue(self.post("/direct", {"on": True}).body["direct"])
+                                                                                                "external_port": 41000}, "ipv6": {}, "problem": ""}) as reach, \
+                mock.patch.object(self.rs.threading, "Thread") as later:
+            info = self.post("/way", {"way": "direct"}).body
+            self.assertEqual("The box asks the router now.", info["reach"]["text"], "not the text of the way that was closed")
+            later.call_args.kwargs["target"]()     # the router answers
             self.rs.time.sleep(0.2)
+            reach.assert_called()
+        self.assertEqual(("direct", True), (info["way"], info["direct"]))
+        self.assertIn("FIELDMAP_NETBIRD=off", open(self.rs.NETBIRD_CLIENT).read())
+        self.assertFalse(json.load(open(self.rs.SETTINGS))["netbird"])
+        self.assertEqual({"netbird": None}, self.get("/gateway/netbird", mine).body)
+        self.assertEqual((False, "off", True), (info["netbird"]["on"], info["netbird"]["status"], info["netbird"]["keySet"]))
+        self.assertIn("because devices come in through the port on the router", info["netbird"]["text"])
         self.assertEqual(2, len(self.rs.endpoints()))
+        # And NetBird again, with the key the box kept.
+        self.assertEqual("netbird", self.post("/way", {"way": "netbird"}).body["way"])
+        self.assertEqual("netbird", self.post("/netbird", {"on": True}).body["way"])
+        self.assertEqual("direct", self.post("/netbird", {"on": False}).body["way"], "{\"on\": false} is the way back to the router's port")
+
+    def test_forgetting_netbird_goes_back_to_the_port_on_the_router(self):
+        self.connect_netbird()
+        with mock.patch.object(sys, "argv", ["remote-server.py", "netbird-forget"]), contextlib.redirect_stdout(io.StringIO()):
+            self.rs.main()
+        self.assertEqual("direct", self.rs.way())
+        self.assertFalse(json.load(open(self.rs.SETTINGS))["netbird"])
+        self.assertFalse(os.path.exists(self.rs.NETBIRD_KEY))
 
     def test_netbird_says_in_plain_words_why_it_does_not_connect(self):
         self.connect_netbird()

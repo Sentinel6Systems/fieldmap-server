@@ -7,7 +7,7 @@
 # It does not rely on the router: some routers let IPv6 in unfiltered, and a mistake in a port
 # mapping should expose nothing. SSH from outside is closed too, unless .env opens it.
 #
-# NetBird, the second way in for paired devices (Admin, Remote access), is not one of those VPNs.
+# NetBird, the other way in for paired devices (Admin, Remote access), is not one of those VPNs.
 # A device that was removed from the box can still be a member of the owner's NetBird network.
 # So on NetBird's interface (nb-fieldmap, named by tools/netbird-run.sh) the gateway's port gets
 # in, while NetBird is connected, and nothing else: not the pages, not SSH, not a ping.
@@ -117,14 +117,16 @@ esac
 
 PORT="$(setting REMOTE_PORT "")"
 # The Remote access page's switch (data/remote/settings.json, "enabled"): off, the default, closes the gateway's port as well.
-# Beside it, the two ways in: "direct", the router's port (on unless the page's tick took it
-# off), and "netbird" (on while the box runs NetBird for its paired devices).
+# Beside it, the one way in the owner chose ("way"): "direct", the router's port (the default),
+# or "netbird" (then "netbird" says whether NetBird's client is wanted now). Never both: the
+# rules of the way that is not chosen are taken out.
 read -r ON DIRECT NETBIRD <<< "$(python3 -c 'import json,sys
 yes = lambda v: "yes" if v else "no"
 try:
     s = json.load(open(sys.argv[1]))
     on = s.get("enabled") is True
-    print(yes(on), yes(on and s.get("direct", True) is not False), yes(on and s.get("netbird") is True))
+    nb = s.get("way") == "netbird"
+    print(yes(on), yes(on and not nb), yes(on and nb and s.get("netbird") is True))
 except Exception:
     print("no no no")' "$REPO_DIR/data/remote/settings.json" 2>/dev/null || echo "no no no")"
 # Remote access taken off the box (remote.sh off, install.sh --no-remote): no gateway listens, and
@@ -237,7 +239,7 @@ ${OPEN:+        elements = { $OPEN \}}
         # IPv6's own housekeeping with the router and the devices on the same wire. A hop limit of
         # 255 proves the packet was not forwarded by any router: it comes from the same network.
         icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert, nd-redirect } ip6 hoplimit 255 accept
-        # NetBird, the second way in for paired devices: the gateway and nothing else. Before the
+        # NetBird, the other way in for paired devices: the gateway and nothing else. Before the
         # rules below, whatever addresses the NetBird network uses.
         $NB_INPUT
         iifname "$NB_IF" counter drop

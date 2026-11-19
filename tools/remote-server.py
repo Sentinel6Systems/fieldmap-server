@@ -26,12 +26,15 @@ How it works:
   * Reaching the gateway: every few minutes this service asks the home router to forward an
     outside port to it (UPnP or NAT-PMP, tools/portmap.py) and notes the box's IPv6
     addresses. The app learns these addresses whenever it is home, from `GET /info`.
-  * A second way in, for a box behind an internet connection where no port can be opened
+  * The other way in, for a box behind an internet connection where no port can be opened
     (Starlink, a router nobody can change): NetBird (netbird.io). The owner types a setup key
     of a NetBird network on the Remote access page; the box joins that network (a container,
     see scripts/remote.sh netbird-apply and tools/netbird-run.sh) and gives the key to paired
     devices only, which then reach the same gateway, with the same certificate, over the
-    NetBird network. Off until the owner sets it up. See "NetBird" below.
+    NetBird network. See "NetBird" below.
+  * One way in at a time (the owner's rule): the port on the router ("direct", the default) or
+    NetBird. Choosing one closes the other: its router port or its NetBird client, and its
+    rules in the box's firewall (set_way()).
 
 Who may ask what:
   * through the box's web server, which puts the caller's address in X-Real-IP: only
@@ -333,7 +336,7 @@ server {{
         proxy_set_header X-Fieldmap-Peer $remote_addr;
     }}
 
-    # NetBird, the second way in: a paired device asks here what it needs to join the NetBird
+    # NetBird, the other way in: a paired device asks here what it needs to join the NetBird
     # network of this box (the setup key among it). The service itself checks the certificate
     # against the device list, and takes this address from the gateway only.
     location = /mapremote/netbird {{
@@ -501,9 +504,10 @@ def app():
 def load_settings():
     """The Remote access page's settings: "enabled" (off by default), "autoOff" (switch off by itself
     after IDLE_DAYS with no phone from outside; on by default), "since" (when it was switched
-    on), "offReason" ("idle" when it switched itself off), "direct" (the router's port as a way
-    in; on by default) and "netbird" (NetBird as a way in, and running; scripts/firewall.sh
-    opens the gateway's port on NetBird's interface by it)."""
+    on), "offReason" ("idle" when it switched itself off), "way" (the one way in from outside:
+    "direct", the router's port, by default, or "netbird") and "netbird" (NetBird is wanted
+    now; scripts/firewall.sh reads "way" and "netbird" to open the gateway's port to the
+    world, or on NetBird's interface only)."""
     try:
         with open(SETTINGS) as f:
             data = json.load(f)
@@ -528,11 +532,20 @@ def auto_off():
     return load_settings().get("autoOff", True) is not False
 
 
+WAYS = ("direct", "netbird")
+
+
+def way():
+    """The one way in from outside the owner chose: "direct" (the router's port; the default)
+    or "netbird"."""
+    return "netbird" if load_settings().get("way") == "netbird" else "direct"
+
+
 def direct():
-    """The router's port as a way in (the default). Off: the router is not asked, a port it
-    opened is closed, and the box's firewall lets nobody from outside reach the gateway's port
-    but through NetBird."""
-    return load_settings().get("direct", True) is not False
+    """The router's port is the way in. Not so: the router is not asked, a port it opened is
+    closed, and the box's firewall lets nobody from outside reach the gateway's port but
+    through NetBird."""
+    return way() == "direct"
 
 
 def idle_since():
@@ -576,16 +589,23 @@ def set_enabled(on, reason=""):
     netbird_follow()                # NetBird runs only while remote access is on
 
 
-def set_direct(on):
-    """The router's port as a way in, on or off (the Remote access page's tick)."""
-    was = direct()
-    save_settings(direct=bool(on))
-    if not enabled():
-        return
-    if was and not on:
-        threading.Thread(target=release_router, args=("direct-off",), daemon=True).start()
-    elif on:
-        threading.Thread(target=check_router, daemon=True).start()
+def set_way(new):
+    """Chooses the one way in (the Remote access page). The other way is closed at once: to
+    NetBird, the router's port is given back and the firewall closes it to the world; to the
+    router's port, NetBird's client is stopped and the firewall closes its interface. NetBird
+    needs a setup key first (the box keeps it when the way changes back)."""
+    if new not in WAYS:
+        raise ValueError("There is no such way.")
+    if new == "netbird" and not netbird_key():
+        raise ValueError("Type the setup key first.")
+    was = way()
+    save_settings(way=new)
+    if enabled() and was != new:
+        if new == "netbird":
+            threading.Thread(target=release_router, args=("direct-off",), daemon=True).start()
+        else:
+            threading.Thread(target=check_router, daemon=True).start()
+    netbird_follow()
 
 
 def release_router(problem="switched-off"):
@@ -763,7 +783,7 @@ PROBLEMS = {
                       "home internet do this. Devices outside cannot connect to the box over IPv4.",
     "off": "The box does not ask the router to open a port (REMOTE_DIRECT=off).",
     "manual": "",
-    "direct-off": "The box does not use a port on the router.",
+    "direct-off": "The port on the router is off, because devices come in through NetBird. The box closed the port.",
     "switched-off": "Remote access is off. Devices outside cannot connect to the box. You cannot pair a device.",
     "switched-off-idle": "Remote access switched off automatically. No device came in from outside for %d days. "
                          "Devices outside cannot connect to the box until you switch on remote access again." % IDLE_DAYS,
@@ -782,6 +802,9 @@ def report():
         return {"status": "off", "text": PROBLEMS["switched-off-idle" if idle else "switched-off"], "checked": state.get("checked", 0)}
     if not direct():
         return {"status": "off", "text": PROBLEMS["direct-off"], "checked": 0}
+    if state.get("problem") in ("direct-off", "switched-off"):
+        # The way changed back a moment ago: the router is being asked now.
+        return {"status": "unknown", "text": "The box asks the router now.", "checked": 0}
     if newest_seen and time.time() - newest_seen < 7 * 86400:
         status, text = "confirmed", "A device connected to the box from outside through the port on the router on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
     elif forwarding()["manual"] and not forwarding()["address"]:
@@ -802,7 +825,7 @@ def report():
     return {"status": status, "text": text.strip(), "checked": state.get("checked", 0)}
 
 
-# ---------- NetBird, the second way in ----------
+# ---------- NetBird, the other way in ----------
 #
 # For a box whose router cannot open a port. The owner makes a NetBird network (an account on
 # NetBird's cloud, or an own server) and types one reusable setup key here. The box joins with
@@ -869,8 +892,8 @@ def clean_key(text):
 
 
 def netbird_on():
-    """The owner connected NetBird on the Remote access page (and a key is there)."""
-    return load_netbird().get("on") is True and bool(netbird_key())
+    """NetBird is the way in the owner chose (and a key is there)."""
+    return way() == "netbird" and bool(netbird_key())
 
 
 def netbird_wanted():
@@ -895,11 +918,12 @@ def netbird_follow():
     os.chmod(NETBIRD_APPLY, 0o644)
 
 
-def set_netbird(on, management=None, key=None):
-    """Connect or disconnect (the Remote access page). A new key or server is kept first.
-    Disconnected, the key and the box's place in the NetBird network are kept for the next time."""
+def set_netbird(management=None, key=None):
+    """Keeps a new key or server for NetBird (the Remote access page's Connect) and makes
+    NetBird the way in. The key and the box's place in the NetBird network are kept also when
+    the way changes back to the router's port, for the next time."""
     nb = load_netbird()
-    changes = {"on": bool(on)}
+    changes = {}
     if management and management != nb.get("management"):
         changes.update(management=management, address="", addressFor="")
     if "salt" not in nb:
@@ -914,7 +938,7 @@ def set_netbird(on, management=None, key=None):
         except OSError:
             pass
     save_netbird(**changes)
-    netbird_follow()
+    set_way("netbird")
 
 
 def netbird_state():
@@ -1000,11 +1024,12 @@ def netbird_report():
     status: none (not set up), off, starting, connected, blocked."""
     nb = load_netbird()
     management = nb.get("management") or NETBIRD_CLOUD
-    out = {"keySet": bool(netbird_key()), "wanted": nb.get("on") is True, "management": management, "address": "", "seen": 0}
+    out = {"keySet": bool(netbird_key()), "wanted": way() == "netbird", "management": management, "address": "", "seen": 0}
     if not out["keySet"]:
         return {**out, "wanted": False, "status": "none", "text": "NetBird is not set up."}
     if not out["wanted"]:
-        return {**out, "status": "off", "text": "NetBird is off. The box keeps the setup key. Press Connect to use NetBird again."}
+        return {**out, "status": "off", "text": "NetBird is off, because devices come in through the port on the router. "
+                                                "The box keeps the setup key."}
     if not enabled():
         return {**out, "status": "off", "text": "Remote access is off. NetBird starts when you switch on remote access."}
     state = netbird_state()
@@ -1165,7 +1190,7 @@ class Handler(BaseHTTPRequestHandler):
         block = netbird_block()
         return {"service": "fieldmap-remote", "version": 3, "ready": ready(), "enabled": enabled(), "pin": bool(setting("REMOTE_PIN")),
                 "autoOff": {"on": auto_off(), "days": IDLE_DAYS, "at": auto_off_at()},
-                "direct": direct(),
+                "way": way(), "direct": direct(),
                 "netbird": {"on": block is not None, "rev": block["rev"] if block else "", **netbird_report()},
                 "forwarding": {**forwarding(), "port": gateway_port(), "boxAddress": portmap.lan_ipv4() or "",
                                "changingTo": load_settings().get("changingPort") if load_settings().get("changingPort") != gateway_port() else None},
@@ -1210,7 +1235,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.body()
         if self.path not in ("/enrol", "/pairing", "/remove", "/enabled", "/auto-off", "/recheck", "/forwarding", "/find-address", "/new-port",
-                             "/direct", "/netbird"):
+                             "/way", "/netbird"):
             return self.send(404, {"error": "This address is not on the box."})
         if not lan(self.headers):
             return self.send(403, {"error": "You can pair a device only on the box's network."})
@@ -1241,12 +1266,17 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/new-port":
             new_port()
             return self.send(202, self.info())
-        if self.path == "/direct":
-            set_direct(bool(body.get("on")))
+        if self.path == "/way":
+            # {"way": "direct"} or {"way": "netbird"}: one way in at a time.
+            try:
+                set_way(str(body.get("way", "")))
+            except ValueError as e:
+                return self.send(400, {"error": str(e)})
             return self.send(200, self.info())
         if self.path == "/netbird":
-            # {"on": true, "management": "...", "setupKey": "..."} connects (a key that is kept
-            # needs no typing again); {"on": false} disconnects.
+            # {"on": true, "management": "...", "setupKey": "..."} keeps the key and the server and
+            # makes NetBird the way in (a key that is kept needs no typing again); {"on": false}
+            # goes back to the router's port.
             on = bool(body.get("on"))
             management = clean_management(body.get("management")) if "management" in body else (load_netbird().get("management") or NETBIRD_CLOUD)
             key = clean_key(body.get("setupKey")) if str(body.get("setupKey") or "").strip() else ""
@@ -1256,7 +1286,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, {"error": "This is not a setup key. Copy the setup key from the NetBird dashboard."})
             if on and not key and not netbird_key():
                 return self.send(400, {"error": "Type the setup key first."})
-            set_netbird(on, management or None, key)
+            if on:
+                set_netbird(management or None, key)
+            else:
+                set_way("direct")
             return self.send(200, self.info())
         if self.path == "/pairing":
             if body.get("open") and not enabled():
@@ -1285,7 +1318,7 @@ class Handler(BaseHTTPRequestHandler):
         answer = {"id": device["id"], "name": device["name"], "certificate": device["certificate"],
                   "ca": ca, "gatewayName": gateway_name(), "endpoints": endpoints()}
         block = netbird_block()
-        if block:                       # the second way in; the key in it is for this device only
+        if block:                       # the other way in; the key in it is for this device only
             answer["netbird"] = block
         self.send(200, answer)
 
@@ -1423,8 +1456,8 @@ def main():
                 os.unlink(path)
             except OSError:
                 pass
-        if load_settings().get("netbird"):
-            save_settings(netbird=False)
+        # Without NetBird, the router's port is the way in again.
+        save_settings(netbird=False, way="direct")
     elif args.command == "router":
         state = check_router()
         print(json.dumps(state, indent=1))
@@ -1435,6 +1468,7 @@ def main():
         n = live.get("netbird") or netbird_report()
         print("Certificates:   " + ("made" if ready() else "not made yet (run scripts/remote.sh setup)"))
         print("Remote access:  " + ("on" if enabled() else "off"))
+        print("Way in:         " + ("NetBird" if (live.get("way") or way()) == "netbird" else "the port on the router") + " (one at a time)")
         print("Router's port:  " + r["text"])
         print("NetBird:        " + n["text"])
         print("Addresses:      " + (", ".join("%s:%s" % (e["host"], e["port"]) for e in endpoints()) or "none yet"))

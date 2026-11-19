@@ -59,7 +59,7 @@ services:
       - ./data/remote/run:/run/fieldmap-remote
       - ./data/share/run:/run/fieldmap-share
 
-  # NetBird (netbird.io), a second way in for paired devices, for a box whose router cannot
+  # NetBird (netbird.io), the other way in for paired devices, for a box whose router cannot
   # open a port. Not started by `docker compose up`, and not downloaded, until the owner types
   # a setup key on the Remote access page: then scripts/remote.sh netbird-apply starts it.
   # It joins the owner's NetBird network (tools/netbird-run.sh) on this machine's own network,

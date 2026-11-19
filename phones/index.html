@@ -4,9 +4,10 @@
      /phones/             Admin, Devices: get the app, pair a device, the paired devices, and sharing
                           positions and markers between them (another service, tools/share-server.py,
                           asked beside this page at /mapshare/admin);
-     /phones/remote.html  Admin, Remote access: the switch, whether devices can reach the box from
-                          outside, port forwarding, and NetBird (a second way in, for a box whose
-                          router cannot open a port). Not something everyone needs.
+     /phones/remote.html  Admin, Remote access: the switch, the way in (the port on the router, or
+                          NetBird for a box whose router cannot open a port: one at a time), whether
+                          devices can reach the box from outside, port forwarding, and NetBird's
+                          setup key. Not something everyone needs.
      Each section says which of the two it belongs to (data-for). The look and the header are
      ui/fieldmap.css and ui/nav.js, which the service serves beside this page. -->
 <head>
@@ -51,6 +52,10 @@
   .field small { display: block; color: var(--muted); }
   .field input { width: 100%; max-width: 26em; margin-top: 4px; }
   .reach.connected { border-left-color: var(--sig); }
+  .way { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); cursor: pointer; }
+  .way.chosen { border-color: var(--sig); background: var(--panel2); }
+  .way input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
+  .way b { display: block; }
   .reach.starting { border-left-color: var(--amber); }
   .mono-strong { font: 600 15px var(--mono); overflow-wrap: anywhere; }
   .forward { font: 600 17px var(--mono); padding: 12px 14px; border: 1px solid var(--sig); background: var(--panel2); margin: 12px 0 8px; overflow-wrap: anywhere; }
@@ -103,21 +108,28 @@
     <label class="check"><input type="checkbox" id="auto-off"> <span id="auto-off-text"></span></label>
   </section>
 
+  <section class="card" id="way-card" data-for="access">
+    <h2>Way in</h2>
+    <p class="quiet">Devices outside come in one way at a time. When you choose a way, the box closes the other way.</p>
+    <label class="way" id="way-direct-row"><input type="radio" name="way" id="way-direct" value="direct">
+      <span><b>Port on the router</b><span class="quiet">The router opens a port for the box, or you forward a port. Use
+        this with most home internet.</span></span></label>
+    <label class="way" id="way-netbird-row"><input type="radio" name="way" id="way-netbird" value="netbird">
+      <span><b>NetBird</b><span class="quiet">Use this with Starlink, with mobile internet, or with a router that you
+        cannot change. You need a NetBird account.</span></span></label>
+    <p class="quiet" id="way-note"></p>
+  </section>
+
   <section class="card" id="outside-card" data-for="access">
     <h2>From outside</h2>
-    <h3>Through the port on the router</h3>
     <p class="reach" id="reach"></p>
-    <h3>Through NetBird</h3>
-    <p class="reach" id="reach-netbird"></p>
     <p class="mono" id="addresses"></p>
     <div class="row"><button id="recheck" type="button">Ask the router again</button><span class="quiet" id="checked"></span></div>
   </section>
 
   <section class="card" id="forward-card" data-for="access">
     <h2>Port forwarding</h2>
-    <label class="check"><input type="checkbox" id="direct"> <span>Let devices come in through a port on the router. Untick this
-      when the router cannot open a port and the devices come in through NetBird. The box then closes the port.</span></label>
-    <label class="check" id="manual-row"><input type="checkbox" id="manual"> <span>I forward the port on the router myself. Use this when the router does not
+    <label class="check"><input type="checkbox" id="manual"> <span>I forward the port on the router myself. Use this when the router does not
       open the port with UPnP.</span></label>
     <div id="manual-box" hidden>
       <p class="forward" id="forward-line"></p>
@@ -134,14 +146,10 @@
   </section>
 
   <section class="card" id="netbird-card" data-for="access">
-    <div class="switch">
-      <h2>NetBird</h2>
-      <span class="state" id="nb-state"></span>
-      <button id="nb-disconnect" type="button" class="danger" hidden>Disconnect</button>
-    </div>
+    <h2>NetBird</h2>
     <p class="quiet">NetBird is a service that connects the devices to the box through the internet. The router does not open
-      a port for it. Use NetBird with Starlink, with mobile internet, or with a router that you cannot change.</p>
-    <p class="reach" id="nb-reach"></p>
+      a port for it.</p>
+    <div class="row" id="nb-change-row"><button id="nb-change" type="button">Change the setup key</button></div>
     <div id="nb-form">
       <ol>
         <li>Make a NetBird account and a setup key. The User Guide tells you how: <a href="/guide/#netbird">Come in
@@ -158,7 +166,7 @@
       <div class="row"><button id="nb-connect" type="button" class="primary">Connect</button></div>
     </div>
     <p class="quiet">The box keeps the setup key and does not show it again. The box gives the setup key only to paired
-      devices. A paired device then comes in through NetBird when it cannot use the port on the router.</p>
+      devices.</p>
   </section>
 
   <section class="card" id="app-card" data-for="devices">
@@ -237,6 +245,9 @@
   let busy = false;
   let addressEdited = false;
   let managementEdited = false;
+  let lastWay = "direct", lastKeySet = false;
+  let wantNetbird = false;       // NetBird chosen on the page, but no setup key yet: the form shows
+  let changeKey = false;         // "Change the setup key" pressed
 
   function error(e) {
     $("error").hidden = !e;
@@ -260,6 +271,8 @@
       return error(e);
     }
     if (info.pin) $("code-card").hidden = false;
+    lastWay = info.way;
+    lastKeySet = info.netbird.keySet;
     // The app, for devices to install from here.
     const app = info.app;
     $("app-there").hidden = !app;
@@ -278,43 +291,49 @@
     $("switch-text").textContent = on
       ? "Remote access is on. Paired devices can use the box from outside. Press Switch off to keep the box on its own network. The box then closes the port on the router. The paired devices stay on the list."
       : "Remote access is off. Devices outside the box's network cannot use the box. You cannot pair a device. Press Switch on to start remote access. Pairing then opens for 10 minutes.";
-    for (const id of ["outside-card", "forward-card"]) $(id).setAttribute("aria-disabled", String(!on));
+    for (const id of ["outside-card", "forward-card", "way-card", "netbird-card"]) $(id).setAttribute("aria-disabled", String(!on));
     $("pair-off").hidden = on;
     const fw = info.forwarding;
-    $("direct").checked = info.direct;
-    $("manual-row").hidden = !info.direct;
+    // The one way in: the port on the router, or NetBird. The page shows the parts of that way only.
+    const nb = info.netbird;
+    const viaNetbird = info.way === "netbird";
+    if (viaNetbird) wantNetbird = false;
+    const shown = viaNetbird || wantNetbird ? "netbird" : "direct";
+    $("way-direct").checked = shown === "direct";
+    $("way-netbird").checked = shown === "netbird";
+    $("way-direct-row").className = "way" + (shown === "direct" ? " chosen" : "");
+    $("way-netbird-row").className = "way" + (shown === "netbird" ? " chosen" : "");
+    $("way-note").textContent = wantNetbird
+      ? "Type the setup key below and press Connect. Until then, devices come in through the port on the router."
+      : viaNetbird ? "Devices outside come in through NetBird. The port on the router is closed."
+      : "Devices outside come in through the port on the router. NetBird is off.";
+    $("forward-card").hidden = shown !== "direct";
+    $("netbird-card").hidden = shown !== "netbird";
     $("manual").checked = fw.manual;
-    $("manual-box").hidden = !fw.manual || !info.direct;
+    $("manual-box").hidden = !fw.manual;
     $("forward-line").textContent = fw.changingTo
       ? `The box changes to port ${fw.changingTo}.`
       : `On your router, forward TCP port ${fw.port} to ${fw.boxAddress || "this box"}.`;
     $("new-port").disabled = !!fw.changingTo;
     $("port-note").textContent = fw.changingTo ? "This takes some seconds." : "";
     if (document.activeElement !== $("address") && !addressEdited) $("address").value = fw.address;
-    $("auto-text").textContent = fw.manual || !info.direct ? "" :
+    $("auto-text").textContent = fw.manual ? "" :
       `The box asks the router to open the port. If the router does not do this, tick the option above and forward port ${fw.port} yourself.`;
     $("auto-off").checked = info.autoOff.on;
     $("auto-off-text").textContent = `Switch off remote access when no device comes in from outside for ${info.autoOff.days} days.` +
       (info.autoOff.at ? ` This will occur on ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })} if no device comes in before that date.` : "");
-    $("reach").textContent = info.reach.text;
-    $("reach").className = "reach " + info.reach.status;
+    $("reach").textContent = viaNetbird ? nb.text : info.reach.text;
+    $("reach").className = "reach " + (viaNetbird ? nb.status : info.reach.status);
     $("addresses").textContent = on && info.endpoints.length
       ? "The devices use these addresses: " + info.endpoints.map((e) => e.host + ":" + e.port).join(", ") : "";
-    $("checked").textContent = info.reach.checked ? "The box asked the router on " + when(info.reach.checked) + "." : "";
+    $("checked").textContent = info.reach.checked && !viaNetbird ? "The box asked the router on " + when(info.reach.checked) + "." : "";
+    $("recheck").hidden = viaNetbird;
     $("recheck").disabled = !on || !info.direct;
-    // NetBird, the second way in: what it says now, and the form while it is not connected.
-    const nb = info.netbird;
-    $("reach-netbird").textContent = nb.status === "none" ? "NetBird is not set up. See NetBird, below." : nb.text;
-    $("reach-netbird").className = "reach " + nb.status;
-    $("nb-state").textContent = nb.wanted ? "On" : "Off";
-    $("nb-state").className = "state" + (nb.wanted ? " on" : "");
-    // From outside says how it goes. Here only what needs the form: a key that was refused, or a start that hangs.
-    $("nb-reach").hidden = !["blocked", "starting"].includes(nb.status);
-    $("nb-reach").textContent = nb.text;
-    $("nb-reach").className = "reach " + nb.status;
-    $("nb-disconnect").hidden = !nb.wanted;
+    // NetBird: the form while it is not connected, or when the owner changes the key.
     // Connected or starting: no form. Not accepted, or not reached: the form, to type it again.
-    $("nb-form").hidden = nb.wanted && nb.status !== "blocked";
+    const form = !viaNetbird || nb.status === "blocked" || changeKey;
+    $("nb-form").hidden = !form;
+    $("nb-change-row").hidden = form;
     $("nb-key-note").textContent = nb.keySet
       ? "The box has a setup key. Leave this field empty to use it. Type a setup key only to change it."
       : "Copy the setup key from the NetBird dashboard.";
@@ -380,22 +399,27 @@
   };
   $("auto-off").onchange = () => act("auto-off", { on: $("auto-off").checked });
   $("manual").onchange = () => act("forwarding", { manual: $("manual").checked });
-  $("direct").onchange = () => {
-    if (!$("direct").checked && !confirm("Close the port on the router? Devices outside can then come in only through NetBird.")) {
-      $("direct").checked = true;
-      return;
-    }
-    act("direct", { on: $("direct").checked });
+  // The way in. A device that is outside now cannot follow a change: it must be on the box's network one time.
+  const MOVE = " A paired device that is outside now cannot connect until it is on the box's network one time.";
+  $("way-direct").onchange = () => {
+    wantNetbird = false;
+    if (lastWay !== "netbird") return show();
+    if (!confirm("Use the port on the router? The box stops NetBird and opens the port on the router." + MOVE)) return show();
+    act("way", { way: "direct" });
   };
+  $("way-netbird").onchange = () => {
+    if (!lastKeySet) { wantNetbird = true; return show(); }
+    if (!confirm("Use NetBird? The box closes the port on the router and starts NetBird." + MOVE)) return show();
+    act("way", { way: "netbird" });
+  };
+  $("nb-change").onclick = () => { changeKey = true; show(); };
   $("nb-management").oninput = () => { managementEdited = true; };
   $("nb-connect").onclick = async () => {
+    if (lastWay !== "netbird" && !confirm("Connect to NetBird? The box closes the port on the router." + MOVE)) return;
     const body = { on: true, management: $("nb-management").value };
     if ($("nb-key").value.trim()) body.setupKey = $("nb-key").value;
     await act("netbird", body);
-    if ($("error").hidden) { $("nb-key").value = ""; managementEdited = false; }
-  };
-  $("nb-disconnect").onclick = () => {
-    if (confirm("Disconnect NetBird? Devices outside can then come in only through the port on the router. The box keeps the setup key.")) act("netbird", { on: false });
+    if ($("error").hidden) { $("nb-key").value = ""; managementEdited = false; changeKey = false; }
   };
   $("address").oninput = () => { addressEdited = true; };
   $("save-address").onclick = () => { addressEdited = false; act("forwarding", { manual: true, address: $("address").value }); };

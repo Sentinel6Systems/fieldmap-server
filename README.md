@@ -843,8 +843,8 @@ at all. It does not rely on the router, over IPv4 and IPv6: some routers let IPv
   (Tailscale, WireGuard, ZeroTier, OpenVPN), and answers to what the box asked for itself.
 - **The one exception:** the remote gateway's port, while remote access is switched on (Admin, Remote access; see
   below). Phones away from home connect to it from anywhere, so it does answer: with a demand for a certificate
-  this box issued, and nothing more to anyone without one. When the port on the router is switched off as a way in
-  (NetBird only), the gateway's port is closed to the world too.
+  this box issued, and nothing more to anyone without one. While NetBird is the way in, the gateway's port is
+  closed to the world too.
 - **NetBird is not one of those VPNs.** On NetBird's interface (`nb-fieldmap`), while NetBird is connected, the
   gateway's port gets in and nothing else: not the pages, not SSH, not a ping. A device that was removed from the box
   can still be a member of the NetBird network. This rule stays also with `REMOTE_FIREWALL=off`.
@@ -911,7 +911,13 @@ Two pages, both on the box's own network only, manage it:
 and sharing positions and markers (below).
 
 No account, no outside service, nothing of anyone else's in between: the box talks only to your own router. Where
-the router cannot open a port, NetBird is a second way in (below); it is off until the owner sets it up.
+the router cannot open a port, NetBird is the other way in (below).
+
+**One way in at a time.** The Remote access page has a choice, **Way in**: **Port on the router** (the default, as
+above) or **NetBird**. Choosing one closes the other, with its firewall rules: to NetBird, the box gives the router's
+port back, offers no direct address, and its firewall closes the gateway's port to the world; to the port on the
+router, the box stops NetBird's client, and its firewall closes NetBird's interface. A paired device that is outside
+when the way changes cannot follow until it has been on the box's network once.
 
 ### NetBird: when the router cannot open a port
 
@@ -929,20 +935,17 @@ people with the devices need no account and type nothing.
    - Empty **Expires in** (it then shows **Unlimited**). The dashboard fills in 7 days.
    - Leave **Ephemeral Peers** off.
    - Press **Create Setup Key** and copy the key. NetBird shows it once.
-3. On the box's network: **Admin**, **Remote access**. Remote access must be on. In the part **NetBird**, type the
-   key in **Setup key**, leave **Management server** as it is, and press **Connect**. The first time, the box
-   downloads NetBird (some minutes).
+3. On the box's network: **Admin**, **Remote access**. Remote access must be on. In **Way in**, choose **NetBird**.
+   In the part **NetBird**, type the key in **Setup key**, leave **Management server** as it is, and press
+   **Connect**. The box closes the port on the router. The first time, it downloads NetBird (some minutes).
 4. Wait for **The box is connected to the NetBird network**. The page does not show the key again.
 5. Devices that you pair from now on get what they need when you pair them. Devices that you paired before get it
-   the next time they are on the box's network, or through the gateway. The app uses NetBird only when home and the
-   router's port do not answer.
-6. To check: take a paired device off the box's network (mobile data), open the app, and read **From outside**,
-   **Through NetBird** on the Remote access page: *A device connected to the box through NetBird on ...*.
-7. With NetBird as the only way in, untick **Let devices come in through a port on the router** (Port forwarding).
-   The box then asks the router for nothing, and its firewall closes the gateway's port to everything but NetBird
-   and the box's network.
+   the next time they are on the box's network. Outside, the app then uses NetBird by itself.
+6. To check: take a paired device off the box's network (mobile data), open the app, and read **From outside** on
+   the Remote access page: *A device connected to the box through NetBird on ...*.
 
-To stop: **Disconnect** (the box keeps the key for the next **Connect**). To take it off the box for good:
+To stop: choose **Port on the router** in **Way in** (the box keeps the key for the next time). To take it off the
+box for good:
 `./scripts/remote.sh netbird-forget`, then delete *fieldmap-box* in the dashboard under **Peers**.
 
 **Your own NetBird server (advanced).** Run a self-hosted NetBird server (see docs.netbird.io), reachable from the
@@ -971,8 +974,8 @@ How it fits together:
   paired device becomes a member. In a network shared with other machines, a device can then reach whatever that
   network's rules permit.
 - **A lost device:** press **Remove** on the Devices page (the box then refuses it at once), delete it under
-  **Peers** in the NetBird dashboard, revoke the setup key there, and give the box a new one (**Disconnect**, type the
-  new key, **Connect**). Devices that joined before keep working with the identity they have. NetBird does not check
+  **Peers** in the NetBird dashboard, revoke the setup key there, and give the box a new one (**Change the setup key**,
+  type the new key, **Connect**). Devices that joined before keep working with the identity they have. NetBird does not check
   a new key for a box that is a member already; the page then asks you to see that the key shows as valid in the
   dashboard.
 
@@ -1150,13 +1153,14 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
-- NetBird as a second way in from outside, for a box whose router cannot open a port (Starlink, mobile internet, a
-  router you cannot change): a **NetBird** card on Admin, Remote access, where the owner types one setup key of a
-  NetBird network (NetBird's free cloud, or an own server). Paired devices get what they need from the box and reach
-  the same gateway, with the same certificate, over NetBird. Off until set up; nothing of NetBird is downloaded
-  before. The port on the router can now be switched off as a way in. "From outside" and
-  `./scripts/remote.sh status` say for each way whether a device came in through it. The box's firewall lets in only
-  the gateway's port on NetBird's interface, and now runs before Docker when the machine starts. After `git pull`,
+- NetBird as the other way in from outside, for a box whose router cannot open a port (Starlink, mobile internet, a
+  router you cannot change): **Way in** on Admin, Remote access chooses the port on the router (as before, the
+  default) or NetBird, one at a time; choosing one closes the other with its firewall rules. For NetBird the owner
+  types one setup key of a NetBird network (NetBird's free cloud, or an own server). Paired devices get what they
+  need from the box and reach the same gateway, with the same certificate, over NetBird. Nothing of NetBird is
+  downloaded before. "From outside" and `./scripts/remote.sh status` say which way is in use and whether a device
+  came in through it. The box's firewall lets in only the gateway's port on NetBird's interface, and now runs before
+  Docker when the machine starts. After `git pull`,
   run the installer again as under "Updating".
 - The header reads **Maps**, **Print a map**, **Devices**, **Admin**. Admin holds what not everyone needs: the map
   builder (where it is installed) and a new **Remote access** page with the remote access switch, "From outside" and

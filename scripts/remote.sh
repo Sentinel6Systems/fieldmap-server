@@ -30,7 +30,7 @@
 #   5. puts a firewall on the box itself that lets nothing in from outside the local network and
 #      VPNs but the gateway, and answers nothing else (scripts/firewall.sh, fieldmap-firewall).
 #
-# NetBird (netbird.io) is a second way in, for a box whose router cannot open a port (Starlink,
+# NetBird (netbird.io) is the other way in, for a box whose router cannot open a port (Starlink,
 # a router nobody can change). Nothing of it is on the box until the owner types a setup key on
 # the Remote access page. Then "netbird-apply" (run as root by fieldmap-netbird.path, which
 # "setup" installs) downloads NetBird's container and starts it; see tools/netbird-run.sh and
@@ -350,7 +350,7 @@ off)
     fi
     as_owner rm -f data/remote/address
     "${COMPOSE[@]}" --profile remote stop remote >/dev/null 2>&1 || true
-    netbird_stop                    # NetBird, the second way in, goes with the gateway
+    netbird_stop                    # NetBird, the other way in, goes with the gateway
     $SUDO systemctl disable -q --now fieldmap-remote fieldmap-share fieldmap-remote-update.timer fieldmap-remote-apply.path fieldmap-netbird.path 2>/dev/null || true
     as_owner mkdir -p data/remote/run && as_owner touch data/remote/run/no-remote   # no Devices tab, no gateway port
     # The firewall stays: with no gateway, nothing from outside gets in or gets an answer.

@@ -342,7 +342,7 @@
       to the app. Both functions are off when you get the box. Switch them on only if you need them.</p>
     <ul>
       <li><b>Remote access</b> lets paired devices use the box from outside the box's network, through the
-        internet. There are two ways in: a port on the router, and NetBird. You can use one or the two.</li>
+        internet. There are two ways in: a port on the router, or NetBird. The box uses one way at a time.</li>
       <li><b>Sharing</b> lets the devices see the positions of the other devices, and share markers.</li>
     </ul>
     <p>The two functions are separate. You can use sharing without remote access. Then only the devices on the box's
@@ -353,6 +353,7 @@
     <ol>
       <li>Press <b>Admin</b>, <b>Remote access</b>.</li>
       <li>Press <b>Switch on</b>. Pairing then opens for 10 minutes.</li>
+      <li>In <b>Way in</b>, make sure that <b>Port on the router</b> is chosen. This is the usual way.</li>
       <li>Read <b>From outside</b>. It tells you if devices can reach the box from outside.</li>
     </ol>
     <p>The box asks the router to open a port. Some routers do not do this. Then tick <b>I forward the port on the
@@ -365,6 +366,9 @@
       network can use the box.</div>
     <p>Some internet connections do not let a router open a port. Then <b>From outside</b> tells you that devices
       cannot connect to the box. Use NetBird for these connections. See the next part.</p>
+    <p>The box uses one way in at a time. When you choose NetBird, the box closes the port on the router. When you
+      choose the port on the router, the box stops NetBird. The box also changes its firewall for the way that you
+      choose.</p>
 
     <h3 id="netbird">Come in through NetBird</h3>
     <p>NetBird is a service on the internet that connects computers and devices in a private network. The box and the
@@ -419,16 +423,17 @@
     <ol>
       <li>On the box's network, press <b>Admin</b>, <b>Remote access</b>.</li>
       <li>Make sure that remote access is on.</li>
-      <li>Go to the part <b>NetBird</b>.</li>
+      <li>In <b>Way in</b>, choose <b>NetBird</b>. The part <b>NetBird</b> then shows below.</li>
       <li>In <b>Setup key</b>, type the setup key. You can also paste it.</li>
       <li>Do not change <b>Management server</b>.</li>
-      <li>Press <b>Connect</b>.</li>
+      <li>Press <b>Connect</b>. The page asks you to agree. Press <b>OK</b>.</li>
       <li>Wait. The first time, the box downloads NetBird. This can take some minutes.</li>
     </ol>
+    <p>The box then closes the port on the router. Devices outside can come in only through NetBird.</p>
     <p>When it works, the page shows <b>The box is connected to the NetBird network</b>. The box keeps the setup key.
       The page does not show the setup key again.</p>
     <p>If the page shows <b>The NetBird network did not accept the setup key</b>, make a new setup key. Then type it
-      and press <b>Connect</b>.</p>
+      and press <b>Connect</b>. Until NetBird connects, no device can come in from outside.</p>
 
     <h3 id="netbird-devices">NetBird step 4: the devices</h3>
     <p>The devices get the setup key from the box. The box gives it only to paired devices.</p>
@@ -437,8 +442,10 @@
       <li>A device that you paired before gets the setup key automatically. Connect the device to the box's network
         and open the app one time.</li>
     </ul>
-    <p>Outside the box's network, the app tries the port on the router first. If that does not answer, the app uses
-      NetBird. The app does this automatically, and it shows <b>Connected</b>.</p>
+    <div class="caution"><b>Caution</b>Change the way in only when the devices are on the box's network, or can come to
+      it. A device that is outside when you change the way cannot connect until it is on the box's network one
+      time.</div>
+    <p>Outside the box's network, the app uses NetBird automatically, and it shows <b>Connected</b>.</p>
 
     <h3 id="netbird-check">Make sure that NetBird works</h3>
     <ol>
@@ -448,16 +455,14 @@
       <li>Make sure that the app shows <b>Connected</b> and that the map moves.</li>
       <li>On the box's network, open <b>Admin</b>, <b>Remote access</b>. Read <b>From outside</b>.</li>
     </ol>
-    <p><b>Through NetBird</b> then shows <b>A device connected to the box through NetBird</b>, with the date. In the
+    <p><b>From outside</b> then shows <b>A device connected to the box through NetBird</b>, with the date. In the
       NetBird dashboard, <b>Peers</b> shows the box as <b>fieldmap-box</b>. Each device shows as <b>Fieldmap</b> and
       the name of the device.</p>
-    <p>If no device uses the port on the router, close the port. In <b>Port forwarding</b>, untick <b>Let devices come
-      in through a port on the router</b>.</p>
 
     <h3 id="netbird-stop">Stop NetBird, or remove a lost device</h3>
-    <p>To stop NetBird, press <b>Disconnect</b> in the part <b>NetBird</b>. The box then leaves the NetBird network,
-      and the devices stop their use of NetBird. The box keeps the setup key. Press <b>Connect</b> to use NetBird
-      again.</p>
+    <p>To stop NetBird, choose <b>Port on the router</b> in <b>Way in</b>. The box then stops NetBird and opens the port
+      on the router again. The devices stop their use of NetBird. The box keeps the setup key. To use NetBird again,
+      choose <b>NetBird</b>.</p>
     <p>If a device is lost, do these steps:</p>
     <ol>
       <li>On the <b>Devices</b> page, press <b>Remove</b> beside the device. The device then gets nothing from the
@@ -465,7 +470,7 @@
       <li>In the NetBird dashboard, press <b>Peers</b>. Delete the device there.</li>
       <li>In <b>Settings</b>, <b>Setup Keys</b>, revoke the setup key. The lost device has a copy of it.</li>
       <li>Make a new setup key.</li>
-      <li>On the <b>Remote access</b> page, press <b>Disconnect</b>. Type the new setup key. Press
+      <li>On the <b>Remote access</b> page, press <b>Change the setup key</b>. Type the new setup key. Press
         <b>Connect</b>.</li>
     </ol>
     <p>The other devices continue to work. They do not need the new setup key.</p>
@@ -539,11 +544,11 @@
         Then pair in 10 minutes or less.</td></tr>
       <tr><td>A paired device cannot connect from outside.</td><td>Make sure that remote access is on. Read <b>From
         outside</b> on the Remote access page. Connect the device to the box's network one time. The app then gets
-        the new address of the box.</td></tr>
+        the new address of the box, and the way in.</td></tr>
       <tr><td>The router cannot open a port. <b>From outside</b> speaks of Starlink, or of two routers.</td><td>Use
         NetBird. See <a href="#netbird">Come in through NetBird</a>.</td></tr>
       <tr><td>The part <b>NetBird</b> shows <b>The box starts NetBird</b> for more than 10 minutes.</td><td>Make
-        sure that the box has an internet connection. Press <b>Disconnect</b>. Then press <b>Connect</b>.</td></tr>
+        sure that the box has an internet connection. Press <b>Change the setup key</b>. Then press <b>Connect</b>.</td></tr>
       <tr><td>The box is connected to the NetBird network, but a device cannot connect from outside.</td><td>Connect
         the device to the box's network one time and open the app. The device then gets the setup key. If the setup
         key expired, make a new setup key and type it on the box.</td></tr>

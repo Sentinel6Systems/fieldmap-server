@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fieldmap-server: what runs inside the NetBird container (the "netbird" service in the compose
 # files, started by scripts/remote.sh netbird-apply; NetBird's own image, which has bash).
-# NetBird is the second way in for paired devices, for a box whose router cannot open a port.
+# NetBird is the other way in for paired devices, for a box whose router cannot open a port.
 #
 # It starts NetBird's client, joins the owner's NetBird network with the setup key the owner
 # typed on the Remote access page, and then writes down every few seconds what the client says,
