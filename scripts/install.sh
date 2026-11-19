@@ -15,9 +15,11 @@
 #   4. installs the map builder page (scripts/admin.sh) as a systemd service, which
 #      needs sudo. The page is then at /mapadmin/ beside the print tool. --no-builder
 #      leaves this step out, and removes the service if an earlier run installed it;
-#   5. sets up remote access for the Fieldmap Android app (scripts/remote.sh setup): phones
+#   5. puts a firewall on the box itself: nothing from outside the local network and VPNs gets
+#      in, or gets an answer (scripts/firewall.sh; REMOTE_FIREWALL=off in .env leaves it out);
+#   6. sets up remote access for the Fieldmap Android app (scripts/remote.sh setup): phones
 #      paired on this network can then use the maps from anywhere, and the phones can share
-#      positions and markers with each other. Both are off until switched on on the Phones
+#      positions and markers with each other. Both are off until switched on on the Devices
 #      page. --no-remote leaves it out.
 # Then build your maps: on the map builder page, or with build-region.sh.
 #
@@ -125,7 +127,7 @@ echo "  Maps                    $WEB/"
 echo "  Print a map             $WEB/mapprinter/"
 echo "  Tile server (TAK)       http://$ADDRESS:$TILE_PORT/"
 [ "$BUILDER" = yes ] && echo "  Map builder             $WEB/mapadmin/"
-[ "$REMOTE" = yes ] && echo "  Phones                  $WEB/phones/"
+[ "$REMOTE" = yes ] && echo "  Devices                 $WEB/phones/"
 if [ -z "$(find data -maxdepth 1 -name 'basemap.mbtiles' -size +100k 2>/dev/null)" ]; then
     echo "There are no maps on this device yet: the Maps page is blank until the first build."
     [ "$BUILDER" = yes ] && echo "Open the map builder to choose your regions and start it."
@@ -134,12 +136,18 @@ fi
 echo
 echo "== Remote access for the Fieldmap app"
 if [ "$REMOTE" = yes ]; then
-    ./scripts/remote.sh setup || echo "WARNING: remote access for the app is not set up (see above). Everything else works." >&2
+    if ! ./scripts/remote.sh setup; then
+        echo "WARNING: remote access for the app is not set up (see above). Everything else works." >&2
+        echo "== The firewall on this box"
+        $SUDO ./scripts/firewall.sh install
+    fi
 elif [ -f /etc/systemd/system/fieldmap-remote.service ]; then
-    ./scripts/remote.sh off
+    ./scripts/remote.sh off               # keeps the firewall
 else
-    touch data/remote/run/no-remote      # no Phones tab in the header
+    touch data/remote/run/no-remote      # no Devices tab in the header
     echo "Left out (--no-remote)."
+    echo "== The firewall on this box"
+    $SUDO ./scripts/firewall.sh install
 fi
 
 # A firewall is the owner's to change: say what it needs, do not touch it.

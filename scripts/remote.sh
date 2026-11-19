@@ -7,11 +7,12 @@
 # Usage:
 #   ./scripts/remote.sh setup          set it up, or bring it up to date (run by the installers)
 #   ./scripts/remote.sh status         can phones reach the box from outside, and how
-#   ./scripts/remote.sh pair           open pairing for ten minutes (same as the Phones page button)
+#   ./scripts/remote.sh pair           open pairing for ten minutes (same as the Devices page button)
 #   ./scripts/remote.sh devices        the paired phones
 #   ./scripts/remote.sh remove <id>    lock one out
-#   ./scripts/remote.sh off            remove it: the gateway, the services, the firewall, the Phones tab
-#                                      (to switch remote access or sharing off and on, use the Phones page)
+#   ./scripts/remote.sh off            remove it: the gateway, the services, the Devices tab (the box's
+#                                      firewall stays, closed to everything from outside)
+#                                      (to switch remote access or sharing off and on, use the Devices page)
 #
 # On a Raspberry Pi behind Internet-in-a-Box, run it with sudo, like install-pi.sh.
 # Elsewhere run it as the owner of this folder; it asks for sudo where it needs it.
@@ -20,13 +21,13 @@
 #   1. makes this box its own certificate authority and writes the gateway's configuration
 #      (tools/remote-server.py init; data/remote/ stays on this box);
 #   2. starts the service that pairs phones and keeps the router's port open
-#      (fieldmap-remote, a systemd service): the Phones page at /phones/, and /mapremote/ for the app;
+#      (fieldmap-remote, a systemd service): the Devices page at /phones/, and /mapremote/ for the app;
 #   3. starts the service for live sharing (fieldmap-share, tools/share-server.py; /mapshare/
-#      for the app), which takes and gives nothing until it is switched on on the Phones page;
+#      for the app), which takes and gives nothing until it is switched on on the Devices page;
 #   4. starts the gateway, an nginx container that demands a certificate this box issued and
 #      serves only what the app needs, and updates it every week (fieldmap-remote-update);
-#   5. puts a firewall on the box itself that lets nothing in from outside the local network
-#      but the gateway (scripts/firewall.sh, fieldmap-firewall).
+#   5. puts a firewall on the box itself that lets nothing in from outside the local network and
+#      VPNs but the gateway, and answers nothing else (scripts/firewall.sh, fieldmap-firewall).
 #
 # Settings, in .env (see .env.example), all optional:
 #   REMOTE_PORT            the gateway's port on this machine (chosen at random by the first setup)
@@ -149,7 +150,7 @@ for _ in range(200):
 
     echo "== Certificates and the gateway's configuration"
     server init "${INIT[@]}"
-    as_owner rm -f data/remote/run/no-remote      # the Phones page is there (web/nginx.conf)
+    as_owner rm -f data/remote/run/no-remote      # the Devices page is there (web/nginx.conf)
 
     echo "== The service that pairs phones and keeps the router's port open"
     install_unit fieldmap-remote.service
@@ -184,19 +185,8 @@ for _ in range(200):
     $SUDO systemctl enable -q --now fieldmap-remote-update.timer fieldmap-remote-apply.path
 
     echo "== The firewall on this box"
-    if [ "$(setting REMOTE_FIREWALL on)" = off ]; then
-        $SUDO systemctl disable -q --now fieldmap-firewall.timer fieldmap-firewall.path 2>/dev/null || true
-        $SUDO ./scripts/firewall.sh off
-    else
-        install_unit fieldmap-firewall.service
-        install_unit fieldmap-firewall.timer
-        install_unit fieldmap-firewall.path
-        $SUDO systemctl daemon-reload
-        $SUDO systemctl enable -q --now fieldmap-firewall.timer fieldmap-firewall.path
-        # Applied here as well as by the service, so that what it says is printed: the gateway's
-        # port is open only while remote access is switched on.
-        $SUDO ./scripts/firewall.sh apply
-    fi
+    # The gateway's port is open only while remote access is switched on.
+    $SUDO ./scripts/firewall.sh install
 
     sleep 3
     if ! curl -fs -m 5 "$LOCAL" | grep -q fieldmap-remote; then
@@ -229,12 +219,12 @@ for _ in range(200):
     echo
     if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("enabled") is True else 1)' \
         data/remote/settings.json 2>/dev/null; then
-        echo "Remote access is on. To pair another phone, or to switch it off, open the Phones page on this"
+        echo "Remote access is on. To pair another phone, or to switch it off, open the Devices page on this"
         echo "box's network (in the header of the Maps page)."
     else
-        echo "Remote access is off until someone switches it on: on this box's network open the Phones page"
+        echo "Remote access is off until someone switches it on: on this box's network open the Devices page"
         echo "(in the header of the Maps page) and press Switch on. That also opens pairing for ten minutes:"
-        echo "then, in the Fieldmap app on the phone, Menu, Server, Pair this phone."
+        echo "then, in the Fieldmap app on the phone, Menu, Server, Pair this device."
     fi
     echo "Sharing positions and markers between the phones has its own switch on the same page; it is off"
     echo "until someone switches it on."
@@ -251,7 +241,7 @@ status)
 
 pair)
     ask pairing -H 'Content-Type: application/json' -d '{"open": true}' >/dev/null
-    echo "Pairing is open for ten minutes. In the Fieldmap app, on this network: Menu, Server, Pair this phone."
+    echo "Pairing is open for ten minutes. In the Fieldmap app, on this network: Menu, Server, Pair this device."
     ;;
 
 devices) server devices ;;
@@ -278,17 +268,17 @@ off)
     fi
     as_owner rm -f data/remote/address
     "${COMPOSE[@]}" --profile remote stop remote >/dev/null 2>&1 || true
-    $SUDO systemctl disable -q --now fieldmap-remote fieldmap-share fieldmap-remote-update.timer fieldmap-remote-apply.path fieldmap-firewall.timer fieldmap-firewall.path 2>/dev/null || true
-    as_owner mkdir -p data/remote/run && as_owner touch data/remote/run/no-remote   # no Phones tab
-    $SUDO ./scripts/firewall.sh off
-    echo "Remote access is off: the gateway, the services (sharing between the phones too) and the box's"
-    echo "firewall are stopped."
+    $SUDO systemctl disable -q --now fieldmap-remote fieldmap-share fieldmap-remote-update.timer fieldmap-remote-apply.path 2>/dev/null || true
+    as_owner mkdir -p data/remote/run && as_owner touch data/remote/run/no-remote   # no Devices tab, no gateway port
+    # The firewall stays: with no gateway, nothing from outside gets in or gets an answer.
+    $SUDO ./scripts/firewall.sh install
+    echo "Remote access is off: the gateway and the services (sharing between the phones too) are stopped."
     echo "The router lets go of its port within two hours. The paired phones stay on the list:"
     echo "'./scripts/remote.sh setup' lets them in again."
     ;;
 
 *)
-    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

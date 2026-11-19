@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
-# fieldmap-server: a firewall on the box itself, for remote access by the Fieldmap app.
-# From outside the local network it lets in only the remote gateway (while remote access is
-# switched on) and answers to what the box asked for itself; from the local network, everything
-# as before. It does not rely on the router: some routers let IPv6 in unfiltered, and a mistake
-# in a port mapping should expose nothing. SSH from outside is closed too, unless .env opens it.
+# fieldmap-server: a firewall on the box itself. Only the local network and VPNs get in.
+# From anywhere else nothing gets an answer: no reply to a ping, no "closed" for a port that is
+# closed, nothing. Packets from outside are dropped without a word, so that a scan finds no box
+# at all. The two exceptions: answers to what the box asked for itself, and the remote gateway
+# while remote access is switched on (the Devices page), which must take phones from anywhere.
+# It does not rely on the router: some routers let IPv6 in unfiltered, and a mistake in a port
+# mapping should expose nothing. SSH from outside is closed too, unless .env opens it.
 #
-# Usage (as root; scripts/remote.sh installs it as fieldmap-firewall, refreshed every five
-# minutes because the home network's IPv6 prefix can change):
+# Usage (as root; the installers run "install": it is on whether or not remote access is set
+# up, refreshed every five minutes because the home network's IPv6 prefix can change):
+#   sudo ./scripts/firewall.sh install    install it as fieldmap-firewall (a systemd timer) and apply it
 #   sudo ./scripts/firewall.sh apply      write the rules (again)
 #   sudo ./scripts/firewall.sh show       the rules as they are now
-#   sudo ./scripts/firewall.sh off        remove them
+#   sudo ./scripts/firewall.sh off        remove them (until the next apply: the timer brings them back)
 #
 # It is its own nftables table, beside whatever else the machine has (Internet-in-a-Box's
 # firewall, Docker's, ufw). The one opening it makes elsewhere: while remote access is on, the
 # gateway's port in iptables (see below).
-# Settings in .env: REMOTE_FIREWALL=off, REMOTE_PORT (written by scripts/remote.sh setup), REMOTE_FIREWALL_ALLOW
-# (ports open from outside besides the gateway: none by default; 22 to reach SSH from outside).
+# Settings in .env: REMOTE_FIREWALL=off (no firewall: for a machine that serves other things to
+# the internet), REMOTE_PORT (written by scripts/remote.sh setup), REMOTE_FIREWALL_ALLOW (ports
+# open from outside besides the gateway: none by default; 22 to reach SSH from outside).
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TABLE="inet fieldmap_guard"
@@ -54,6 +58,22 @@ iptables_open() {
 }
 
 case "${1:-apply}" in
+install)
+    if ! command -v systemctl >/dev/null || [ ! -d /run/systemd/system ]; then
+        echo "This machine has no systemd: the firewall is applied once now, not kept up. Run this again after a restart." >&2
+    else
+        for unit in fieldmap-firewall.service fieldmap-firewall.timer fieldmap-firewall.path; do
+            sed "s|/opt/fieldmap-server|$REPO_DIR|g" "$REPO_DIR/systemd/$unit" > "/etc/systemd/system/$unit"
+        done
+        systemctl daemon-reload
+        if [ "$(setting REMOTE_FIREWALL on)" = off ]; then
+            systemctl disable -q --now fieldmap-firewall.timer fieldmap-firewall.path 2>/dev/null || true
+        else
+            systemctl enable -q --now fieldmap-firewall.timer fieldmap-firewall.path
+        fi
+    fi
+    # Applied here as well as by the service, so that what it says is printed.
+    ;;
 off)
     if command -v nft >/dev/null; then nft delete table $TABLE 2>/dev/null || true; fi
     iptables_close
@@ -64,14 +84,17 @@ show)
     exit 0
     ;;
 apply) ;;
-*) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+*) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
 
 PORT="$(setting REMOTE_PORT "")"
-# The Phones page's switch (data/remote/settings.json, "enabled"): off, the default, closes the gateway's port as well.
+# The Devices page's switch (data/remote/settings.json, "enabled"): off, the default, closes the gateway's port as well.
 ON="$(python3 -c 'import json,sys
 try: print("yes" if json.load(open(sys.argv[1])).get("enabled") is True else "no")
 except Exception: print("no")' "$REPO_DIR/data/remote/settings.json" 2>/dev/null || echo no)"
+# Remote access taken off the box (remote.sh off, install.sh --no-remote): no gateway listens, and
+# an open port with nothing behind it would answer "closed".
+[ -e "$REPO_DIR/data/remote/run/no-remote" ] && ON=no
 if [ "$ON" = yes ] && [ -n "$PORT" ]; then iptables_open "$PORT"; else iptables_close; fi
 
 if [ "$(setting REMOTE_FIREWALL on)" = off ]; then
@@ -135,13 +158,21 @@ ${OPEN:+        elements = { $OPEN \}}
     chain input {
         type filter hook input priority filter - 5; policy accept;
         iif "lo" accept
+        # Answers to what the box asked for itself, and the error messages that belong to them.
         ct state established,related accept
-        meta l4proto { icmp, ipv6-icmp } accept
+        # IPv6's own housekeeping with the router and the devices on the same wire. A hop limit of
+        # 255 proves the packet was not forwarded by any router: it comes from the same network.
+        icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert, nd-redirect } ip6 hoplimit 255 accept
+        # VPNs: Tailscale, WireGuard, ZeroTier, OpenVPN.
         iifname "tailscale0" accept
         iifname "wg*" accept
+        iifname "zt*" accept
+        iifname "tun*" accept
+        # The local network: everything, pings included.
         ip saddr @lan4 accept
         ip6 saddr @lan6 accept
         tcp dport @open_tcp accept
+        # Everything else is dropped without an answer (drop, not reject): not even a ping.
         counter drop
     }
 
@@ -149,9 +180,10 @@ ${OPEN:+        elements = { $OPEN \}}
     chain forward {
         type filter hook forward priority filter - 5; policy accept;
         ct state established,related accept
-        meta l4proto { icmp, ipv6-icmp } accept
         iifname "tailscale0" accept
         iifname "wg*" accept
+        iifname "zt*" accept
+        iifname "tun*" accept
         ip saddr @lan4 accept
         ip6 saddr @lan6 accept
         $GATEWAY_RULE
@@ -160,9 +192,9 @@ ${OPEN:+        elements = { $OPEN \}}
 }
 EOF
 if [ -n "$OPEN" ]; then
-    echo "Firewall on this box: from outside the local network it lets in TCP $OPEN only${PORT:+ (the gateway is $PORT)}."
+    echo "Firewall on this box: from outside the local network and VPNs it lets in TCP $OPEN only${PORT:+ (the gateway is $PORT)}; everything else is dropped without an answer."
 else
-    echo "Firewall on this box: nothing gets in from outside the local network."
+    echo "Firewall on this box: from outside the local network and VPNs nothing gets in, and nothing gets an answer."
 fi
 if ! echo ",$OPEN," | grep -q ",22,"; then
     echo "SSH from outside the local network is closed (from this network it works as before). To open it: REMOTE_FIREWALL_ALLOW=22 in .env."

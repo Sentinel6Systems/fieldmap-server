@@ -49,5 +49,6 @@ To make the page ask for a code, set `ADMIN_PIN=<code>` in `.env` and restart th
 `./scripts/remote.sh setup` (run by the installers) installs these with this folder and its owner filled in:
 `fieldmap-remote.service` (pairing, the list of phones, the router's port), `fieldmap-share.service` (positions and
 markers shared between phones; it may write only `data/share/`), `fieldmap-firewall.timer` (the box's
-own firewall, refreshed every five minutes) and `fieldmap-remote-update.timer` (the gateway's weekly update). The
+own firewall, refreshed every five minutes; installed by every install, also without remote access, through
+`scripts/firewall.sh install`) and `fieldmap-remote-update.timer` (the gateway's weekly update). The
 service reads `REMOTE_*` from `.env`; run `./scripts/remote.sh setup` again after changing them.

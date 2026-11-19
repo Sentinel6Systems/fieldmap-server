@@ -53,12 +53,13 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
 `install-pi.sh` also sets up remote access for the Fieldmap app (see "Remote access for the Android app" in the main
 README): it adds `nginx/mapremote-nginx.conf` to `/etc/nginx/conf.d/`, the `fieldmap-remote` service, a second
 container beside the tile server, and a firewall table of its own (`fieldmap_guard`) beside Internet-in-a-Box's.
-`sudo REMOTE=no ./scripts/install-pi.sh` leaves it out. Internet-in-a-Box's hotspot is often open: set `REMOTE_PIN`
+`sudo REMOTE=no ./scripts/install-pi.sh` leaves remote access out, and still puts up the firewall (see "The box's
+firewall" in the main README). Internet-in-a-Box's hotspot is often open: set `REMOTE_PIN`
 in `.env` if strangers could join it while pairing is open.
 
 The same step installs the `fieldmap-share` service, for sharing positions and markers between phones (see "Sharing
 positions and markers between phones" in the main README; `/mapshare/` in the same nginx file). It is off until
-switched on on the Phones page. On an open hotspot, everyone who joins can see the shared positions while it is on.
+switched on on the Devices page. On an open hotspot, everyone who joins can see the shared positions while it is on.
 
 ## Notes
 

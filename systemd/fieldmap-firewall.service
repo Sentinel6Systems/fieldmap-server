@@ -1,5 +1,6 @@
-# fieldmap-server: the firewall on the box itself (scripts/firewall.sh), for remote access by
-# the Fieldmap app. Installed by scripts/remote.sh setup, which fills in this folder.
+# fieldmap-server: the firewall on the box itself (scripts/firewall.sh): only the local network
+# and VPNs get in. Installed by scripts/firewall.sh install (run by the installers), which fills
+# in this folder.
 [Unit]
 Description=fieldmap-server firewall on this box
 After=network-online.target

@@ -48,7 +48,7 @@ Maps                    http://<address>/
 Print a map             http://<address>/mapprinter/
 Tile server (TAK)       http://<address>:8080/
 Map builder             http://<address>/mapadmin/
-Phones                  http://<address>/phones/
+Devices                 http://<address>/phones/
 ```
 
 The pages share one look and one header, with a link to each of the others (see "The pages and their
@@ -140,7 +140,7 @@ builds do.
 | Maps | `/` (`/maps/` behind Internet-in-a-Box) | The interactive map, with a menu of the styles and, under **Use in another app**, the tile addresses for TAK clients and other map apps |
 | Print a map | `/mapprinter/` | The print tool |
 | Map builder | `/mapadmin/` | Choose and build the maps (not on a Raspberry Pi) |
-| Phones | `/phones/` | Remote access for the Fieldmap Android app: on or off, pairing, the paired phones (see "Remote access for the Android app"). And the switch for sharing positions and markers between phones (see "Sharing positions and markers between phones") |
+| Devices | `/phones/` | Remote access for the Fieldmap Android app: on or off, pairing, the paired phones (see "Remote access for the Android app"). And the switch for sharing positions and markers between phones (see "Sharing positions and markers between phones") |
 
 Every page has the same header: the name, a link to each of the other pages with the current one marked, and
 nothing else to learn. The header finds the other pages by itself on the address it was opened at (`ui/nav.js`): a
@@ -201,7 +201,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
 | `pi/` | Raspberry Pi + Internet-in-a-Box deployment: compose file, nginx snippets, notes |
 | `systemd/` | Start the compose stack, and optionally the map builder page, at boot |
-| `phones/`, `scripts/remote.sh`, `scripts/firewall.sh`, `tools/remote-server.py`, `tools/portmap.py` | Remote access for the Android app: the Phones page, pairing, the router's port, the gateway, the box's firewall |
+| `phones/`, `scripts/remote.sh`, `scripts/firewall.sh`, `tools/remote-server.py`, `tools/portmap.py` | Remote access for the Android app: the Devices page, pairing, the router's port, the gateway, the box's firewall |
 | `tools/share-server.py` | Sharing positions and markers between phones with the Android app |
 | `data/` | Your mbtiles files (not in git) |
 
@@ -827,6 +827,23 @@ The tile server container also has a hard memory cap with no swap, `TILESERVER_M
 If the cap is reached, only the tile server is killed and Docker restarts it within seconds.
 Without the script, the cap is `1g`.
 
+## The box's firewall
+
+The installers put a firewall on the box itself (`scripts/firewall.sh`), whether or not remote access is set up.
+Only the local network and VPNs get in. From anywhere else nothing gets an answer: no reply to a ping, no
+"closed" for a closed port, nothing. Packets from outside are dropped without a word, so that a scan finds no box
+at all. It does not rely on the router, over IPv4 and IPv6: some routers let IPv6 in unfiltered.
+
+- **Gets in:** the local network (home and office address ranges, and the IPv6 networks the box is on), VPNs
+  (Tailscale, WireGuard, ZeroTier, OpenVPN), and answers to what the box asked for itself.
+- **The one exception:** the remote gateway's port, while remote access is switched on on the Devices page (see
+  below). Phones away from home connect to it from anywhere, so it does answer: with a demand for a certificate
+  this box issued, and nothing more to anyone without one.
+- **Closed from outside, SSH included.** To log in from outside without a VPN, set `REMOTE_FIREWALL_ALLOW=22` in
+  `.env` and run `sudo ./scripts/firewall.sh apply`. `REMOTE_FIREWALL=off` leaves the firewall out (for a machine
+  that serves other things to the internet).
+- `sudo ./scripts/firewall.sh show` lists the rules, with a count of what was dropped.
+
 ## Remote access for the Android app
 
 The [Fieldmap Android app](https://github.com/Sentinel6Systems/fieldmap-android) can use this box's maps away
@@ -834,12 +851,15 @@ from home, while the box and the phone both have internet. It is **off until you
 switched on cannot be reached from outside at all.
 
 1. Plug the box into your home router and install as above.
-2. On the box's network, open the **Phones** page and press **Switch on**. That also opens pairing for ten minutes.
+2. On the box's network, open the **Devices** page and press **Switch on**. That also opens pairing for ten minutes.
 3. On the phone, on the same network: open the Fieldmap app, connect to the box, then **Menu › Server › Pair this
-   phone**. To pair another phone later, press **Pair a phone** on the Phones page first.
+   phone**. To pair another phone later, press **Pair a device** on the Devices page first.
 4. Away from home the app reaches the box by itself; its strip reads **Remote**.
 
-The **Phones** page (`/phones/`, a tab in every page's header, on the box's own network only) is where all of this
+A device here is anything that runs the Fieldmap app: an Android phone or a tablet. Where this guide says
+"phone", it means any of them.
+
+The **Devices** page (`/phones/`, a tab in every page's header, on the box's own network only) is where all of this
 is managed:
 
 - **Remote access on or off** (off by default). Off keeps the box completely to its own network: the router is
@@ -852,11 +872,11 @@ is managed:
 - **Switch off by itself after 90 days with no phone coming in from outside** (ticked by default), so that a
   forgotten box closes itself. The page shows the date it would happen; each phone that comes in moves it on.
 
-Every page's header shows the state at a glance, beside the Phones tab: **on** (amber: the box can be reached from
+Every page's header shows the state at a glance, beside the Devices tab: **on** (amber: the box can be reached from
 outside, by paired phones) or **off**; hovering over it gives the box's own words about it.
 - **From outside:** whether phones can reach the box, and if not, why, in plain words; the addresses phones are
   told to try; **Ask the router again**.
-- **Pair a phone**, and the **paired phones**, each with when it last came in from outside, and **Remove**.
+- **Pair a device**, and the **paired phones**, each with when it last came in from outside, and **Remove**.
 
 No account, no outside service, nothing of anyone else's in between: the box talks only to your own router.
 
@@ -874,19 +894,18 @@ No account, no outside service, nothing of anyone else's in between: the box tal
   certificate this box issued, checks every request against the list of phones, and serves only what the app
   needs: styles, fonts, symbols and data tiles, and the few addresses of sharing between phones (below). Not the
   pictures the tile server draws, not the print tool, not the map builder, nothing else. It limits connections per visitor and takes nginx's security fixes every week.
-- **A firewall on the box itself** lets nothing in from outside the local network but the gateway, over
-  IPv4 and IPv6, whatever the router does (`scripts/firewall.sh`). SSH too is answered only on the local network,
-  unless you open it (`REMOTE_FIREWALL_ALLOW=22`). Devices at home, and the box's own connections out, are not
+- **A firewall on the box itself** (see "The box's firewall" above) lets nothing in from outside the local network
+  and VPNs but the gateway, and answers nothing else. Devices at home, and the box's own connections out, are not
   affected. Where the machine has a firewall already (Internet-in-a-Box's drops everything from the
   home network but its own ports), the gateway's port is let through it too, only while remote access is on.
 - **Nothing gives the box away.** The names in its certificates are random letters.
 
 ### When it cannot work
 
-The Phones page and `./scripts/remote.sh status` say which of these applies:
+The Devices page and `./scripts/remote.sh status` say which of these applies:
 
 - **The router does not open ports by itself** (UPnP switched off): switch UPnP or NAT-PMP on in the router's
-  settings, or forward one port by hand (Port forwarding, on the Phones page).
+  settings, or forward one port by hand (Port forwarding, on the Devices page).
 - **Two routers in a row** (the provider's and your own): put the provider's in bridge mode, or forward the port
   on both.
 - **The provider shares one address among customers** (Starlink, most cellular home internet, some fibre): no way
@@ -905,15 +924,15 @@ REMOTE_FIREWALL_ALLOW=22               # ports open from outside besides the gat
 REMOTE_RELAY=tailscale                 # also reach the gateway through Tailscale Funnel (sign the box in first)
 ```
 
-Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port by hand, use the Phones page (above).
+Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port by hand, use the Devices page (above).
 
 ```bash
 ./scripts/remote.sh status          # can phones reach the box from outside, and how
 ./scripts/remote.sh pair            # open pairing for ten minutes
 ./scripts/remote.sh devices         # the paired phones
 ./scripts/remote.sh remove <id>     # lock one out, at once
-./scripts/remote.sh off             # remove it (the services, the gateway, the firewall, the Phones tab); the phones are kept
-./scripts/install.sh --no-remote    # install without it (on a Pi: sudo REMOTE=no ./scripts/install-pi.sh)
+./scripts/remote.sh off             # remove it (the services, the gateway, the Devices tab); the phones and the firewall are kept
+./scripts/install.sh --no-remote    # install without it (on a Pi: sudo REMOTE=no ./scripts/install-pi.sh); the firewall is still put up
 ```
 
 ### What to know
@@ -939,17 +958,17 @@ stand-in for a TAK server. There is one room: every phone that reaches the box s
 sharing, and the shared markers. It is **off until you switch it on**, and every person switches it on in their
 own app as well.
 
-1. On the box's network, open the **Phones** page and press **Switch on** under **Sharing positions and markers**.
+1. On the box's network, open the **Devices** page and press **Switch on** under **Sharing positions and markers**.
 2. In the Fieldmap app, switch sharing on and give the phone a name for the others to see.
 
 - **At home** every phone on the box's network can take part; it does not have to be paired.
 - **Away from home** the paired phones can, through the same gateway as the maps (remote access switched on).
 - **Positions are not stored.** The box holds a phone's last position in memory only; it is gone two minutes
   after the phone stops sending, at once when its owner stops sharing, and for everyone when sharing is switched
-  off on the Phones page.
+  off on the Devices page.
 - **Shared markers are kept on the box** (`data/share/`), so that they are still there after a restart, until a
   phone removes them. A marker is shared only when its owner says so; the others stay on the phone.
-- The Phones page lists **who is sharing right now**: the name, how long ago, and whether from this network or
+- The Devices page lists **who is sharing right now**: the name, how long ago, and whether from this network or
   from outside. Not where.
 
 ### How it works
@@ -979,9 +998,9 @@ course and speed), not CoT itself: TAK clients cannot connect to it.
 
 - **There is no sign-in.** While sharing is on, any device on the box's network can read the positions and send
   one, under any name. Leave it off on a network that strangers can join. From outside, only paired phones can.
-- Sharing is part of the Phones set-up (`./scripts/remote.sh setup`, run by the installers): a box installed with
+- Sharing is part of the Devices set-up (`./scripts/remote.sh setup`, run by the installers): a box installed with
   `--no-remote` has neither. `./scripts/remote.sh status` says whether it is on.
-- With `REMOTE_PIN` set, the switch asks for the box's code like the rest of the Phones page.
+- With `REMOTE_PIN` set, the switch asks for the box's code like the rest of the Devices page.
 - Back up `data/share/` if the shared markers matter.
 - Tests: `python3 -m unittest tools/test_share_server.py`. Tested with curl against the web server and the gateway
   in containers, not yet under systemd on a real box.
@@ -1030,18 +1049,21 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- The box's firewall answers nothing from outside the local network and VPNs: pings from outside go unanswered too,
+  as do closed ports (dropped, never refused). It is put up by every install, also without remote access, and stays
+  when remote access is removed. VPN interfaces of ZeroTier and OpenVPN are let in beside Tailscale and WireGuard.
 - The box's own firewall no longer leaves SSH (port 22) open to callers from outside the local network: by
   default nothing but the gateway gets in from outside, and that only while remote access is switched on. Whoever
   logs in to the box from outside directly sets `REMOTE_FIREWALL_ALLOW=22` in `.env` first. The firewall is now
   also put up on a home network that has a private IPv6 prefix of its own (`fd..`), where its rules were refused.
 - Sharing positions and markers between phones with the Fieldmap Android app, through the box and off until the
-  owner switches it on (Phones page): at home for every phone on the box's network, away from home for the paired
+  owner switches it on (Devices page): at home for every phone on the box's network, away from home for the paired
   ones. Positions are held in memory only; shared markers are kept in `data/share/`. No new port, no sign-in, no
   outside service. After `git pull`, run the installer again as under "Updating".
 - Remote access for the Fieldmap Android app, off until the owner switches it on: phones paired on the box's
   network can use the maps from anywhere. The box opens a port on its own router (UPnP, NAT-PMP, IPv6), lets in only paired phones through a
   gateway that serves only what the app needs, and puts a firewall on itself. No account or outside service. A new
-  **Phones** page in the header switches it on and off, pairs phones and removes them.
+  **Devices** page in the header switches it on and off, pairs phones and removes them.
   `./scripts/install.sh --no-remote` leaves it out.
 - TAK tile addresses end in `.jpg` for the maps that fill the whole picture (the overlay stays `.png`), and
   `config.json` sets JPEG quality 60: about a fifth of the size of PNG tiles. `.png` addresses keep working.

@@ -112,7 +112,16 @@ echo "== Remote access for the Fieldmap app"
 # positions and markers through the box (scripts/remote.sh). Both are off until switched on.
 # REMOTE=no in the environment leaves it out.
 if [ "${REMOTE:-yes}" != no ]; then
-  ./scripts/remote.sh setup || echo "WARNING: remote access for the app is not set up (see above). Everything else works." >&2
+  if ! ./scripts/remote.sh setup; then
+    echo "WARNING: remote access for the app is not set up (see above). Everything else works." >&2
+    echo "== The firewall on this box"
+    ./scripts/firewall.sh install
+  fi
+else
+  sudo -u "$OWNER" mkdir -p data/remote/run && sudo -u "$OWNER" touch data/remote/run/no-remote
+  echo "== The firewall on this box"
+  # Nothing from outside the local network and VPNs gets in, or gets an answer.
+  ./scripts/firewall.sh install
 fi
 
 sleep 5
