@@ -352,7 +352,7 @@ def enrol(name, public_key_pem):
         described = openssl("pkey", "-pubin", "-noout", "-text", stdin=public_key).decode(errors="replace")
         der = openssl("pkey", "-pubin", "-outform", "DER", stdin=public_key)
     except ValueError:
-        raise ValueError("That is not a public key.")
+        raise ValueError("The device did not send a correct public key.")
     if "prime256v1" not in described:
         raise ValueError("The key must be an elliptic-curve key on the P-256 curve.")
     key_id = hashlib.sha256(der).hexdigest()
@@ -362,11 +362,11 @@ def enrol(name, public_key_pem):
             if d.get("key") == key_id:
                 return d
         if len(devices) >= MAX_DEVICES:
-            raise PermissionError("The box has as many devices as it takes. Remove one on its Devices page first.")
+            raise PermissionError("The box cannot pair more devices. Remove a device on the Devices page first.")
         now = time.time()
         recent_enrols[:] = [t for t in recent_enrols if now - t < 3600]
         if len(recent_enrols) >= ENROLS_PER_HOUR:
-            raise PermissionError("Too many new devices in the last hour. Try again later.")
+            raise PermissionError("Too many devices were paired in the last hour. Try again later.")
         recent_enrols.append(now)
         device_id = secrets.token_hex(4)
         # The certificate is for the phone's key; the signing request is only a carrier.
@@ -666,20 +666,21 @@ def endpoints():
 
 
 PROBLEMS = {
-    "router-closed": "The router does not open ports for the box by itself. Switch on UPnP (or NAT-PMP) in the "
-                     "router's settings, or forward the port by hand (Port forwarding, below).",
-    "router-refused": "The router answered, but did not open a port for the box. Routers do this when another "
-                      "router or a modem stands in front of them, or when their UPnP settings leave this box out. "
-                      "Forwarding the port by hand (below) works around it, if nothing stands in front.",
-    "double-nat": "There are two routers in a row. The one in front (often the provider's) would have to "
-                  "pass the box's port on, or be set to bridge mode.",
-    "shared-address": "Your internet provider shares one address among its customers (as Starlink and most "
-                      "cellular home internet do), so nothing outside can reach the box over IPv4.",
-    "off": "Opening a port on the router is switched off (REMOTE_DIRECT=off).",
+    "router-closed": "The router does not open a port for the box. Switch on UPnP or NAT-PMP in the settings of "
+                     "the router. Or forward the port yourself (Port forwarding, below).",
+    "router-refused": "The router answered, but it did not open a port for the box. This occurs when a second "
+                      "router or a modem is in front of the router. It also occurs when the UPnP settings of the "
+                      "router do not include the box. Forward the port yourself (below). This works if no second "
+                      "router is in front.",
+    "double-nat": "There are two routers in a line. The router in front, often from the internet provider, must "
+                  "forward the port of the box. Or set that router to bridge mode.",
+    "shared-address": "The internet provider shares one address with many customers. Starlink and most mobile "
+                      "home internet do this. Devices outside cannot connect to the box over IPv4.",
+    "off": "The box does not ask the router to open a port (REMOTE_DIRECT=off).",
     "manual": "",
-    "switched-off": "Remote access is switched off: nothing outside can reach the box, and no device can pair.",
-    "switched-off-idle": "Remote access switched itself off: no device had come in from outside for %d days. Nothing "
-                         "outside can reach the box until someone switches it on again." % IDLE_DAYS,
+    "switched-off": "Remote access is off. Devices outside cannot connect to the box. You cannot pair a device.",
+    "switched-off-idle": "Remote access switched off automatically. No device came in from outside for %d days. "
+                         "Devices outside cannot connect to the box until you switch on remote access again." % IDLE_DAYS,
 }
 
 
@@ -694,22 +695,22 @@ def report():
         idle = load_settings().get("offReason") == "idle"
         return {"status": "off", "text": PROBLEMS["switched-off-idle" if idle else "switched-off"], "checked": state.get("checked", 0)}
     if newest_seen and time.time() - newest_seen < 7 * 86400:
-        status, text = "confirmed", "A device reached the box from outside on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
+        status, text = "confirmed", "A device connected to the box from outside on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
     elif forwarding()["manual"] and not forwarding()["address"]:
-        status, text = "blocked", "Forwarding by hand: forward the port on the router, then give the box's internet address."
+        status, text = "blocked", "Forward the port on the router. Then type the internet address of the router below."
     elif forwarding()["manual"]:
-        status, text = "expected", "Forwarded by hand. Not confirmed yet: no device has come in from outside lately."
+        status, text = "expected", "You forward the port yourself. No device came in from outside recently, so this is not confirmed yet."
     elif manual or state.get("ipv4", {}).get("ok"):
-        status, text = "expected", "The router lets devices in. Not confirmed yet: no device has come in from outside lately."
+        status, text = "expected", "The router lets devices in. No device came in from outside recently, so this is not confirmed yet."
     elif v6:
-        status, text = "maybe", PROBLEMS.get(state.get("problem"), "") + " The box also has an IPv6 address, which may let devices in that have IPv6 too."
+        status, text = "maybe", PROBLEMS.get(state.get("problem"), "") + " The box also has an IPv6 address. Devices that also have IPv6 can possibly connect with it."
     elif state:
-        status, text = "blocked", PROBLEMS.get(state.get("problem"), "Devices cannot reach the box from outside.")
+        status, text = "blocked", PROBLEMS.get(state.get("problem"), "Devices outside cannot connect to the box.")
         said = state.get("ipv4", {}).get("error")
         if said and state.get("problem") == "router-refused":
-            text += " (The router said: %s.)" % said
+            text += " The router said: %s." % said
     else:
-        status, text = "unknown", "The box has not asked its router yet."
+        status, text = "unknown", "The box did not ask the router yet."
     return {"status": status, "text": text.strip(), "checked": state.get("checked", 0)}
 
 
@@ -803,7 +804,7 @@ class Handler(BaseHTTPRequestHandler):
             file = os.path.join(SHARED, name)
         ext = os.path.splitext(name)[1]
         if "/" in name or ".." in name or ext not in TYPES or not os.path.isfile(file):
-            return self.send(404, {"error": "Not here."})
+            return self.send(404, {"error": "This address is not on the box."})
         with open(file, "rb") as f:
             data = f.read()
         self.send_response(200)
@@ -817,7 +818,7 @@ class Handler(BaseHTTPRequestHandler):
         """The app, for a device on the local network to install. Sent in pieces: it is tens of MB."""
         info = app()
         if not info:
-            return self.send(404, {"error": "There is no app on this box yet."})
+            return self.send(404, {"error": "The box has no app yet."})
         with open(APK, "rb") as f:
             self.send_response(200)
             self.send_header("Content-Type", "application/vnd.android.package-archive")
@@ -846,7 +847,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(401)
             return self.send(204 if allowed(self.headers.get("X-Fieldmap-Fingerprint")) else 403)
         if not lan(self.headers):
-            return self.send(403, {"error": "Only on the box's own network."})
+            return self.send(403, {"error": "This page is only on the box's network."})
         if self.path in ("/", "/index.html", "/remote.html") or self.path.lstrip("/") in ("fieldmap.css", "nav.js"):
             return self.page(self.path)
         if self.path == "/fieldmap.apk":
@@ -858,18 +859,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, {"devices": [{"id": d["id"], "name": d["name"], "added": d.get("added", ""),
                                          "seen": pending.get(d["id"], d.get("seen", 0))} for d in load_devices()]})
         else:
-            self.send(404, {"error": "Not here."})
+            self.send(404, {"error": "This address is not on the box."})
 
     def do_POST(self):
         body = self.body()
         if self.path not in ("/enrol", "/pairing", "/remove", "/enabled", "/auto-off", "/recheck", "/forwarding", "/find-address", "/new-port"):
-            return self.send(404, {"error": "Not here."})
+            return self.send(404, {"error": "This address is not on the box."})
         if not lan(self.headers):
-            return self.send(403, {"error": "Pairing is only possible on the box's own network."})
+            return self.send(403, {"error": "You can pair a device only on the box's network."})
         if not ready():
-            return self.send(503, {"error": "Remote access is not set up on this box."})
+            return self.send(503, {"error": "Remote access is not installed on this box."})
         if not self.code_ok(body):
-            return self.send(403, {"error": "That is not the box's code.", "pin": True})
+            return self.send(403, {"error": "The code is not correct.", "pin": True})
         if self.path == "/enabled":
             set_enabled(bool(body.get("on")))
             return self.send(200, self.info())
@@ -882,20 +883,20 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/forwarding":
             address = body.get("address")
             if address is not None and str(address).strip() and not clean_address(address):
-                return self.send(400, {"error": "That is not an internet address: a number such as 203.0.113.30, or a name."})
+                return self.send(400, {"error": "This is not an internet address. Type a number such as 203.0.113.30, or a name."})
             set_forwarding(bool(body.get("manual")), address)
             return self.send(200, self.info())
         if self.path == "/find-address":
             found = portmap.stun_public_ip()
             if not found:
-                return self.send(502, {"error": "No answer from the internet. Read the address on the router's status page instead."})
+                return self.send(502, {"error": "The internet did not answer. Read the address on the status page of the router."})
             return self.send(200, {"address": found})
         if self.path == "/new-port":
             new_port()
             return self.send(202, self.info())
         if self.path == "/pairing":
             if body.get("open") and not enabled():
-                return self.send(409, {"error": "Remote access is switched off. Switch it on first."})
+                return self.send(409, {"error": "Remote access is off. Switch on remote access first."})
             if body.get("open"):
                 open_pairing()
             else:
@@ -905,10 +906,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200 if remove(str(body.get("id", ""))) else 404, {"devices": len(load_devices())})
         # /enrol
         if not enabled():
-            return self.send(403, {"error": "Remote access is switched off on the box (Admin, Remote access, on its pages).", "closed": True})
+            return self.send(403, {"error": "Remote access is off on the box. Switch it on on the box: Admin, Remote access.", "closed": True})
         if pairing_left() <= 0:
-            return self.send(403, {"error": "Pairing is closed. On the box's Devices page press Pair a device, "
-                                            "then try again within ten minutes.", "closed": True})
+            return self.send(403, {"error": "Pairing is closed. On the Devices page of the box, press Pair a device. "
+                                            "Then try again in 10 minutes or less.", "closed": True})
         try:
             device = enrol(body.get("name"), str(body.get("publicKey", "")))
         except PermissionError as e:

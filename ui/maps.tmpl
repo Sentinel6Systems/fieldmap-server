@@ -64,21 +64,21 @@
   <select id="style">
     {{#each styles}}{{#if serving_data}}<option value="{{@key}}"{{#if serving_rendered}} data-drawn{{/if}} data-ground="{{styleJSON.layers.[0].type}}">{{name}}</option>{{/if}}{{/each}}
   </select>
-  <button id="apps" type="button" title="The tile addresses for ATAK, WinTAK, iTAK and other map apps">Use in another app</button>
+  <button id="apps" type="button" title="Get the tile addresses for ATAK, WinTAK, iTAK and other map apps">Use in another app</button>
 </aside>
 {{else}}
-<div class="notice"><h1>No map styles</h1><p>The tile server's configuration lists no styles.</p></div>
+<div class="notice"><h1>No map styles</h1><p>The configuration of the tile server has no map styles.</p></div>
 {{/if}}
 
 <div class="notice" id="no-maps" hidden>
-  <h1>No maps on this device yet</h1>
-  <p>Build them on the Map builder page, or with scripts/build-region.sh on the device.</p>
+  <h1>The box has no maps yet</h1>
+  <p>Build the maps on the Map builder page, or with scripts/build-region.sh on the box.</p>
 </div>
 
 <dialog id="addresses" aria-labelledby="addresses-title">
   <div class="dhead"><h1 id="addresses-title">Use these maps in another app</h1><button id="addresses-close" type="button">Close</button></div>
   <div class="dbody">
-    <p>ATAK, WinTAK, iTAK and other map apps take a tile address. Copy the one for the map you want. It works for devices that reach this server the way this device does now.</p>
+    <p>ATAK, WinTAK, iTAK and other map apps use a tile address. Copy the address of the map that you want. The address works for devices that connect to the box in the same way as you do now.</p>
     <div class="fm-label">Map tiles</div>
     <div id="tile-list">
     {{#each styles}}{{#if serving_rendered}}

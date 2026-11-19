@@ -193,7 +193,7 @@ def clean_position(body):
         raise ValueError("A position is a JSON object.")
     name = body.get("name")
     if not isinstance(name, str) or bad_text(name) or not 1 <= len(name.strip()) <= 24:
-        raise ValueError("The name must be 1 to 24 characters.")
+        raise ValueError("The name must have 1 to 24 characters.")
     out = {"uid": clean_id(body.get("uid")), "name": name.strip(),
            "lat": number(body.get("lat"), -90, 90, "lat"), "lon": number(body.get("lon"), -180, 180, "lon")}
     for field, low, high in (("alt", -1000, 100000), ("acc", 0, 100000), ("course", 0, 360), ("speed", 0, 10000)):
@@ -269,10 +269,10 @@ def post_position(position, caller, outside):
         uid = position["uid"]
         if uid not in positions:
             if len(positions) >= MAX_PEOPLE:
-                raise Refused(507, "The box has as many people sharing as it takes.")
+                raise Refused(507, "The box cannot take more devices that share. Try again later.")
             mine = sum(1 for p in positions.values() if p["caller"] == caller)
             if mine >= (MAX_PER_PHONE if outside else MAX_PER_ADDRESS):
-                raise Refused(507, "Too many positions from this device.")
+                raise Refused(507, "This device sends too many positions.")
         positions[uid] = {"position": position, "at": clock(), "outside": outside, "caller": caller}
 
 
@@ -344,7 +344,7 @@ def written():
         markers.update(before[2])
         removed[:] = before[3]
         print("The shared markers could not be written: %s" % e, flush=True)
-        raise Refused(507, "The box could not write that down.")
+        raise Refused(507, "The box cannot save the change. The disk of the box can be full.")
 
 
 def put_marker(feature):
@@ -353,9 +353,9 @@ def put_marker(feature):
     marker_id, size = feature["id"], len(json.dumps(feature))
     with lock:
         if marker_id not in markers and len(markers) >= MAX_MARKERS:
-            raise Refused(507, "The box has as many shared markers as it takes.")
+            raise Refused(507, "The box cannot keep more shared markers. Remove some markers first.")
         if sum(m["bytes"] for i, m in markers.items() if i != marker_id) + size > MAX_MARKER_BYTES:
-            raise Refused(507, "The box has as many shared markers as it takes.")
+            raise Refused(507, "The box cannot keep more shared markers. Remove some markers first.")
         with written():
             rev += 1
             markers[marker_id] = {"rev": rev, "feature": feature, "bytes": size}
@@ -511,11 +511,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length") or "")
         except ValueError:
-            raise Refused(400, "Nothing was sent.")
+            raise Refused(400, "The request has no content.")
         if length > limit:
-            raise Refused(413, "That is too large.")
+            raise Refused(413, "The request is too large.")
         if length <= 0:
-            raise Refused(400, "Nothing was sent.")
+            raise Refused(400, "The request has no content.")
         data = self.rfile.read(length)
         self.unread = False
 
@@ -524,7 +524,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             return json.loads(data, parse_constant=no_constant)
         except (ValueError, RecursionError):
-            raise Refused(400, "That is not JSON.")
+            raise Refused(400, "The request is not JSON.")
 
     def answer(self):
         self.unread = (self.headers.get("Content-Length") or "0").strip() != "0" or bool(self.headers.get("Transfer-Encoding"))
@@ -538,7 +538,7 @@ class Handler(BaseHTTPRequestHandler):
             raise
         except Exception:                           # a fault of the box's: say so, and stay up
             traceback.print_exc()
-            self.send(500, {"error": "Something went wrong on the box."})
+            self.send(500, {"error": "An error occurred on the box."})
 
     do_GET = do_POST = do_PUT = do_DELETE = answer
 
@@ -547,15 +547,15 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         who = caller(self.headers)
         if who is None:
-            raise Refused(403, "Only on the box's own network, or from a paired device.")
+            raise Refused(403, "Only devices on the box's network and paired devices can use sharing.")
         if not allow("all", who, RATE_ALL):
-            raise Refused(429, "Too fast. Try again in a few seconds.")
+            raise Refused(429, "Too many requests. Try again in some seconds.")
         marker = MARKER_PATH.fullmatch(url.path)
         methods = ("PUT", "DELETE") if marker else ROUTES.get(url.path)
         if methods is None or len(self.path) > 200:
-            raise Refused(404, "Not here.")
+            raise Refused(404, "This address is not on the box.")
         if self.command not in methods:
-            raise Refused(405, "Not that way.")
+            raise Refused(405, "This method is not permitted for this address.")
         if url.query and url.path != "/state":
             raise Refused(400, "This address takes nothing after a question mark.")
         if url.path == "/admin":
@@ -578,7 +578,7 @@ class Handler(BaseHTTPRequestHandler):
             return 204, None
         # A marker: each change is written to the disk, so they are counted apart.
         if not allow("markers", who, RATE_MARKERS) or not allow("markers", "everybody", RATE_MARKERS_BOX):
-            raise Refused(429, "Too many marker changes. Try again in a minute.")
+            raise Refused(429, "Too many marker changes. Try again in 1 minute.")
         if self.command == "DELETE":
             return 200, {"rev": delete_marker(marker.group(1))}
         return 200, {"rev": put_marker(clean_marker(marker.group(1), self.body(MARKER_BYTES)))}
@@ -586,16 +586,16 @@ class Handler(BaseHTTPRequestHandler):
     def admin(self, who):
         """The Devices page: the switch, and who is sharing right now. Never from outside."""
         if who[0] == "outside":
-            raise Refused(403, "Only on the box's own network.")
+            raise Refused(403, "This is only on the box's network.")
         if self.command == "POST":
             body = self.body(ADMIN_BYTES)
             if not isinstance(body, dict) or not isinstance(body.get("on"), bool):
                 raise Refused(400, "on must be true or false.")
             if not allow("switch", who, RATE_SWITCH):
-                raise Refused(429, "Too fast. Try again in a minute.")
+                raise Refused(429, "Too many requests. Try again in 1 minute.")
             pin = setting("REMOTE_PIN")
             if pin and not secrets.compare_digest(str(body.get("pin", "")).strip().encode(), pin.encode()):
-                return 403, {"error": "That is not the box's code.", "pin": True}
+                return 403, {"error": "The code is not correct.", "pin": True}
             set_enabled(body["on"])
             print("Sharing switched " + ("on." if on else "off."), flush=True)
         with lock:

@@ -55,7 +55,7 @@
         tag = remoteTag(found);
         if (found.remote) { label = `Admin: remote access ${found.remote.on ? "on" : "off"}`; title = found.remote.text; }
       }
-      if (!current && href === "off") nav.append(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} pages are not running on this device.` }, ...text, el("small", { textContent: "not running" })));
+      if (!current && href === "off") nav.append(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} pages do not run on this box now.` }, ...text, el("small", { textContent: "not running" })));
       else if (current || href) {
         const a = el("a", { href, ariaLabel: label, title }, ...text, ...tag);
         a.dataset.page = key;
@@ -76,7 +76,7 @@
     const items = [];
     for (const [key, long] of ADMIN) {
       const href = place(found, key);
-      if (key !== here && href === "off") items.push(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} is not running on this device.` }, long, el("small", { textContent: "not running" })));
+      if (key !== here && href === "off") items.push(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} does not run on this box now.` }, long, el("small", { textContent: "not running" })));
       else if (href) {
         const a = el("a", { href, title: key === "access" && found.remote ? found.remote.text : "" }, long, ...(key === "access" ? remoteTag(found) : []));
         if (key === here) a.ariaCurrent = "page";

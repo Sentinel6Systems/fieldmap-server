@@ -119,11 +119,11 @@ def check_selection(body):
     for i in ids:
         inside = [a for a in ancestors(i) if a in ids]
         if inside:
-            raise BadRequest(f"{REGIONS[i]['name']} is part of {REGIONS[inside[0]]['name']}, which is selected too. "
-                             "Take one of the two off the list.")
+            raise BadRequest(f"{REGIONS[i]['name']} is part of {REGIONS[inside[0]]['name']}, and you chose both. "
+                             "Remove one of the two from your list.")
     layers = [k for k in ORDER if k in (body.get("layers") or []) and k != "detail"]
     if not layers:
-        raise BadRequest("Tick at least one thing to build.")
+        raise BadRequest("Tick at least one layer.")
     o = body.get("options") or {}
     options = {"world": bool(o.get("world")), "fresh": bool(o.get("fresh")), "units": "m" if o.get("units") == "m" else "ft",
                "terrain": o.get("terrain") if o.get("terrain") in ("10m", "1m") else "30m",
@@ -131,18 +131,18 @@ def check_selection(body):
     regions = [REGIONS[i] for i in ids]
     usa = [r for r in regions if is_us(r)]
     if "usdata" in layers and not usa:
-        raise BadRequest("The US government data layers exist only for regions in the United States.")
+        raise BadRequest("US government data exists only for regions in the United States.")
     if options["terrain"] == "1m":
         d = o.get("detail") or {}
         try:
             lon, lat, km = float(d["lon"]), float(d["lat"]), int(d["km"])
         except (KeyError, TypeError, ValueError):
-            raise BadRequest("Place the very sharp area on the map first (More options).")
+            raise BadRequest("Place the very sharp area on the map first. You find it under More options.")
         if km not in DETAIL_KM or not -180 < lon < 180 or not -80 < lat < 80:
             raise BadRequest("The very sharp area is not valid. Place it again.")
         if not usa:
             raise BadRequest("Very sharp terrain exists only for the United States. Choose a region there, "
-                             "or choose another terrain detail.")
+                             "or choose another Terrain detail.")
         if not any(r["bbox"][1] <= lat <= r["bbox"][3] and
                    (r["bbox"][0] <= lon <= r["bbox"][2] if r["bbox"][0] <= r["bbox"][2]
                     else lon >= r["bbox"][0] or lon <= r["bbox"][2]) for r in usa):
@@ -153,7 +153,7 @@ def check_selection(body):
         w, s, e, n = detail_bbox(options["detail"])
         area = (e - w) * (n - s) * 111.32 ** 2 * math.cos(math.radians((s + n) / 2))
         if area > DETAIL_MAX_KM2 * 1.01:
-            raise BadRequest(f"The very sharp area is {area:,.0f} km²; the most this device allows is {DETAIL_MAX_KM2:,} km².")
+            raise BadRequest(f"The very sharp area is {area:,.0f} km². The box permits {DETAIL_MAX_KM2:,} km² at the most.")
         layers = [k for k in ORDER if k in layers or k == "detail"]
     return regions, layers, options
 
@@ -319,13 +319,13 @@ def estimate(regions, layers, options):
         add("detail", "Very sharp terrain area", (km // 10 + 1) ** 2 * 1.0 + km * km * 0.0002,
             km * km * 0.0015, 0.05 + km * km / 2500 * slow)
     if "elevation" in layers:
-        add("elevation", "Elevation for terrain tools", kb(1.4, 4), 0,
+        add("elevation", "Elevation for the terrain tools", kb(1.4, 4), 0,
             (land - us_land + us_land * 7.2) / 1000 * 1.0 * slow / 3600)
     if "extras" in layers:
-        add("extras", "Extra map details", osm * 0.15 + 0.05, osm * 3 + 2, 0.05 + osm * 0.1 * slow)
+        add("extras", "Extra details for printed maps", osm * 0.15 + 0.05, osm * 3 + 2, 0.05 + osm * 0.1 * slow)
     if "usdata" in layers:
         states = sum(1 for r in regions if is_us(r)) if not any(r["id"] == "us" for r in regions) else 51
-        add("usdata", "US government data layers", 0.05 + states * 0.08, 1 + states * 0.1, 0.1 + states * 0.05)
+        add("usdata", "US government data", 0.05 + states * 0.08, 1 + states * 0.1, 0.1 + states * 0.05)
     have = on_hand(regions, layers, options)
     have["dem"] = min(have.get("dem", 0), next((i["kept_gb"] for i in items if i["key"] == "dem"), 0))
     need, kept, back = 0, 0, have[""]
@@ -417,8 +417,8 @@ def job_status():
         return None
     starting = job.get("pid") is None and time.time() - job.get("started", 0) < 30
     if job["state"] == "running" and not starting and not is_build_process(job.get("pid")):
-        job.update(state="failed", message="The build stopped without saying why (was the device switched off?). "
-                                           "The maps on this device were not changed.")
+        job.update(state="failed", message="The build stopped without a reason. Was the box switched off? "
+                                           "The maps on the box did not change.")
         write_json(JOB, job)
     done, current = log_steps(job["started"])
     step_of = {v[0]: k for k, v in LAYERS.items()}
@@ -498,8 +498,8 @@ def run_job():
         ids = docker("ps", "-q", "--filter", f"label={LABEL}").stdout.split()
         if ids:
             docker("kill", *ids)
-        finish("cancelled", "The build was stopped. The maps on this device were not changed. "
-                            "The parts that were finished are kept: start the same build again to carry on.")
+        finish("cancelled", "You stopped the build. The maps on the box did not change. "
+                            "The box keeps the completed parts. Start the same build again to continue.")
 
     def finish(state, message):
         job.update(state=state, message=message, finished=int(time.time()))
@@ -533,9 +533,9 @@ def run_job():
     if code == 0:
         swapped.append(True)
     else:
-        finish("failed", "The build stopped with an error. The maps on this device were not changed. "
-                         "The details below say what went wrong. The parts that were finished are kept: "
-                         "once the problem is solved, start the same build again to carry on from there.")
+        finish("failed", "The build stopped with an error. The maps on the box did not change. "
+                         "The technical details below show the problem. The box keeps the completed parts. "
+                         "Solve the problem, then start the same build again. The build continues from where it stopped.")
     state = read_json(STATE, {})
     for k in request["layers"]:
         state[k] = {"regions": request["regions"], "names": request["names"], "built": int(time.time()),
@@ -549,9 +549,9 @@ def run_job():
         r = docker("compose", *(["-f", pi] if os.path.exists(pi) else []), "up", "-d", cwd=ROOT)
     print(r.stdout, flush=True)
     if r.returncode != 0:
-        finish("done", "The new maps are in place, but the map server did not start. "
-                       "On the device, run: docker compose up -d")
-    finish("done", "The new maps are in place and the map server is using them.")
+        finish("done", "The new maps are in place, but the box does not show them yet. "
+                       "On the box, run: docker compose up -d")
+    finish("done", "The new maps are in place. The box shows them now.")
 
 
 def cancel_build():
@@ -647,12 +647,12 @@ class Handler(BaseHTTPRequestHandler):
         # Only this page's own requests: a JSON body, and no other site as the sender.
         origin = self.headers.get("Origin")
         if origin and urlparse(origin).netloc != self.headers.get("Host"):
-            raise BadRequest("This request did not come from the map builder page.")
+            raise BadRequest("This request did not come from the Map builder page.")
         if "application/json" not in self.headers.get("Content-Type", ""):
             raise BadRequest("Expected JSON.")
         n = int(self.headers.get("Content-Length", 0))
         if n > 100_000:
-            raise BadRequest("Request too large.")
+            raise BadRequest("The request is too large.")
         value = json.loads(self.rfile.read(n) or b"{}")
         if not isinstance(value, dict):
             raise BadRequest("Expected a JSON object.")
@@ -696,10 +696,10 @@ class Handler(BaseHTTPRequestHandler):
                 now = time.time()
                 TRIES[:] = [t for t in TRIES if now - t < 60]
                 if len(TRIES) >= 8:
-                    return self.send(429, {"error": "Too many tries. Wait a minute, then try again."})
+                    return self.send(429, {"error": "Too many tries. Wait one minute, then try again."})
                 TRIES.append(now)
                 if not secrets.compare_digest(str(body.get("pin", "")).strip().encode(), (pin() or "").encode()):
-                    return self.send(403, {"error": "That PIN is not right."})
+                    return self.send(403, {"error": "That code is not correct."})
                 token = secrets.token_urlsafe(24)
                 SESSIONS.add(token)
                 return self.send(200, {"ok": True}, headers=[("Set-Cookie", f"fm_admin={token}; Path=/; HttpOnly; SameSite=Strict")])
@@ -716,11 +716,11 @@ class Handler(BaseHTTPRequestHandler):
                 with LOCK:
                     job = job_status()
                     if job and job["state"] == "running":
-                        raise BadRequest("A build is already running.")
+                        raise BadRequest("A build is already in progress.")
                     if not shutil.which("docker"):
-                        raise BadRequest("Docker is not installed on this device. The build needs it.")
+                        raise BadRequest("The box does not have Docker. The build needs Docker.")
                     if not est["ok"]:
-                        raise BadRequest(f"Not enough free space: this needs about {est['need_gb']:.0f} GB and "
+                        raise BadRequest(f"Not enough free space. The build needs about {est['need_gb']:.0f} GB, but only "
                                          f"{est['free_gb']:.0f} GB is free. Choose fewer regions or fewer layers.")
                     start_build(regions, layers, options)
                 return self.send(200, {"ok": True})
@@ -728,7 +728,7 @@ class Handler(BaseHTTPRequestHandler):
         except BadRequest as e:
             self.send(400, {"error": str(e)})
         except ValueError:
-            self.send(400, {"error": "The request could not be read."})
+            self.send(400, {"error": "The box cannot read the request."})
 
 
 LOCK = threading.Lock()

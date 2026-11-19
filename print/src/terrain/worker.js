@@ -86,7 +86,7 @@ async function run(id, job, src) {
       const tx = Math.floor((s0.fx(p.lng) + 0.5) / TILE), ty = Math.floor((s0.fy(p.lat) + 0.5) / TILE);
       for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 0], [0, -1], [-1, -1], [1, -1], [-1, 1]]) seen.set(`${tx + dx}/${ty + dy}`, [tx + dx, ty + dy]);
     }
-    const tile = await loadTiles(src, z, [...seen.values()], step(0, 0.9, "Loading elevation tiles"));
+    const tile = await loadTiles(src, z, [...seen.values()], step(0, 0.9, "Loading the elevation data"));
     const sampler = tileSampler(z, tile);
     const heights = Float64Array.from(pts, (p) => sampler.height(p.lng, p.lat));
     return { kind: "profile", heights, step: dStep, pts, zoom: z };
@@ -94,12 +94,12 @@ async function run(id, job, src) {
 
   const spec = gridSpec(job.center, job.radius, job.res);
   const z = chooseZoom(job.center.lat, job.res, src.minzoom, src.maxzoom);
-  const tile = await loadTiles(src, z, tilesForBounds(spec.bounds, z), step(0, 0.35, "Loading elevation tiles"));
-  const h = await buildGrid(spec, tileSampler(z, tile), step(0.35, 0.45, "Building the height grid"));
+  const tile = await loadTiles(src, z, tilesForBounds(spec.bounds, z), step(0, 0.35, "Loading the elevation data"));
+  const h = await buildGrid(spec, tileSampler(z, tile), step(0.35, 0.45, "Making the height grid"));
   const c = spec.c, n = spec.n, res = spec.res;
   const ground = h[c * n + c];
   if (job.kind === "viewshed") {
-    const vis = await viewshed(spec, h, job.params, step(0.45, 0.9, "Working out what is visible"));
+    const vis = await viewshed(spec, h, job.params, step(0.45, 0.9, "Calculating what is visible"));
     const cellAt = (x, y) => {
       const i = Math.round(x / res) + c, j = c - Math.round(y / res);
       return i < 0 || j < 0 || i >= n || j >= n ? 0 : vis[j * n + i];

@@ -6,7 +6,7 @@ export const FT = 0.3048;
 export const LIMITS = "Terrain only: no trees, buildings or clutter loss, no ground reflection or ducting, single-edge diffraction. " +
   "Real coverage is usually worse in forest and towns. A planning estimate, not a guarantee.";
 export const VIEW_LIMITS = "Bare terrain from 30 m elevation data: trees and buildings are only partly in it. A planning estimate, not a guarantee.";
-export const HF_NOTE = "VHF and UHF line of sight only: CB and HF (ground wave, skywave) are outside this model.";
+export const HF_NOTE = "This model is for VHF and UHF line of sight only. It does not include CB and HF ground wave or skywave.";
 
 /** Overlay styles. pattern: how black-and-white ink draws it. */
 const STYLES = {

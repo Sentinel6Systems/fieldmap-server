@@ -377,9 +377,9 @@ function updateFootprint() {
   const phone = window.innerWidth <= 640 || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
   const warn = $("atlas-warning");
   if (atlas.n > 1 && phone) {
-    warn.textContent = `An atlas renders every page in this browser. On a phone it is slow and may run out of memory: use a laptop for atlases${pages > 30 ? ", and expect several minutes for " + pages + " pages" : ""}.`;
+    warn.textContent = `The browser makes every page of an atlas. On a phone or tablet, this is slow and the browser can run out of memory. Use a laptop for atlases.${pages > 30 ? " " + pages + " pages take several minutes." : ""}`;
   } else if (pages > 30) {
-    warn.textContent = `${pages} pages: expect several minutes and a large file. 200 dpi halves the work.`;
+    warn.textContent = `${pages} pages take several minutes and make a large file. The Standard quality of 200 dpi cuts the work by half.`;
   } else {
     warn.textContent = "";
   }
@@ -513,8 +513,8 @@ function previewShape(ll) {
   if (shape && (shape.type !== "circle" || shape.radius > 0)) {
     feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [shapeRing(shape)] }, properties: {} });
     $("mode-hint").textContent = shape.type === "circle"
-      ? `Radius ${fmtLength(shape.radius, state.units)}: tap to set it. You can type an exact radius afterwards.`
-      : `${shapeSummary(shape, state.units)}: tap the opposite corner.`;
+      ? `Radius ${fmtLength(shape.radius, state.units)}. Tap to set it. You can type an exact radius later.`
+      : `${shapeSummary(shape, state.units)}. Tap the opposite corner.`;
   }
   if (s.type === "polygon") {
     const pts = [...s.points, ll].map((p) => [p.lng, p.lat]);
@@ -574,8 +574,8 @@ function renderList(list, items, kind, emptyText, detail) {
       <div class="item-row">
         <button class="dot" title="Colour" style="background:${it.color}"></button>
         <input type="text" value="${escapeHtml(it.label)}" placeholder="Name" maxlength="30">
-        <button class="icon" title="Go to">◎</button>
-        <button class="icon danger" title="Delete">✕</button>
+        <button class="icon" title="Show on the map">◎</button>
+        <button class="icon danger" title="Remove">✕</button>
       </div>
       <div class="item-detail">${detail(it)}</div>`;
     const [dot, text, go, del] = row.querySelectorAll("button,input");
@@ -621,13 +621,13 @@ function setMode(m) {
   const corners = pendingShape && pendingShape.points ? pendingShape.points.length : 0;
   $("mode-hint").textContent =
     m === "marker" ? "Tap the map to place the marker." :
-    m === "arrow-start" ? "Tap the map at the arrow's start." :
-    m === "arrow-end" ? "Now tap where the arrow ends." :
+    m === "arrow-start" ? "Tap the map at the start of the arrow." :
+    m === "arrow-end" ? "Tap the map at the end of the arrow." :
     m === "circle-center" ? "Tap the centre of the circle." :
-    m === "circle-edge" ? "Tap the edge to set the radius. You can type an exact radius afterwards." :
+    m === "circle-edge" ? "Tap the edge to set the radius. You can type an exact radius later." :
     m === "rect-start" ? "Tap one corner of the rectangle." :
     m === "rect-end" ? "Tap the opposite corner." :
-    m === "polygon" ? (corners < 3 ? `Tap the corners of the polygon (${corners} so far).` : `${corners} corners. Tap the first corner, press Enter or use Finish shape.`) : "";
+    m === "polygon" ? (corners < 3 ? `Tap the corners of the polygon. Corners so far: ${corners}.` : `${corners} corners. To finish the shape, tap the first corner, press Enter or press Finish shape.`) : "";
   $("finish-shape").hidden = !(m === "polygon" && corners >= 3);
 }
 $("add-marker").onclick = () => setMode(mode === "marker" ? null : "marker");
@@ -641,7 +641,7 @@ $("clear-all").onclick = () => {
 };
 // Save to a file, and load one: GeoJSON (src/drawings.js).
 $("save-drawings").onclick = () => {
-  if (!markers.length && !arrows.length && !shapes.length) { fileHint("There is nothing to save yet: add a marker, arrow or shape first."); return; }
+  if (!markers.length && !arrows.length && !shapes.length) { fileHint("There is nothing to save. Add a marker, arrow or shape first."); return; }
   const data = toGeoJSON(markers, arrows, shapes, { title: state.title || "", saved: new Date().toISOString() });
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/geo+json" }));
   const a = Object.assign(document.createElement("a"), { href: url, download: fileName(state.title) });
@@ -658,11 +658,11 @@ $("load-file").onchange = async (e) => {
   if (!file) return;
   let got;
   try {
-    if (file.size > 20 * 1024 * 1024) throw new Error("This file is too large to be a drawing file (over 20 MB).");
+    if (file.size > 20 * 1024 * 1024) throw new Error("This file is more than 20 MB. It is too large for a file of markers, arrows and shapes.");
     got = fromGeoJSON(await file.text(), state.color);
   } catch (err) { fileHint(err.message, true); return; }
   const total = got.markers.length + got.arrows.length + got.shapes.length;
-  if (!total) { fileHint(`Nothing in ${file.name} could be loaded${got.skipped ? ` (${got.skipped} item${got.skipped === 1 ? "" : "s"} of a kind this tool does not draw)` : ""}.`, true); return; }
+  if (!total) { fileHint(`The page cannot load anything from ${file.name}.${got.skipped ? ` The file has ${got.skipped} item${got.skipped === 1 ? "" : "s"} that this page cannot draw.` : ""}`, true); return; }
   for (const m of got.markers) markers.push({ ...m, id: uid() });
   for (const a of got.arrows) arrows.push({ ...a, id: uid() });
   for (const s of got.shapes) {
@@ -680,7 +680,7 @@ $("load-file").onchange = async (e) => {
     [Infinity, Infinity, -Infinity, -Infinity]);
   map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 80, maxZoom: 15, duration: 0 });
   fileHint(`Loaded ${countText(got.markers.length, got.arrows.length, got.shapes.length)} from ${file.name}` +
-    (got.skipped ? `. ${got.skipped} item${got.skipped === 1 ? " was" : "s were"} left out: this tool draws points, two-point lines and areas only.` : "."));
+    (got.skipped ? `. The page did not load ${got.skipped} item${got.skipped === 1 ? "" : "s"}. It draws only points, two-point lines and areas.` : "."));
 };
 function countText(m, a, s) {
   const part = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
@@ -777,7 +777,7 @@ function renderLayerPanel() {
     }
   }
   const h = document.createElement("h3"); h.textContent = "Grid"; box.appendChild(h);
-  box.appendChild(toggle("MGRS grid lines (edge numbers stay)", state.layers.grid !== false, (on) => { state.layers.grid = on; saveSettings(); }));
+  box.appendChild(toggle("MGRS grid lines. The numbers at the edges stay.", state.layers.grid !== false, (on) => { state.layers.grid = on; saveSettings(); }));
   if (terrain && terrain.available) {
     const ht = document.createElement("h3"); ht.textContent = "Terrain analysis"; box.appendChild(ht);
     box.appendChild(toggle("Viewshed or radio overlay and its points", state.layers.terrain !== false, (on) => {
@@ -827,7 +827,7 @@ async function makePdf(kind) {
       pdf.autoPrint();
       const url = pdf.output("bloburl");
       const w = window.open(url, "_blank");
-      if (!w) { status.textContent = "Pop-up blocked. Use Download instead."; return; }
+      if (!w) { status.textContent = "The browser blocked the pop-up. Press Download PDF instead."; return; }
     }
     status.textContent = `Done: ${pages} page${pages === 1 ? "" : "s"} in ${Math.round((Date.now() - t0) / 1000)} s.`;
   } catch (e) {
@@ -839,6 +839,6 @@ async function makePdf(kind) {
     aborter = null;
   }
 }
-$("cancel").onclick = () => { if (aborter) { aborter.abort(); $("status").textContent = "Cancelling after this page…"; } };
+$("cancel").onclick = () => { if (aborter) { aborter.abort(); $("status").textContent = "The print will stop after this page…"; } };
 $("print").onclick = () => makePdf("print");
 $("download").onclick = () => makePdf("download");

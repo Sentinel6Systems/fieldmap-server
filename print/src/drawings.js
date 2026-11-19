@@ -50,12 +50,12 @@ const text = (...vals) => String(vals.find((v) => typeof v === "string" && v.tri
 export function fromGeoJSON(textOrObject, defaultColor) {
   let data = textOrObject;
   if (typeof data === "string") {
-    try { data = JSON.parse(data); } catch { throw new Error("This file is not a map drawing file (GeoJSON). Choose a .geojson file saved from here or from other map software."); }
+    try { data = JSON.parse(data); } catch { throw new Error("This file is not a GeoJSON file. Choose a .geojson file that you saved on this page or in other map software."); }
   }
   const feats = data && data.type === "FeatureCollection" ? data.features
     : data && data.type === "Feature" ? [data]
     : data && data.type && data.coordinates ? [{ type: "Feature", geometry: data, properties: {} }] : null;
-  if (!Array.isArray(feats)) throw new Error("This file has no map features in it (it is not GeoJSON).");
+  if (!Array.isArray(feats)) throw new Error("This file is not GeoJSON. It has no map features.");
   const out = { markers: [], arrows: [], shapes: [], skipped: 0 };
   for (const f of feats) {
     const g = f && f.geometry, p = (f && f.properties) || {};

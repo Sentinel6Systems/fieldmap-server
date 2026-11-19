@@ -18,9 +18,9 @@ export async function initWmmNotice(root) {
     root.hidden = days > SOON_DAYS;
     if (root.hidden) return;
     text.textContent = days < 0
-      ? `Magnetic model ${m.name} expired on ${fmtDate(m.end)}. Declination is carried forward from it and gets less accurate each year.`
-      : `Magnetic model ${m.name} runs out on ${fmtDate(m.end)}.`;
-    if (!api) text.textContent += " To update it, run tools/wmm-update.py update on the server.";
+      ? `The magnetic model ${m.name} expired on ${fmtDate(m.end)}. The declination still comes from this model and becomes less accurate each year.`
+      : `The magnetic model ${m.name} expires on ${fmtDate(m.end)}.`;
+    if (!api) text.textContent += " Run tools/wmm-update.py update on the box to update it.";
     btn.hidden = !api;
   };
 
@@ -29,10 +29,10 @@ export async function initWmmNotice(root) {
     try {
       const res = await fetch("wmm-api/update", { method: "POST", headers: { "X-Fieldmap": "wmm-update" } });
       const r = await res.json().catch(() => ({}));
-      result.textContent = r.message || `The server answered ${res.status}.`;
+      result.textContent = r.message || `The box sent HTTP status ${res.status}.`;
       if (r.updated) await loadServedModel();
     } catch {
-      result.textContent = "The server did not answer. The current model stays in use.";
+      result.textContent = "The box did not reply. The page continues to use the current model.";
     }
     btn.disabled = false; btn.textContent = "Update magnetic model";
     show();

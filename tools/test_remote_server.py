@@ -371,7 +371,7 @@ class RemoteServerTest(unittest.TestCase):
             self.assertTrue(self.rs.switch_off_if_idle(switched_on + 151 * day))
             self.rs.time.sleep(0.2)
         self.assertFalse(self.rs.enabled())
-        self.assertIn("switched itself off", self.rs.report()["text"])
+        self.assertIn("switched off automatically", self.rs.report()["text"])
         self.assertEqual(1, len(self.rs.load_devices()), "the phones are kept")
 
     def test_the_automatic_switch_off_can_be_unticked(self):

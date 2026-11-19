@@ -89,11 +89,11 @@ export async function renderSheet(opts) {
 
   let gridInfo;
   if (n > 1) {
-    status("Rendering the index page…");
+    status("Drawing the index page…");
     const index = await renderIndexPage(lay, opts, atlas, status, total);
     gridInfo = index.gridInfo;
     check();
-    status("Rendering the cover…");
+    status("Drawing the cover…");
     addPage();
     await renderCoverPage(pdf, lay, opts, atlas, gridInfo, index.features, total, status);
     check();
@@ -109,7 +109,7 @@ export async function renderSheet(opts) {
     const info = await renderMapPage(pdf, lay, { ...opts, center: cell.center, zoom: atlas.zoom }, atlas, cell, sub, pageNo, total);
     if (!gridInfo) gridInfo = info;
     check();
-    if (n > 1) status(`Done ${label}`);
+    if (n > 1) status(`Done: ${label}`);
   }
   if (wantList) {
     // Made last, once every map page has shown its symbols; in an atlas it then moves to
@@ -137,7 +137,7 @@ async function renderMapPage(pdf, lay, opts, atlas, cell, status, pageNo, total)
   const zoom = opts.zoom;
   const center = opts.center;
 
-  status("Rendering map…");
+  status("Drawing the map…");
   const mapCanvas = await renderMapCanvas(opts.styleUrl, center, zoom, cssW, cssH, pixelRatio, status,
     opts.symbols && symbolCollector(opts.symbols));
 
@@ -154,7 +154,7 @@ async function renderMapPage(pdf, lay, opts, atlas, cell, status, pageNo, total)
   // (1:24k, 1:25k) draw the building layers again from the z14 tiles (in order, so
   // a style's grey large buildings stay on top of its black ones).
   if (zoom >= 13 && zoom < 14) {
-    status("Adding buildings from the detailed tiles…");
+    status("Adding buildings from the detailed map…");
     const style = await loadStyle(opts.styleUrl);
     const layers = (style.layers || []).filter((l) => l.type === "fill" &&
       (l["source-layer"] === "building" || (l.metadata && l.metadata["fieldmap:group"] === "buildings")));
@@ -171,7 +171,7 @@ async function renderMapPage(pdf, lay, opts, atlas, cell, status, pageNo, total)
   const toPage = pageProjector(center, zoom, cssW, cssH, pixelRatio, mapRect);
   const bounds = viewportBounds(center.lng, center.lat, zoom, cssW, cssH);
 
-  status("Drawing grid and margins…");
+  status("Drawing the grid and margins…");
   const tabs = atlas.n > 1 ? neighbourTabs(lay, dpi, atlas, cell) : [];
   const gridInfo = drawGrid(ctx, bounds, toPage, mapRect, { ...opts, center }, dpi, { avoid: tabs.map((t) => t.rect) });
   drawTerrain(ctx, toPage, mapRect, opts.terrain, dpi, opts.ink === "bw");
@@ -188,7 +188,7 @@ async function renderMapPage(pdf, lay, opts, atlas, cell, status, pageNo, total)
   });
   if (tabs.length) drawNeighbourTabs(ctx, dpi, tabs);
 
-  status("Encoding page…");
+  status("Adding the page to the PDF…");
   pdf.addImage(canvas.toDataURL("image/jpeg", 0.9), "JPEG", 0, 0, lay.page.w, lay.page.h, undefined, "FAST");
   canvas.width = canvas.height = 0;
   return gridInfo;
@@ -344,7 +344,7 @@ async function renderCoverPage(pdf, lay, opts, atlas, g, feats, total, status) {
   if (opts.terrain) facts.push(["Terrain", `${opts.terrain.inputs} · ${opts.terrain.data}`]);
 
   // Locator map (one small render; the atlas occupies about a third of it)
-  status("Rendering the locator map…");
+  status("Drawing the locator map…");
   const locIn = portrait ? Math.min(3.3, colW * 0.46) : Math.min(3.6, colW * 0.36);
   const locCss = Math.round(locIn * 100);
   const totalW = (atlas.cellW - ATLAS_OVERLAP_IN * 100) * (atlas.n - 1) + atlas.cellW;
@@ -457,7 +457,7 @@ async function renderMapCanvas(style, center, zoom, cssW, cssH, pixelRatio, stat
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       k++;
-      if (rows * cols > 1) status(`Rendering map (part ${k} of ${rows * cols})…`);
+      if (rows * cols > 1) status(`Drawing the map (part ${k} of ${rows * cols})…`);
       const x0 = c * tileW, y0 = r * tileH;
       const w = Math.min(tileW, cssW - x0), h = Math.min(tileH, cssH - y0);
       const padL = Math.min(TILE_PAD, x0), padT = Math.min(TILE_PAD, y0);
@@ -491,7 +491,7 @@ function renderMap(style, center, zoom, cssW, cssH, pixelRatio) {
         fadeDuration: 0, pixelRatio, maxZoom: 24,
       });
     } catch (e) { container.remove(); return reject(e); }
-    const timer = setTimeout(() => { map.remove(); container.remove(); reject(new Error("Map render timed out")); }, 120000);
+    const timer = setTimeout(() => { map.remove(); container.remove(); reject(new Error("The map did not finish in 2 minutes.")); }, 120000);
     map.on("error", (e) => console.warn("maplibre:", e && e.error && e.error.message));
     map.once("idle", () => { clearTimeout(timer); setTimeout(() => resolve({ map, container }), 150); });
   });

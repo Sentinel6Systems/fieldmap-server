@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Print a Map</title>
+<title>Print a map</title>
 <link rel="stylesheet" href="maplibre-gl.css">
 <link rel="stylesheet" href="fieldmap.css">
 <link rel="stylesheet" href="style.css">
@@ -49,11 +49,11 @@
   <div id="atlas-warning" class="warning"></div>
 
   <dl class="info">
-    <dt>Footprint</dt><dd id="info-footprint">–</dd>
+    <dt>Ground area</dt><dd id="info-footprint">–</dd>
     <dt>Grid</dt><dd id="info-grid">–</dd>
     <dt>Centre</dt><dd id="info-centre">–</dd>
   </dl>
-  <div class="hint">Drag the blue box to place the sheet, or tap outside it to jump there.</div>
+  <div class="hint">Drag the blue rectangle to move the sheet. Tap the map outside the rectangle to move the sheet to that point.</div>
   <div class="row2">
     <button id="bring" class="secondary">Bring sheet here</button>
     <button id="fit" class="secondary">Fit map to sheet</button>
@@ -63,7 +63,7 @@
     <summary><h2>Layers</h2><span id="layers-summary" class="hint"></span></summary>
     <div id="layer-controls"></div>
     <button id="layers-reset" class="secondary" type="button">Show everything</button>
-    <div class="hint">Switches change the map on screen and every printed page.</div>
+    <div class="hint">The switches change the map on the screen and on every printed page.</div>
   </details>
 
   <details id="terrain" class="layers terrain" hidden>
@@ -106,11 +106,11 @@
     <h3>Shapes</h3>
     <div id="shape-list"></div>
     <div class="row2 file-buttons">
-      <button id="save-drawings" class="secondary" title="Save the markers, arrows and shapes in the lists above to a file on this device. The map, its layers and the print settings are not saved.">Save markers, arrows &amp; shapes</button>
+      <button id="save-drawings" class="secondary" title="Save the markers, arrows and shapes in the lists above to a file. The file does not keep the map, its layers or the print settings.">Save markers, arrows &amp; shapes</button>
       <button id="load-drawings" class="secondary" title="Add the markers, arrows and shapes from a saved file to the lists above">Load markers, arrows &amp; shapes</button>
     </div>
     <input id="load-file" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
-    <div id="file-hint" class="hint">These two buttons save and load only the markers, arrows and shapes above, not the map, its layers or the print settings. They are kept in this browser only: save them to a file to keep them safe, or to open them on another device. Loading a file adds its items to the ones already on the map.</div>
+    <div id="file-hint" class="hint">These two buttons save and load only the markers, arrows and shapes. They do not save the map, its layers or the print settings. Only this browser keeps your markers, arrows and shapes. Save them to a file to keep a copy or to open them in a different browser. When you load a file, the page adds its items to the items on the map.</div>
     <label class="check">
       <input id="shape-measure" type="checkbox">
       <span>Show measurements on the map: side lengths, circle radius, area</span>
@@ -119,11 +119,11 @@
 
   <label class="check">
     <input id="list-page" type="checkbox">
-    <span>Add a key page: the symbols on the map, then the list of markers, arrows and shapes (after the index in an atlas, or page 2 of a single sheet)</span>
+    <span>Add a key page with the map symbols and the list of markers, arrows and shapes. In an atlas, the key page comes after the index. On a single sheet, it is page 2.</span>
   </label>
   <label class="check">
     <input id="binder" type="checkbox">
-    <span>Atlas pages: wider left margin for a 3-ring binder</span>
+    <span>Make the left margin of atlas pages wider for a 3-ring binder</span>
   </label>
 
   <label>Quality

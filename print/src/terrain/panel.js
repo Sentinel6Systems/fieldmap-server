@@ -133,7 +133,7 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
     const progress = (f, text) => setStatus(`${text}… ${Math.round(f * 100)} %`);
     try {
       if (t.kind === "area") {
-        if (!t.point) { area = null; drawMap(); setStatus("Tap Place point, then tap the map."); return; }
+        if (!t.point) { area = null; drawMap(); setStatus("Press Place. Then tap the map."); return; }
         const dataRes = pixelMetres(t.point.lat, src.maxzoom);
         // Radio paths cost radius³: past 12 km the grid coarsens to radius / 400.
         const res = t.mode === "radio" ? Math.max(dataRes, t.radius / 400) : dataRes;
@@ -241,7 +241,7 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
     body.append(seg("Analysis", t.mode, [["off", "Off"], ["viewshed", "Viewshed"], ["radio", "Radio"]], (v) => { t.mode = v; area = null; save(); render(); schedule(0); }));
     $summary().textContent = t.mode === "off" ? "" : t.mode === "viewshed" ? "viewshed" : "radio";
     if (t.mode === "off") {
-      body.append(h("div", { class: "hint", text: "Viewshed: what can be seen from a point. Radio: where a VHF or UHF radio can likely reach, or a check of one link." }));
+      body.append(h("div", { class: "hint", text: "Viewshed shows what you can see from a point. Radio shows where a VHF or UHF radio can probably reach. Radio can also check one link." }));
       drawMap(); onLayout();
       return;
     }
@@ -249,7 +249,7 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
     const radio = t.mode === "radio";
     if (t.kind === "area") body.append(pointRow("point", radio ? "Transmitter" : "Observer"));
     else body.append(pointRow("a", radio ? "A (transmitter)" : "A (observer)"), pointRow("b", radio ? "B (receiver)" : "B (target)"));
-    body.append(h("div", { class: "hint", text: "Tap the button, then the map. Drag a point to move it." }));
+    body.append(h("div", { class: "hint", text: "Press Place or Move. Then tap the map. Drag a point to move it." }));
 
     if (!radio) {
       body.append(heightRow("Observer height above ground", "obsH", OBSERVER, { cheap: "analyse" }));
@@ -265,7 +265,7 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
       sel.onchange = () => { if (sel.value !== "custom") { t.freq = +sel.value; num.value = t.freq; changed("analyse"); } else num.focus(); };
       num.onchange = () => {
         const v = parseFloat(num.value);
-        if (!(v >= 30 && v <= 3000)) { num.value = t.freq; setStatus("Frequency: 30 to 3000 MHz."); return; }
+        if (!(v >= 30 && v <= 3000)) { num.value = t.freq; setStatus("Type a frequency from 30 to 3000 MHz."); return; }
         t.freq = v; const m = FREQS.find(([, f]) => Math.abs(f - v) < 1e-6); sel.value = m ? String(m[1]) : "custom"; changed("analyse");
       };
       body.append(h("div", { class: "terrain-row" }, h("span", { text: "Frequency" }), sel, h("span", { class: "terrain-num" }, num, h("span", { text: "MHz" }))));
@@ -288,17 +288,17 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
       det.open = !!t.budgetOn;
       const cb = h("input", { type: "checkbox" }); cb.checked = !!t.budgetOn;
       cb.onchange = () => { t.budgetOn = cb.checked; changed(t.kind === "line" ? "analyse" : "recolour"); render(); };
-      det.append(h("label", { class: "check" }, cb, h("span", { text: "Colour by link margin (received level against receiver sensitivity)" })));
+      det.append(h("label", { class: "check" }, cb, h("span", { text: "Colour by link margin (received level minus receiver sensitivity)" })));
       const cheap = t.kind === "line" ? "analyse" : "recolour";
       det.append(numberRow("Transmit power", "powerW", "W", { min: "0.01", max: "1000", cheap }), numberRow("Transmit antenna gain", "txGain", "dBi", { min: "-20", max: "30", cheap }),
         numberRow("Receive antenna gain", "rxGain", "dBi", { min: "-20", max: "30", cheap }), numberRow("Cable loss", "cableLoss", "dB", { min: "0", max: "30", cheap }),
         numberRow("Receiver sensitivity", "sens", "dBm", { min: "-150", max: "-50", cheap }));
-      det.append(h("div", { class: "hint", text: "Defaults: a 5 W handheld with its stock antenna, and a receiver that is just usable at −116 dBm (about 0.35 µV)." }));
+      det.append(h("div", { class: "hint", text: "The default values are for a 5 W handheld radio with its standard antenna. The receiver is just usable at −116 dBm, about 0.35 µV." }));
       body.append(det);
     }
     const adv = h("details", { class: "terrain-more" }, h("summary", { text: "Advanced" }));
     adv.append(numberRow(radio ? "Effective earth radius factor k (radio)" : "Effective earth radius factor k (visual)", radio ? "kRadio" : "kVis", "", { min: "0.5", max: "100", cheap: "analyse" }));
-    adv.append(h("div", { class: "hint", text: "Earth curvature with refraction: an earth of k × 6,371 km. Usual values: 7/6 (1.167) for sight, 4/3 (1.333) for radio; lower in some weather." }));
+    adv.append(h("div", { class: "hint", text: "k sets the earth curvature with refraction. The model uses an earth radius of k × 6,371 km. Usual values are 7/6 (1.167) for sight and 4/3 (1.333) for radio. Some weather makes k lower." }));
     body.append(adv);
 
     body.append(h("div", { class: "terrain-status status", text: status }));

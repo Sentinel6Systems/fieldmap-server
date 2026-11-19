@@ -68,14 +68,13 @@
 
 <header class="top" data-for="devices">
   <h1>Devices</h1>
-  <p class="lead">Android phones and tablets with the Fieldmap app: get the app from this box, pair a device, and let
-    the devices share their positions and markers with each other.</p>
+  <p class="lead">Get the Fieldmap app for Android phones and tablets. Pair a device. Let the devices share their
+    positions and markers.</p>
 </header>
 <header class="top" data-for="access">
   <h1>Remote access</h1>
-  <p class="lead">Lets the paired devices use this box's maps from anywhere, also away from this network. Only paired
-    devices get in, and only to the maps and, when sharing is switched on (on the Devices page), to each other's
-    positions and markers.</p>
+  <p class="lead">With remote access, the paired devices can use the maps of the box from outside the box's network.
+    Only paired devices can come in. They get the maps, and the shared positions and markers when sharing is on.</p>
 </header>
 
 <main>
@@ -83,7 +82,7 @@
 
   <section class="card" id="code-card" hidden>
     <h2>The box's code</h2>
-    <p class="quiet">Whoever set up this box gave it a code. It is needed to change anything on this page.</p>
+    <p class="quiet">The box has a code. Type the code to make changes on this page.</p>
     <div class="row"><input id="code" type="password" autocomplete="off" aria-label="The box's code"></div>
   </section>
 
@@ -106,16 +105,16 @@
 
   <section class="card" id="forward-card" data-for="access">
     <h2>Port forwarding</h2>
-    <label class="check"><input type="checkbox" id="manual"> <span>Forward the port on the router myself (for a router that does not
-      open it by itself, with UPnP)</span></label>
+    <label class="check"><input type="checkbox" id="manual"> <span>I forward the port on the router myself. Use this when the router does not
+      open the port with UPnP.</span></label>
     <div id="manual-box" hidden>
       <p class="forward" id="forward-line"></p>
       <div class="row"><button id="new-port" type="button">New random port</button><span class="quiet" id="port-note"></span></div>
-      <p class="quiet">Then give this box's internet address, as the router's status page shows it (or a name of
-        your own that points to it). Devices learn it when they are paired, and again whenever they are home.</p>
+      <p class="quiet">Type the internet address of the router. The status page of the router shows it. You can also type a
+        name that points to it. The devices get the address when you pair them, and each time they are on the box's network.</p>
       <div class="row">
-        <input id="address" type="text" autocomplete="off" spellcheck="false" placeholder="For example 203.0.113.30" aria-label="This box's internet address">
-        <button id="find" type="button" title="Asks one public server on the internet which address this network has">Find it</button>
+        <input id="address" type="text" autocomplete="off" spellcheck="false" placeholder="For example 203.0.113.30" aria-label="The internet address of the router">
+        <button id="find" type="button" title="The box asks one public server on the internet for the address">Find it</button>
         <button id="save-address" type="button" class="primary">Save</button>
       </div>
     </div>
@@ -125,31 +124,34 @@
   <section class="card" id="app-card" data-for="devices">
     <h2>Get the Fieldmap app</h2>
     <div id="app-there" hidden>
-      <p>Fieldmap <b id="app-version"></b> for Android phones and tablets, <span id="app-size"></span>, straight from
-        this box: no app store, no account.</p>
+      <p>Fieldmap <b id="app-version"></b> for Android phones and tablets (<span id="app-size"></span>). You get it from the
+        box. You do not need an app store or an account.</p>
       <ol>
-        <li>Connect the device to this box's network. In its browser, open <b class="mono-strong" id="app-address"></b></li>
-        <li>Press <b>Download the app</b> there, then open the downloaded file.</li>
-        <li>Android asks whether the browser may install apps: open <b>Settings</b> in that message, switch on
-          <b>Allow from this source</b>, go back and press <b>Install</b>. If Google Play Protect asks about an app it
-          does not know, choose <b>Install anyway</b>.</li>
+        <li>Connect the device to the box's network.</li>
+        <li>On the device, open this address in the browser: <b class="mono-strong" id="app-address"></b></li>
+        <li>Press <b>Download the app</b>.</li>
+        <li>Open the file that you downloaded.</li>
+        <li>If Android asks for permission to install apps from the browser, press <b>Settings</b>. Switch on
+          <b>Allow from this source</b>. Go back.</li>
+        <li>Press <b>Install</b>. If Google Play Protect shows a message, press <b>Install anyway</b>.</li>
       </ol>
       <div class="row"><a class="button primary" id="app-download" href="fieldmap.apk" download>Download the app</a></div>
-      <p class="quiet">To update the app, download it again here and install it over the old one: saved maps and markers stay.</p>
+      <p class="quiet">To update the app, do the same steps again. The app keeps its map areas and markers.</p>
       <p class="mono" id="app-sum"></p>
     </div>
-    <p class="quiet" id="app-none" hidden>There is no app on this box yet. Whoever set up the box adds it on the box with
-      <span class="mono">./scripts/app.sh fetch</span> (the newest published release) or
+    <p class="quiet" id="app-none" hidden>The box has no app yet. To add the newest app, type
+      <span class="mono">./scripts/app.sh fetch</span> on the box. To add an app file, type
       <span class="mono">./scripts/app.sh add &lt;file.apk&gt;</span>.</p>
   </section>
 
   <section class="card" id="pair-card" data-for="devices">
     <h2>Pair a device</h2>
-    <p class="quiet" id="pair-off" hidden>Pairing needs remote access switched on: <a href="remote.html">Admin, Remote access</a>.</p>
+    <p class="quiet" id="pair-off" hidden>To pair a device, switch on remote access first: <a href="remote.html">Admin, Remote access</a>.</p>
     <ol>
-      <li>Connect the device to this network and open the Fieldmap app (Get the Fieldmap app, above).</li>
-      <li>Press <b>Pair a device</b> here.</li>
-      <li>In the app: <b>Menu, Server, Pair this device</b>, within ten minutes.</li>
+      <li>Connect the device to the box's network.</li>
+      <li>Open the Fieldmap app on the device.</li>
+      <li>Press <b>Pair a device</b> on this page.</li>
+      <li>In the app, press <b>Menu</b>, <b>Server</b>, <b>Pair this device</b>. Do this in 10 minutes or less.</li>
     </ol>
     <div class="row">
       <button id="pair" type="button" class="primary">Pair a device</button>
@@ -171,7 +173,7 @@
     </div>
     <p class="quiet" id="share-text"></p>
     <div id="share-now" hidden>
-      <h3>Sharing right now</h3>
+      <h3>Devices that share now</h3>
       <div id="people"></div>
       <p class="quiet" id="share-markers"></p>
     </div>
@@ -190,7 +192,7 @@
       return data;
     });
   const when = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "not yet";
-  const ago = (seconds) => seconds < 60 ? `${seconds} s ago` : `${Math.floor(seconds / 60)} min ago`;
+  const ago = (seconds) => seconds < 60 ? `${seconds} seconds ago` : `${Math.floor(seconds / 60)} minutes ago`;
   const SHARE = "../mapshare/admin";    // the sharing service, beside this page on the box's web server
   let busy = false;
   let addressEdited = false;
@@ -234,43 +236,43 @@
     $("toggle").textContent = on ? "Switch off" : "Switch on";
     $("toggle").className = on ? "danger" : "primary";
     $("switch-text").textContent = on
-      ? "Switch it off to keep this box completely to its own network: the router's port is closed, the box's firewall shuts the gateway, pairing stops. The paired devices stay on the list for when it is switched on again."
-      : "Off: nothing outside can reach this box, and no device can pair. Switch it on to let paired devices use the maps from anywhere; that also opens pairing for ten minutes.";
+      ? "Remote access is on. Paired devices can use the box from outside. Press Switch off to keep the box on its own network. The box then closes the port on the router. The paired devices stay on the list."
+      : "Remote access is off. Devices outside the box's network cannot use the box. You cannot pair a device. Press Switch on to start remote access. Pairing then opens for 10 minutes.";
     for (const id of ["outside-card", "forward-card"]) $(id).setAttribute("aria-disabled", String(!on));
     $("pair-off").hidden = on;
     const fw = info.forwarding;
     $("manual").checked = fw.manual;
     $("manual-box").hidden = !fw.manual;
     $("forward-line").textContent = fw.changingTo
-      ? `Moving to port ${fw.changingTo}…`
+      ? `The box changes to port ${fw.changingTo}.`
       : `On your router, forward TCP port ${fw.port} to ${fw.boxAddress || "this box"}.`;
     $("new-port").disabled = !!fw.changingTo;
-    $("port-note").textContent = fw.changingTo ? "This takes a few seconds." : "";
+    $("port-note").textContent = fw.changingTo ? "This takes some seconds." : "";
     if (document.activeElement !== $("address") && !addressEdited) $("address").value = fw.address;
     $("auto-text").textContent = fw.manual ? "" :
-      `The router is asked to open a port by itself. If it does not, tick the box above and forward port ${fw.port} by hand.`;
+      `The box asks the router to open the port. If the router does not do this, tick the option above and forward port ${fw.port} yourself.`;
     $("auto-off").checked = info.autoOff.on;
-    $("auto-off-text").textContent = `Switch off by itself after ${info.autoOff.days} days with no device coming in from outside` +
-      (info.autoOff.at ? ` (on ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })}, unless a device comes in before)` : "");
+    $("auto-off-text").textContent = `Switch off remote access when no device comes in from outside for ${info.autoOff.days} days.` +
+      (info.autoOff.at ? ` This will occur on ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })} if no device comes in before that date.` : "");
     $("reach").textContent = info.reach.text;
     $("reach").className = "reach " + info.reach.status;
     $("addresses").textContent = on && info.endpoints.length
-      ? "Devices are told to try: " + info.endpoints.map((e) => e.host + ":" + e.port).join(", ") : "";
-    $("checked").textContent = info.reach.checked ? "Last asked " + when(info.reach.checked) : "";
+      ? "The devices use these addresses: " + info.endpoints.map((e) => e.host + ":" + e.port).join(", ") : "";
+    $("checked").textContent = info.reach.checked ? "The box asked the router on " + when(info.reach.checked) + "." : "";
     $("recheck").disabled = !on;
     const left = info.pairing.seconds;
     $("pair").hidden = left > 0;
     $("pair").disabled = !on;
     $("pair-stop").hidden = left <= 0;
-    $("pair-left").textContent = left > 0 ? `Pairing is open: ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left` : "";
+    $("pair-left").textContent = left > 0 ? `Pairing is open. Time left: ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "";
     $("phones").replaceChildren(...(list.devices.length ? list.devices.map((d) => {
       const row = document.createElement("div");
       row.className = "phone";
       row.innerHTML = "<div><b></b><small></small></div><button type=\"button\" class=\"danger\">Remove</button>";
       row.querySelector("b").textContent = d.name;
-      row.querySelector("small").textContent = `Paired ${d.added} · from outside: ${when(d.seen)}`;
+      row.querySelector("small").textContent = `Paired on ${d.added} · last time from outside: ${when(d.seen)}`;
       row.querySelector("button").onclick = () => {
-        if (confirm(`Remove ${d.name}? It can no longer use these maps from outside until it is paired again.`)) act("remove", { id: d.id });
+        if (confirm(`Remove ${d.name}? The device cannot use the box from outside until you pair it again.`)) act("remove", { id: d.id });
       };
       return row;
     }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No device is paired yet." })]));
@@ -292,29 +294,29 @@
     $("share-toggle").textContent = on ? "Switch off" : "Switch on";
     $("share-toggle").className = on ? "danger" : "primary";
     $("share-text").textContent = on
-      ? "Devices whose owners switched sharing on in the Fieldmap app see each other on the map, and the markers they chose to share: every device on this network, and every paired device away from it. Positions are not stored, and a device that stops is gone from the others within two minutes. Shared markers are kept on this box. Switch it off to stop it for everyone at once."
-      : "Off: this box takes no positions and no markers from devices, and gives none out. Switch it on to let devices with the Fieldmap app see each other on the map and share markers: every device on this network, and every paired device away from it, once its owner switches sharing on in the app.";
+      ? "Sharing is on. Each device that has sharing on in the app shows its position to the other devices. The devices also see the markers that a person shared. This includes all devices on the box's network, and paired devices outside. The box does not keep the positions. A device that stops sharing goes off the map of the others in 2 minutes. The box keeps the shared markers. Press Switch off to stop sharing for all devices."
+      : "Sharing is off. The box does not take or give positions and markers. Press Switch on to start sharing. Then each person switches on sharing in the app.";
     $("share-now").hidden = !on;
     $("people").replaceChildren(...(share.people.length ? share.people.map((p) => {
       const row = document.createElement("div");
       row.className = "phone";
       row.innerHTML = "<div><b></b><small></small></div>";
       row.querySelector("b").textContent = p.name;
-      row.querySelector("small").textContent = `${ago(p.age)} · ${p.outside ? "from outside" : "on this network"}`;
+      row.querySelector("small").textContent = `${ago(p.age)} · ${p.outside ? "outside" : "on the box's network"}`;
       return row;
-    }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No one is sharing right now." })]));
-    $("share-markers").textContent = share.markers === 1 ? "1 shared marker is kept on this box."
-      : `${share.markers} shared markers are kept on this box.`;
+    }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No device shares its position now." })]));
+    $("share-markers").textContent = share.markers === 1 ? "The box keeps 1 shared marker."
+      : `The box keeps ${share.markers} shared markers.`;
   }
 
   $("toggle").onclick = () => {
     const on = $("state").textContent === "On";
-    if (on && !confirm("Switch remote access off? Paired devices can then use these maps only on this network.")) return;
+    if (on && !confirm("Switch off remote access? The paired devices can then use the box only on the box's network.")) return;
     act("enabled", { on: !on });
   };
   $("share-toggle").onclick = () => {
     const on = $("share-state").textContent === "On";
-    if (on && !confirm("Switch sharing off? The devices no longer see each other. The shared markers stay on this box.")) return;
+    if (on && !confirm("Switch off sharing? The devices then do not see each other. The box keeps the shared markers.")) return;
     act(SHARE, { on: !on });
   };
   $("auto-off").onchange = () => act("auto-off", { on: $("auto-off").checked });
@@ -327,9 +329,9 @@
     $("find").disabled = false;
   };
   $("new-port").onclick = () => {
-    if (confirm("Give the box a new port? Forward the new one on the router afterwards. Paired devices away from home find it once they have been home again.")) act("new-port", {});
+    if (confirm("Change to a new port? Then forward the new port on the router. A paired device outside gets the new port when it is on the box's network again.")) act("new-port", {});
   };
-  $("recheck").onclick = () => { $("checked").textContent = "Asking the router…"; act("recheck", {}); };
+  $("recheck").onclick = () => { $("checked").textContent = "The box asks the router now."; act("recheck", {}); };
   $("pair").onclick = () => act("pairing", { open: true });
   $("pair-stop").onclick = () => act("pairing", { open: false });
   show();

@@ -97,13 +97,13 @@ def fetch():
     """The newest published release, when it differs from what the box has. Returns a line to print."""
     have = current()
     if have and have.get("source") == "by hand":
-        return "The app on this box was added by hand (%s); left as it is. To take the published one: ./scripts/app.sh remove, then fetch." % have["version"]
+        return "The app on this box was added by hand (%s). The box keeps it. To use the published app, type ./scripts/app.sh remove, then ./scripts/app.sh fetch." % have["version"]
     try:
         with get("https://api.github.com/repos/%s/releases/latest" % REPO) as r:
             release = json.load(r)
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return "No release of the Fieldmap app is published yet (%s). The Devices page says so; ./scripts/app.sh add <file.apk> puts one in by hand." % REPO
+            return "No release of the Fieldmap app is published yet (%s). To add an app file, type ./scripts/app.sh add <file.apk>." % REPO
         raise ValueError("GitHub answered %s." % e.code)
     except (OSError, ValueError) as e:
         raise ValueError("Could not ask GitHub for the newest app: %s" % e)
