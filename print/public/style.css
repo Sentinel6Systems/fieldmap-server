@@ -79,7 +79,7 @@ details.layers > summary h2 { flex: 0 0 auto; }
 #layer-controls { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 8px; }
 .seg-row { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .seg { display: flex; gap: 4px; }
-.seg button { flex: 1; height: 32px; min-height: 32px; padding: 0 6px; font-size: 13px; }
+.seg button { flex: 1 1 auto; height: 32px; min-height: 32px; padding: 0 6px; font-size: 13px; line-height: 1.1; }
 .seg button.on { background: var(--sig); border-color: var(--sig); color: var(--on-sig); }
 label.switch { flex-direction: row; justify-content: space-between; align-items: center; min-height: 34px; font-size: 13px; color: var(--ink); }
 label.switch input { appearance: none; -webkit-appearance: none; width: 40px; height: 22px; min-height: 0; margin: 0; padding: 0; background: var(--edge); position: relative; cursor: pointer; flex: 0 0 40px; }

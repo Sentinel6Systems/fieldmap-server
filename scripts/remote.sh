@@ -248,15 +248,13 @@ for _ in range(200):
     echo
     if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("enabled") is True else 1)' \
         data/remote/settings.json 2>/dev/null; then
-        echo "Remote access is on. To pair another device, open Admin, Devices on this box's network (in the"
-        echo "header of the Maps page); to switch it off, Admin, Remote access."
+        echo "Remote connectivity is enabled. To pair another device, open Admin > Devices on the local network."
+        echo "To disable it: Admin > Remote Access."
     else
-        echo "Remote access is off until someone switches it on: on this box's network open Admin, Remote access"
-        echo "(in the header of the Maps page) and press Switch on. That also opens pairing for ten minutes:"
-        echo "then, in the Fieldmap app on the phone, Menu, Box, Pair this device."
+        echo "Remote connectivity is disabled. To enable it, open Admin > Remote Access on the local network and"
+        echo "click Enable. Pairing mode then starts for 10 minutes: in the Fieldmap app, tap Menu > Server > Pair Device."
     fi
-    echo "Sharing positions and markers between the devices has its own switch, on Admin, Devices; it is off"
-    echo "until someone switches it on."
+    echo "Location sharing is enabled separately under Admin > Devices (disabled by default)."
     ;;
 
 status)
@@ -271,7 +269,7 @@ status)
 
 pair)
     ask pairing -H 'Content-Type: application/json' -d '{"open": true}' >/dev/null
-    echo "Pairing is open for ten minutes. In the Fieldmap app, on this network: Menu, Box, Pair this device."
+    echo "Pairing mode is active for 10 minutes. In the Fieldmap app, on the local network: Menu > Server > Pair Device."
     ;;
 
 devices) server devices ;;
@@ -313,11 +311,11 @@ netbird-apply)
             echo "Error: NetBird did not start." >&2
             exit 1
         fi
-        echo "NetBird is started. The Remote access page says if it is connected."
+        echo "NetBird started. Admin > Remote Access shows the connectivity status."
     else
         netbird_stop
         $SUDO rm -f "$NETBIRD_DIR/status.json" "$NETBIRD_DIR/status.for" "$NETBIRD_DIR/problem"
-        echo "NetBird is not running on this box."
+        echo "NetBird is not running on this server."
     fi
     # The firewall opens, or closes, the gateway's port on NetBird's interface.
     if [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then $SUDO ./scripts/firewall.sh apply >/dev/null || true; fi
@@ -329,8 +327,8 @@ netbird-forget)
     netbird_stop
     $SUDO rm -rf "$NETBIRD_DIR"
     server netbird-forget
-    echo "NetBird is off this box. The setup key is deleted from the box."
-    echo "To remove the box from the NetBird network too, delete fieldmap-box in the NetBird dashboard (Peers)."
+    echo "NetBird is removed from this server, and its setup key is deleted."
+    echo "To remove the server from the NetBird network too, delete fieldmap-box in the NetBird dashboard (Peers)."
     ;;
 
 update-gateway)
@@ -363,8 +361,8 @@ off)
     as_owner mkdir -p data/remote/run && as_owner touch data/remote/run/no-remote   # no Devices tab, no gateway port
     # The firewall stays: with no gateway, nothing from outside gets in or gets an answer.
     $SUDO ./scripts/firewall.sh install
-    echo "Remote access is off: the gateway and the services (sharing between the phones too) are stopped."
-    echo "The router lets go of its port within two hours. The paired phones stay on the list:"
+    echo "Remote access is removed: the gateway and the services (location sharing too) are stopped."
+    echo "The router releases its port within two hours. Paired devices stay on the list:"
     echo "'./scripts/remote.sh setup' lets them in again."
     ;;
 

@@ -1,7 +1,7 @@
 export const PALETTE = [
   ["#d7263d", "Red"], ["#f46036", "Orange"], ["#e6b800", "Yellow"], ["#2a9d3f", "Green"],
   ["#1b998b", "Teal"], ["#1f5fa8", "Blue"], ["#6f2dbd", "Purple"], ["#e83e8c", "Pink"],
-  ["#8b5a2b", "Brown"], ["#111111", "Black"], ["#6c757d", "Grey"], ["#ffffff", "White"],
+  ["#8b5a2b", "Brown"], ["#111111", "Black"], ["#6c757d", "Gray"], ["#ffffff", "White"],
 ];
 
 export function colorName(hex) {

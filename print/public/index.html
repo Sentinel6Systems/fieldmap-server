@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Print a map</title>
+<title>Print Map</title>
 <link rel="stylesheet" href="maplibre-gl.css">
 <link rel="stylesheet" href="fieldmap.css">
 <link rel="stylesheet" href="style.css">
@@ -15,18 +15,18 @@
 
 <aside id="panel">
   <div class="panel-head">
-    <h1>Print a map</h1>
-    <button id="panel-toggle" class="icon" title="Hide or show the panel">▾</button>
+    <h1>Print Map</h1>
+    <button id="panel-toggle" class="icon" title="Show or Hide Panel">▾</button>
   </div>
   <div id="panel-body">
 
   <div id="wmm-notice" class="warning wmm-notice" hidden>
     <div class="wmm-text"></div>
-    <button type="button" class="secondary" hidden>Update magnetic model</button>
+    <button type="button" class="secondary" hidden>Update Magnetic Model</button>
     <div class="wmm-result"></div>
   </div>
 
-  <label>Map style
+  <label>Map Style
     <select id="style"></select>
   </label>
   <label>Scale
@@ -49,21 +49,21 @@
   <div id="atlas-warning" class="warning"></div>
 
   <dl class="info">
-    <dt>Ground area</dt><dd id="info-footprint">–</dd>
+    <dt>Ground Area</dt><dd id="info-footprint">–</dd>
     <dt>Grid</dt><dd id="info-grid">–</dd>
-    <dt>Centre</dt><dd id="info-centre">–</dd>
+    <dt>Center</dt><dd id="info-centre">–</dd>
   </dl>
-  <div class="hint">Drag the blue rectangle to move the sheet. Tap the map outside the rectangle to move the sheet to that point.</div>
+  <div class="hint">Drag the blue rectangle to move the sheet, or tap the map outside it to move the sheet there.</div>
   <div class="row2">
-    <button id="bring" class="secondary">Bring sheet here</button>
-    <button id="fit" class="secondary">Fit map to sheet</button>
+    <button id="bring" class="secondary">Center Sheet Here</button>
+    <button id="fit" class="secondary">Fit Map to Sheet</button>
   </div>
 
   <details id="layers" class="layers">
     <summary><h2>Layers</h2><span id="layers-summary" class="hint"></span></summary>
     <div id="layer-controls"></div>
-    <button id="layers-reset" class="secondary" type="button">Show everything</button>
-    <div class="hint">The switches change the map on the screen and on every printed page.</div>
+    <button id="layers-reset" class="secondary" type="button">Show All Layers</button>
+    <div class="hint">These settings apply to the map on screen and on every printed page.</div>
   </details>
 
   <details id="terrain" class="layers terrain" hidden>
@@ -77,8 +77,8 @@
 
   <section class="features">
     <div class="section-head">
-      <h2>Markers, arrows &amp; shapes</h2>
-      <button id="clear-all" class="secondary danger compact" title="Remove all markers, arrows and shapes">Remove all</button>
+      <h2>Markers &amp; Drawings</h2>
+      <button id="clear-all" class="secondary danger compact" title="Clear all markers, arrows and shapes">Clear All</button>
     </div>
     <label class="inline">Units
       <select id="units">
@@ -86,11 +86,11 @@
         <option value="metric">Metric (m, km, ha)</option>
       </select>
     </label>
-    <div class="hint">Colour for new items</div>
+    <div class="hint">Default Color</div>
     <div id="new-color"></div>
     <div class="row2 add-buttons">
-      <button id="add-marker" class="secondary">Add marker</button>
-      <button id="add-arrow" class="secondary">Add arrow</button>
+      <button id="add-marker" class="secondary">Add Marker</button>
+      <button id="add-arrow" class="secondary">Add Arrow</button>
     </div>
     <div class="row3">
       <button id="add-circle" class="secondary">Circle</button>
@@ -98,7 +98,7 @@
       <button id="add-polygon" class="secondary">Polygon</button>
     </div>
     <div id="mode-hint" class="hint"></div>
-    <button id="finish-shape" class="primary" hidden>Finish shape</button>
+    <button id="finish-shape" class="primary" hidden>Finish Shape</button>
     <h3>Markers</h3>
     <div id="marker-list"></div>
     <h3>Arrows</h3>
@@ -106,30 +106,30 @@
     <h3>Shapes</h3>
     <div id="shape-list"></div>
     <div class="row2 file-buttons">
-      <button id="save-drawings" class="secondary" title="Save the markers, arrows and shapes in the lists above to a file. The file does not keep the map, its layers or the print settings.">Save markers, arrows &amp; shapes</button>
-      <button id="load-drawings" class="secondary" title="Add the markers, arrows and shapes from a saved file to the lists above">Load markers, arrows &amp; shapes</button>
+      <button id="save-drawings" class="secondary" title="Save the markers, arrows and shapes to a GeoJSON file. The map, layers and print settings are not included.">Export Drawings</button>
+      <button id="load-drawings" class="secondary" title="Add the markers, arrows and shapes from a saved file to the map.">Import Drawings</button>
     </div>
     <input id="load-file" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
-    <div id="file-hint" class="hint">These two buttons save and load only the markers, arrows and shapes. They do not save the map, its layers or the print settings. Only this browser keeps your markers, arrows and shapes. Save them to a file to keep a copy or to open them in a different browser. When you load a file, the page adds its items to the items on the map.</div>
+    <div id="file-hint" class="hint">Drawings are saved in this browser only. Export them to keep a copy or to use them in another browser.</div>
     <label class="check">
       <input id="shape-measure" type="checkbox">
-      <span>Show measurements on the map: side lengths, circle radius, area</span>
+      <span>Show Measurements</span>
     </label>
   </section>
 
-  <label class="check">
+  <label class="check" title="Adds a page with the map symbols and the list of markers, arrows and shapes. In an atlas, it follows the index.">
     <input id="list-page" type="checkbox">
-    <span>Add a key page with the map symbols and the list of markers, arrows and shapes. In an atlas, the key page comes after the index. On a single sheet, it is page 2.</span>
+    <span>Include Legend Page</span>
   </label>
-  <label class="check">
+  <label class="check" title="Wider left margin on atlas pages, for a 3-ring binder.">
     <input id="binder" type="checkbox">
-    <span>Make the left margin of atlas pages wider for a 3-ring binder</span>
+    <span>Binder Margin</span>
   </label>
 
   <label>Quality
     <select id="dpi">
-      <option value="200">Standard — 200 dpi</option>
-      <option value="300">Best — 300 dpi</option>
+      <option value="200">Standard (200 dpi)</option>
+      <option value="300">High (300 dpi)</option>
     </select>
   </label>
 

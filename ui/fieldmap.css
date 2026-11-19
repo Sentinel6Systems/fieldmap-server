@@ -93,6 +93,7 @@ body.fm-plate {
   .fm-home span { overflow: hidden; text-overflow: ellipsis; }
   .fm-sub { padding: 0 10px; }
   .fm-sub a, .fm-sub span.fm-off { padding: 0 8px; font-size: 11.5px; letter-spacing: .05em; }
+  .fm-sub span.fm-off small { display: none; }
 }
 
 /* ---------- type ---------- */

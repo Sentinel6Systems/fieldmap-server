@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Map builder</title>
+<title>Map Builder</title>
 <link rel="stylesheet" href="fieldmap.css">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -14,18 +14,18 @@
 
 <header class="top">
   <div>
-    <h1>Map builder</h1>
-    <p class="lead">Choose the maps for the box. The box downloads them one time. Then the maps work without the internet.</p>
+    <h1>Map Builder</h1>
+    <p class="lead">Select the maps to install on the server. The server downloads them once, and then the maps work offline.</p>
   </div>
-  <div class="disk" id="disk" title="Free space on the drive that holds the maps"></div>
+  <div class="disk" id="disk" title="Free storage on the drive that holds the maps"></div>
 </header>
 
 <!-- PIN -->
 <section class="card narrow" id="login" hidden>
-  <h2>Enter the code</h2>
-  <p>The person who set up the box gave the Map builder a code. The code stops other people on the box's network from changing the maps.</p>
+  <h2>Access Code</h2>
+  <p>Enter the Access Code to change the maps on this server.</p>
   <form id="login-form">
-    <label for="pin">Code</label>
+    <label for="pin">Access Code</label>
     <input id="pin" inputmode="numeric" autocomplete="off" autofocus>
     <button class="primary" type="submit">Continue</button>
     <p class="error" id="login-error" role="alert"></p>
@@ -41,14 +41,14 @@
   <ol class="steps" id="progress-steps"></ol>
   <p class="quiet" id="progress-note"></p>
   <div class="row">
-    <button class="danger" id="cancel" title="Stops the build. The maps on the box do not change.">Stop the build</button>
-    <a class="button primary" id="open-map" hidden target="_blank" rel="noopener">Open the map</a>
-    <a class="button" id="open-print" hidden target="_blank" rel="noopener">Print a map</a>
-    <button class="primary" id="repeat" hidden>Repeat this build</button>
-    <button id="again" hidden>Build something else</button>
+    <button class="danger" id="cancel" title="Cancels the build. The current maps do not change.">Cancel Build</button>
+    <a class="button primary" id="open-map" hidden target="_blank" rel="noopener">Open Maps</a>
+    <a class="button" id="open-print" hidden target="_blank" rel="noopener">Print Map</a>
+    <button class="primary" id="repeat" hidden>Rebuild</button>
+    <button id="again" hidden>New Build</button>
   </div>
   <details id="details">
-    <summary>Show the technical details</summary>
+    <summary>Build Log</summary>
     <pre id="log" tabindex="0"></pre>
   </details>
 </section>
@@ -56,104 +56,104 @@
 <div id="chooser">
 
 <section class="card" id="step-regions">
-  <h2><span class="num">1</span> Choose your regions</h2>
-  <p>Click a region on the map. The page adds a small region, such as a state, at once. Click it again to remove it. For a large region, such as a continent, the page asks if you want <b>all of it</b> or only <b>parts of it</b>. You can choose many regions.</p>
+  <h2><span class="num">1</span> Select Regions</h2>
+  <p>Click a region on the map to select it, and click it again to remove it. For a large region, such as a continent, you can select <b>all of it</b> or only <b>some parts</b>.</p>
   <div class="regions">
     <div class="mapbox">
-      <nav class="crumbs" id="crumbs" aria-label="Where you are on the map"></nav>
-      <svg id="map" role="img" aria-label="Map of the regions you can choose"></svg>
+      <nav class="crumbs" id="crumbs" aria-label="Current map area"></nav>
+      <svg id="map" role="img" aria-label="Region selection map"></svg>
       <div class="zoom">
-        <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
-        <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
-        <button id="zoom-fit" title="Show everything in this view" aria-label="Show everything in this view">⤢</button>
+        <button id="zoom-in" title="Zoom In" aria-label="Zoom In">+</button>
+        <button id="zoom-out" title="Zoom Out" aria-label="Zoom Out">−</button>
+        <button id="zoom-fit" title="Zoom to Fit" aria-label="Zoom to Fit">⤢</button>
       </div>
       <div class="labels" id="labels" aria-hidden="true"></div>
       <div class="sheet" id="sheet" hidden role="dialog" aria-live="polite"></div>
-      <div class="placing" id="placing" hidden>Click the map where you want the middle of the very sharp area. <button id="placing-stop">Not now</button></div>
+      <div class="placing" id="placing" hidden>Click the map to set the center of the very high resolution area. <button id="placing-stop">Skip</button></div>
       <div class="hover" id="hover" hidden></div>
       <ul class="legend">
-        <li><i class="sw chosen"></i>chosen</li>
-        <li><i class="sw part"></i>part of it chosen</li>
-        <li><i class="sw free"></i>not chosen</li>
+        <li><i class="sw chosen"></i>Selected</li>
+        <li><i class="sw part"></i>Partially Selected</li>
+        <li><i class="sw free"></i>Not Selected</li>
       </ul>
     </div>
     <div class="side">
-      <label for="search">Find a region by name</label>
-      <input id="search" type="search" placeholder="for example: Kenya, Texas, Bavaria" autocomplete="off">
-      <h3 id="list-title">In this view</h3>
+      <label for="search">Search Regions</label>
+      <input id="search" type="search" placeholder="e.g. Kenya, Texas, Bavaria" autocomplete="off">
+      <h3 id="list-title">Visible Regions</h3>
       <ul class="list" id="list"></ul>
     </div>
   </div>
-  <h3>Your regions</h3>
+  <h3>Selected Regions</h3>
   <ul class="chips" id="chosen"></ul>
 </section>
 
 <section class="card" id="step-layers">
-  <h2><span class="num">2</span> Choose what to build</h2>
-  <p>Each line is one layer of the map. Press <b>?</b> to read about a layer.</p>
+  <h2><span class="num">2</span> Select Layers</h2>
+  <p>Select the map layers to build. Press <b>?</b> for details about a layer.</p>
   <ul class="layers" id="layers"></ul>
 
   <details class="more">
-    <summary>More options</summary>
+    <summary>Advanced Options</summary>
     <div class="options">
       <div class="option wide">
-        <label for="opt-terrain">Terrain detail <button class="help" data-help="h-terrain" aria-label="Explain">?</button></label>
+        <label for="opt-terrain">Terrain Resolution <button class="help" data-help="h-terrain" aria-label="Explain">?</button></label>
         <select id="opt-terrain">
-          <option value="30m">Standard, for all regions</option>
-          <option value="10m">Sharper, United States only</option>
-          <option value="1m">Sharper, plus one very sharp area (United States)</option>
+          <option value="30m">Standard (All Regions)</option>
+          <option value="10m">High (United States)</option>
+          <option value="1m">High + One Very High Area (United States)</option>
         </select>
-        <p class="helptext" id="h-terrain" hidden>Satellites measured the standard terrain, about every 30 metres. It includes the tops of trees and buildings. In the United States, a sharper survey of the bare ground has a height about every 10 metres. Lasers on aircraft measured most of it. It shows small features such as stream banks and road cuts. But the terrain layers then need about 10 times the space and time. Outside the United States, this choice changes nothing. The third choice adds the sharpest survey, every 1 metre, for one small area that you place on the map. The hillshade then shows single ditches, tracks and building platforms. This area is small on purpose, 100 × 100 km at the most. A full state at this detail is too much for the box. The largest size downloads about 50 to 150 GB.</p>
+        <p class="helptext" id="h-terrain" hidden>Standard uses satellite terrain data with a point about every 30 meters, including trees and buildings. High uses a US bare-earth survey with a point about every 10 meters and shows small features such as stream banks and road cuts, but the terrain layers need about 10 times the storage and build time; outside the United States it has no effect. High + One Very High Area also adds 1-meter data for one area that you select on the map, up to 100 × 100 km (a download of about 50 to 150 GB at the largest size).</p>
       </div>
       <div class="option wide" id="detail-box" hidden>
-        <label for="opt-detail-km">The very sharp area <button class="help" data-help="h-detail" aria-label="Explain">?</button></label>
+        <label for="opt-detail-km">Very High Resolution Area <button class="help" data-help="h-detail" aria-label="Explain">?</button></label>
         <div class="row tight">
           <select id="opt-detail-km"></select>
-          <button id="detail-place">Place it on the map</button>
+          <button id="detail-place">Select on Map</button>
         </div>
         <p class="quiet" id="detail-where"></p>
-        <p class="helptext" id="h-detail" hidden>Choose the size of the area. Press <b>Place it on the map</b>. Then click the map where you want the middle of the area. Zoom in first. Town names then help you find the spot. The page shows the area as an orange square. The area must be in a United States region that you chose. Only the hillshade gets this detail, and only where a 1 metre survey exists. In other parts, the area keeps the sharper 10 metre terrain.</p>
+        <p class="helptext" id="h-detail" hidden>Select a size, press <b>Select on Map</b>, then click the map at the center of the area (zoom in first to see town names). The area must be inside a selected US region. Only the hillshade uses the 1-meter data, where it is available; the rest of the area uses 10-meter data.</p>
       </div>
       <div class="option">
-        <label for="opt-units">Heights on the contour lines in <button class="help" data-help="h-units" aria-label="Explain">?</button></label>
+        <label for="opt-units">Contour Units <button class="help" data-help="h-units" aria-label="Explain">?</button></label>
         <select id="opt-units">
-          <option value="ft">feet</option>
-          <option value="m">metres</option>
+          <option value="ft">Feet</option>
+          <option value="m">Meters</option>
         </select>
-        <p class="helptext" id="h-units" hidden>Feet gives a line every 40 feet. Metres gives a line every 20 metres.</p>
+        <p class="helptext" id="h-units" hidden>Feet: a contour line every 40 feet. Meters: a contour line every 20 meters.</p>
       </div>
       <div class="option">
-        <label for="opt-language">Place names in <button class="help" data-help="h-language" aria-label="Explain">?</button></label>
+        <label for="opt-language">Label Language <button class="help" data-help="h-language" aria-label="Explain">?</button></label>
         <select id="opt-language"></select>
-        <p class="helptext" id="h-language" hidden>The map can hold each place name in all its languages. One language makes the base map smaller. A name that does not exist in that language shows in the local language.</p>
+        <p class="helptext" id="h-language" hidden>The language of place names on the map. One language makes the base map smaller; names not available in that language show in the local language.</p>
       </div>
       <div class="option check">
-        <label><input type="checkbox" id="opt-fresh"> Get the newest map data <button class="help" data-help="h-fresh" aria-label="Explain">?</button></label>
+        <label><input type="checkbox" id="opt-fresh"> Download Latest Map Data <button class="help" data-help="h-fresh" aria-label="Explain">?</button></label>
         <p class="quiet" id="fresh-age"></p>
-        <p class="helptext" id="h-fresh" hidden>The roads, buildings and place names come from OpenStreetMap. People update OpenStreetMap every day. The box keeps the data that it downloaded and uses it again for a month. After that, the box downloads it again automatically. Tick this option to download the data again now, for example after a road changed. This adds the time of the download. Step 3 shows the size.</p>
+        <p class="helptext" id="h-fresh" hidden>Roads, buildings, and place names come from OpenStreetMap, which is updated every day. The server reuses its downloaded data for a month, then downloads it again automatically. Enable this option to download it now, for example after a road changed; step 3 shows the download size.</p>
       </div>
       <div class="option check">
-        <label><input type="checkbox" id="opt-world"> Also show the rest of the world when zoomed out <button class="help" data-help="h-world" aria-label="Explain">?</button></label>
-        <p class="helptext" id="h-world" hidden>Without this option, the map is blank outside your regions. With it, you see the countries, large cities and main roads of the world when you zoom out. The first time, this is a large job. It downloads about 96 GB, needs 160 GB of free space while it works, and takes several hours. After that, the box keeps it and uses it again.</p>
+        <label><input type="checkbox" id="opt-world"> Include World Overview <button class="help" data-help="h-world" aria-label="Explain">?</button></label>
+        <p class="helptext" id="h-world" hidden>Shows the countries, major cities, and main roads of the world when you zoom out; without it, the map is blank outside the selected regions. The first build downloads about 96 GB, needs 160 GB of free storage, and takes several hours. The server keeps it for later builds.</p>
       </div>
     </div>
   </details>
 </section>
 
 <section class="card" id="step-space">
-  <h2><span class="num">3</span> Check the space and time</h2>
-  <div id="space-empty" class="quiet">Choose a region and at least one layer. This step then shows the space that the build needs.</div>
+  <h2><span class="num">3</span> Storage and Build Time</h2>
+  <div id="space-empty" class="quiet">Select a region and at least one layer to see the storage the build needs.</div>
   <div id="space" hidden>
     <div class="meter" id="meter" role="img"><div class="need" id="meter-need"></div></div>
     <p class="verdict" id="verdict"></p>
     <p id="time"></p>
     <details>
-      <summary>Show what the space is for</summary>
+      <summary>Storage Breakdown</summary>
       <table id="space-table">
-        <thead><tr><th>Part</th><th title="Stays on the drive after the build">Stays</th><th title="Needed only while the box builds this part">Working room</th><th>Time</th></tr></thead>
+        <thead><tr><th>Item</th><th title="Storage used after the build">Final Size</th><th title="Storage needed only while the server builds this item">Temporary Space</th><th>Time</th></tr></thead>
         <tbody></tbody>
       </table>
-      <p class="quiet">The box builds the parts one after the other. So only one part needs its working room at a time. These numbers are safe estimates from the size of the regions, before the downloads. Flat land needs less than mountains.</p>
+      <p class="quiet">The server builds one item at a time, so only one item needs temporary space at once. These are safe estimates based on region size, before the downloads; flat land needs less than mountains.</p>
       <p class="quiet" id="space-have"></p>
     </details>
   </div>
@@ -162,19 +162,19 @@
 <section class="card" id="step-build">
   <h2><span class="num">4</span> Build</h2>
   <div class="notice">
-    <h3>Read this before you start</h3>
+    <h3>Before You Start</h3>
     <ul>
-      <li><b>A new layer replaces the old layer.</b> The build does not add to it. If the box has Germany and you build France, the box then has only France. To keep both, choose both.</li>
-      <li><b>Layers that you do not tick do not change.</b></li>
-      <li><b>The old maps work until the build is complete.</b> The box puts all the new maps in place together at the end. If the build stops before the end, nothing changes.</li>
-      <li><b>A build can take hours or days.</b> It needs the internet all the time. You can close this page. The build continues.</li>
+      <li><b>A new layer replaces the installed layer.</b> It does not add to it: if the server has Germany and you build France, the server then has only France. To keep both, select both.</li>
+      <li><b>Layers that you do not select do not change.</b></li>
+      <li><b>The current maps work until the build is complete.</b> The server installs all the new maps together at the end. If the build stops early, nothing changes.</li>
+      <li><b>A build can take hours or days.</b> It needs an internet connection the whole time. You can close this page; the build continues.</li>
     </ul>
   </div>
   <p class="error" id="build-error" role="alert"></p>
   <div class="row">
-    <button class="primary big" id="start" disabled>Start the build</button>
-    <button class="big" id="repeat-last" hidden>Repeat the last build</button>
-    <button class="big" id="clear" title="Removes all regions. Sets the layers and options back to their first values.">Clear my choices</button>
+    <button class="primary big" id="start" disabled>Start Build</button>
+    <button class="big" id="repeat-last" hidden>Repeat Last Build</button>
+    <button class="big" id="clear" title="Removes all regions and resets the layers and options to their defaults.">Reset</button>
   </div>
   <p class="quiet" id="start-why"></p>
   <p class="quiet" id="repeat-what" hidden></p>
@@ -184,11 +184,11 @@
 </main>
 
 <dialog id="confirm">
-  <h2>Start this build?</h2>
+  <h2>Confirm Build</h2>
   <div id="confirm-body"></div>
   <div class="row end">
-    <button id="confirm-no">Go back</button>
-    <button class="primary" id="confirm-yes">Yes, start the build</button>
+    <button id="confirm-no">Cancel</button>
+    <button class="primary" id="confirm-yes">Start Build</button>
   </div>
 </dialog>
 

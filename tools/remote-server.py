@@ -400,11 +400,11 @@ def enrol(name, public_key_pem):
             if d.get("key") == key_id:
                 return d
         if len(devices) >= MAX_DEVICES:
-            raise PermissionError("The box cannot pair more devices. Remove a device on the Devices page first.")
+            raise PermissionError("The server cannot pair more devices. Remove a device on the Devices page first.")
         now = time.time()
         recent_enrols[:] = [t for t in recent_enrols if now - t < 3600]
         if len(recent_enrols) >= ENROLS_PER_HOUR:
-            raise PermissionError("Too many devices were paired in the last hour. Try again later.")
+            raise PermissionError("Too many pairing requests in the last hour. Try again later.")
         recent_enrols.append(now)
         device_id = secrets.token_hex(4)
         # The certificate is for the phone's key; the signing request is only a carrier.
@@ -595,9 +595,9 @@ def set_way(new):
     router's port, NetBird's client is stopped and the firewall closes its interface. NetBird
     needs a setup key first (the box keeps it when the way changes back)."""
     if new not in WAYS:
-        raise ValueError("There is no such way.")
+        raise ValueError("Unknown remote connectivity method.")
     if new == "netbird" and not netbird_key():
-        raise ValueError("Type the setup key first.")
+        raise ValueError("Enter a setup key first.")
     was = way()
     save_settings(way=new)
     if enabled() and was != new:
@@ -771,22 +771,20 @@ def endpoints():
 
 
 PROBLEMS = {
-    "router-closed": "The router does not open a port for the box. Switch on UPnP or NAT-PMP in the settings of "
-                     "the router. Or forward the port yourself (Port forwarding, below).",
-    "router-refused": "The router answered, but it did not open a port for the box. This occurs when a second "
-                      "router or a modem is in front of the router. It also occurs when the UPnP settings of the "
-                      "router do not include the box. Forward the port yourself (below). This works if no second "
-                      "router is in front.",
-    "double-nat": "There are two routers in a line. The router in front, often from the internet provider, must "
-                  "forward the port of the box. Or set that router to bridge mode.",
-    "shared-address": "The internet provider shares one address with many customers. Starlink and most mobile "
-                      "home internet do this. Devices outside cannot connect to the box over IPv4.",
-    "off": "The box does not ask the router to open a port (REMOTE_DIRECT=off).",
+    "router-closed": "The router did not open a port. Enable UPnP or NAT-PMP on the router, or use Manual Port "
+                     "Forwarding below.",
+    "router-refused": "The router refused the port mapping. A second router or modem may be in front of it, or its "
+                      "UPnP settings exclude this server. Use Manual Port Forwarding below.",
+    "double-nat": "Two routers are in line (double NAT). Forward the port on the provider's router too, or set it "
+                  "to bridge mode.",
+    "shared-address": "The internet provider shares one public IP address among many customers (CGNAT, e.g. "
+                      "Starlink or cellular). Port forwarding cannot work over IPv4: use NetBird VPN.",
+    "off": "Port mapping is disabled (REMOTE_DIRECT=off).",
     "manual": "",
-    "direct-off": "The port on the router is off, because devices come in through NetBird. The box closed the port.",
-    "switched-off": "Remote access is off. Devices outside cannot connect to the box. You cannot pair a device.",
-    "switched-off-idle": "Remote access switched off automatically. No device came in from outside for %d days. "
-                         "Devices outside cannot connect to the box until you switch on remote access again." % IDLE_DAYS,
+    "direct-off": "Method in use: NetBird VPN. Port forwarding is disabled.",
+    "switched-off": "Remote connectivity is disabled. Devices can connect on the local network only.",
+    "switched-off-idle": "Remote connectivity was disabled automatically after %d days without a remote connection. "
+                         "Enable it to allow remote devices again." % IDLE_DAYS,
 }
 
 
@@ -804,24 +802,24 @@ def report():
         return {"status": "off", "text": PROBLEMS["direct-off"], "checked": 0}
     if state.get("problem") in ("direct-off", "switched-off"):
         # The way changed back a moment ago: the router is being asked now.
-        return {"status": "unknown", "text": "The box asks the router now.", "checked": 0}
+        return {"status": "unknown", "text": "Retrying port mapping…", "checked": 0}
     if newest_seen and time.time() - newest_seen < 7 * 86400:
-        status, text = "confirmed", "A device connected to the box from outside through the port on the router on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
+        status, text = "confirmed", "Last remote connection via port forwarding: %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
     elif forwarding()["manual"] and not forwarding()["address"]:
-        status, text = "blocked", "Forward the port on the router. Then type the internet address of the router below."
+        status, text = "blocked", "Forward the port on the router, then enter the public IP address below."
     elif forwarding()["manual"]:
-        status, text = "expected", "You forward the port yourself. No device came in from outside recently, so this is not confirmed yet."
+        status, text = "expected", "Manual port forwarding is set. Not yet confirmed by a remote connection."
     elif manual or state.get("ipv4", {}).get("ok"):
-        status, text = "expected", "The router lets devices in. No device came in from outside recently, so this is not confirmed yet."
+        status, text = "expected", "The router opened the port. Not yet confirmed by a remote connection."
     elif v6:
-        status, text = "maybe", PROBLEMS.get(state.get("problem"), "") + " The box also has an IPv6 address. Devices that also have IPv6 can possibly connect with it."
+        status, text = "maybe", PROBLEMS.get(state.get("problem"), "") + " The server has a public IPv6 address, so devices with IPv6 may still connect."
     elif state:
-        status, text = "blocked", PROBLEMS.get(state.get("problem"), "Devices outside cannot connect to the box.")
+        status, text = "blocked", PROBLEMS.get(state.get("problem"), "Remote devices cannot connect to the server.")
         said = state.get("ipv4", {}).get("error")
         if said and state.get("problem") == "router-refused":
-            text += " The router said: %s." % said
+            text += " Router response: %s." % said
     else:
-        status, text = "unknown", "The box did not ask the router yet."
+        status, text = "unknown", "No port mapping attempt yet."
     return {"status": status, "text": text.strip(), "checked": state.get("checked", 0)}
 
 
@@ -1009,13 +1007,11 @@ def netbird_block():
 
 
 NETBIRD_PROBLEMS = {
-    "key": "The NetBird network did not accept the setup key. The key is not correct, or it expired, or it was used "
-           "too many times. Make a new setup key in the NetBird dashboard. Then type it below and press Connect.",
-    "server": "The box cannot connect to the management server %s. Check that the box has an internet connection. "
-              "If you use your own server, check the address.",
-    "download": "The box cannot download NetBird. Check that the box has an internet connection. The box tries again "
-                "when you press Connect.",
-    "start": "NetBird did not start on the box. On the box, type ./scripts/remote.sh setup and try again.",
+    "key": "Setup key rejected: it is invalid, expired, or used up. Create a new setup key in the NetBird dashboard, "
+           "enter it below and click Connect.",
+    "server": "Cannot reach the NetBird management URL %s. Check the server's internet connection and the URL.",
+    "download": "Cannot download NetBird. Check the server's internet connection, then click Connect again.",
+    "start": "NetBird failed to start. Run ./scripts/remote.sh setup on the server and try again.",
 }
 
 
@@ -1026,12 +1022,11 @@ def netbird_report():
     management = nb.get("management") or NETBIRD_CLOUD
     out = {"keySet": bool(netbird_key()), "wanted": way() == "netbird", "management": management, "address": "", "seen": 0}
     if not out["keySet"]:
-        return {**out, "wanted": False, "status": "none", "text": "NetBird is not set up."}
+        return {**out, "wanted": False, "status": "none", "text": "NetBird VPN is not configured."}
     if not out["wanted"]:
-        return {**out, "status": "off", "text": "NetBird is off, because devices come in through the port on the router. "
-                                                "The box keeps the setup key."}
+        return {**out, "status": "off", "text": "Method in use: Port Forwarding. NetBird VPN is disabled; the setup key is kept."}
     if not enabled():
-        return {**out, "status": "off", "text": "Remote access is off. NetBird starts when you switch on remote access."}
+        return {**out, "status": "off", "text": "Remote connectivity is disabled. NetBird VPN starts when you enable it."}
     state = netbird_state()
     out["address"] = netbird_address()
     out["seen"] = newest("netbird")
@@ -1042,33 +1037,33 @@ def netbird_report():
     except OSError:
         problem, said = [], ""
     if state and state["connected"]:
-        text = "The box is connected to the NetBird network. The address of the box in the NetBird network is %s." % state["address"]
+        text = "Connected to NetBird. Server address in the NetBird network: %s." % state["address"]
         try:
             with open(NETBIRD_CHECK) as f:
                 out["keyChecked"] = f.read().strip() != "unchecked"
         except OSError:
             out["keyChecked"] = True
         if not out["keyChecked"]:
-            text += (" The box was a member of the NetBird network before, so NetBird did not check the new setup key."
-                     " In the NetBird dashboard, make sure that the key shows as valid. A device that you pair needs a valid key.")
+            text += (" The new setup key was not verified because the server was already a NetBird peer."
+                     " Make sure it shows as valid in the NetBird dashboard; newly paired devices need a valid key.")
         if out["seen"] and time.time() - out["seen"] < 7 * 86400:
-            text += " A device connected to the box through NetBird on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(out["seen"]))
+            text += " Last remote connection via NetBird: %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(out["seen"]))
         else:
-            text += " No device came in through NetBird recently."
+            text += " No recent remote connection."
         return {**out, "status": "connected", "text": text}
     if problem and problem[0] in NETBIRD_PROBLEMS:
         text = NETBIRD_PROBLEMS[problem[0]]
         text = text % management if "%s" in text else text
         if problem[0] == "start" and said:
             # Docker's own words, for the person who helps: short, and only from the box itself.
-            text += " The box said: %s" % re.sub(r"[\x00-\x1f]", " ", said)[:200]
+            text += " Details: %s" % re.sub(r"[\x00-\x1f]", " ", said)[:200]
         return {**out, "status": "blocked", "text": text}
     try:
         asked = os.path.getmtime(NETBIRD_APPLY)
     except OSError:
         asked = 0
     if state is None and time.time() - asked < NETBIRD_START:
-        return {**out, "status": "starting", "text": "The box starts NetBird. The first start downloads NetBird. This can take some minutes."}
+        return {**out, "status": "starting", "text": "Starting NetBird. The first start downloads NetBird and can take a few minutes."}
     if state is None:
         return {**out, "status": "blocked", "text": NETBIRD_PROBLEMS["start"]}
     return {**out, "status": "blocked", "text": NETBIRD_PROBLEMS["server"] % management}
@@ -1164,7 +1159,7 @@ class Handler(BaseHTTPRequestHandler):
             file = os.path.join(SHARED, name)
         ext = os.path.splitext(name)[1]
         if "/" in name or ".." in name or ext not in TYPES or not os.path.isfile(file):
-            return self.send(404, {"error": "This address is not on the box."})
+            return self.send(404, {"error": "Not found."})
         with open(file, "rb") as f:
             data = f.read()
         self.send_response(200)
@@ -1178,7 +1173,7 @@ class Handler(BaseHTTPRequestHandler):
         """The app, for a device on the local network to install. Sent in pieces: it is tens of MB."""
         info = app()
         if not info:
-            return self.send(404, {"error": "The box has no app yet."})
+            return self.send(404, {"error": "No app is installed on the server."})
         with open(APK, "rb") as f:
             self.send_response(200)
             self.send_header("Content-Type", "application/vnd.android.package-archive")
@@ -1216,14 +1211,14 @@ class Handler(BaseHTTPRequestHandler):
             # certificate it checked; like /check it comes with no X-Real-IP. The certificate
             # must be a paired device's: this answer holds the setup key.
             if self.headers.get("X-Real-IP") is not None:
-                return self.send(404, {"error": "This address is not on the box."})
+                return self.send(404, {"error": "Not found."})
             if not enabled():
                 return self.send(401)
             if listed(self.headers.get("X-Fieldmap-Fingerprint")) is None:
                 return self.send(403)
             return self.send(200, {"netbird": netbird_block()})
         if not lan(self.headers):
-            return self.send(403, {"error": "This page is only on the box's network."})
+            return self.send(403, {"error": "This page is available on the local network only."})
         if self.path in ("/", "/index.html", "/remote.html") or self.path.lstrip("/") in ("fieldmap.css", "nav.js"):
             return self.page(self.path)
         if self.path == "/fieldmap.apk":
@@ -1235,19 +1230,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, {"devices": [{"id": d["id"], "name": d["name"], "added": d.get("added", ""),
                                          "seen": pending.get(d["id"], d.get("seen", 0))} for d in load_devices()]})
         else:
-            self.send(404, {"error": "This address is not on the box."})
+            self.send(404, {"error": "Not found."})
 
     def do_POST(self):
         body = self.body()
         if self.path not in ("/enrol", "/pairing", "/remove", "/enabled", "/auto-off", "/recheck", "/forwarding", "/find-address", "/new-port",
                              "/way", "/netbird"):
-            return self.send(404, {"error": "This address is not on the box."})
+            return self.send(404, {"error": "Not found."})
         if not lan(self.headers):
-            return self.send(403, {"error": "You can pair a device only on the box's network."})
+            return self.send(403, {"error": "Devices can be paired on the local network only."})
         if not ready():
-            return self.send(503, {"error": "Remote access is not installed on this box."})
+            return self.send(503, {"error": "Remote access is not installed on this server."})
         if not self.code_ok(body):
-            return self.send(403, {"error": "The code is not correct.", "pin": True})
+            return self.send(403, {"error": "Incorrect access code.", "pin": True})
         if self.path == "/enabled":
             set_enabled(bool(body.get("on")))
             return self.send(200, self.info())
@@ -1260,13 +1255,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/forwarding":
             address = body.get("address")
             if address is not None and str(address).strip() and not clean_address(address):
-                return self.send(400, {"error": "This is not an internet address. Type a number such as 203.0.113.30, or a name."})
+                return self.send(400, {"error": "Invalid public IP address. Enter an IP address such as 203.0.113.30, or a host name."})
             set_forwarding(bool(body.get("manual")), address)
             return self.send(200, self.info())
         if self.path == "/find-address":
             found = portmap.stun_public_ip()
             if not found:
-                return self.send(502, {"error": "The internet did not answer. Read the address on the status page of the router."})
+                return self.send(502, {"error": "Detection failed. Check the router's status page for its public IP address."})
             return self.send(200, {"address": found})
         if self.path == "/new-port":
             new_port()
@@ -1286,11 +1281,11 @@ class Handler(BaseHTTPRequestHandler):
             management = clean_management(body.get("management")) if "management" in body else (load_netbird().get("management") or NETBIRD_CLOUD)
             key = clean_key(body.get("setupKey")) if str(body.get("setupKey") or "").strip() else ""
             if on and not management:
-                return self.send(400, {"error": "This is not an address of a management server. For NetBird's cloud, type %s." % NETBIRD_CLOUD})
+                return self.send(400, {"error": "Invalid management URL. For NetBird's cloud, use %s." % NETBIRD_CLOUD})
             if str(body.get("setupKey") or "").strip() and not key:
-                return self.send(400, {"error": "This is not a setup key. Copy the setup key from the NetBird dashboard."})
+                return self.send(400, {"error": "Invalid setup key. Copy it from the NetBird dashboard."})
             if on and not key and not netbird_key():
-                return self.send(400, {"error": "Type the setup key first."})
+                return self.send(400, {"error": "Enter a setup key first."})
             if on:
                 set_netbird(management or None, key)
             else:
@@ -1298,7 +1293,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, self.info())
         if self.path == "/pairing":
             if body.get("open") and not enabled():
-                return self.send(409, {"error": "Remote access is off. Switch on remote access first."})
+                return self.send(409, {"error": "Remote connectivity is disabled. Enable it first."})
             if body.get("open"):
                 open_pairing()
             else:
@@ -1308,10 +1303,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200 if remove(str(body.get("id", ""))) else 404, {"devices": len(load_devices())})
         # /enrol
         if not enabled():
-            return self.send(403, {"error": "Remote access is off on the box. Switch it on on the box: Admin, Remote access.", "closed": True})
+            return self.send(403, {"error": "Remote connectivity is disabled on the server. Enable it under Admin > Remote Access.", "closed": True})
         if pairing_left() <= 0:
-            return self.send(403, {"error": "Pairing is closed. On the Devices page of the box, press Pair a device. "
-                                            "Then try again in 10 minutes or less.", "closed": True})
+            return self.send(403, {"error": "Pairing mode is not active. Click Start Pairing on the server's Devices page, then try "
+                                            "again within 10 minutes.", "closed": True})
         try:
             device = enrol(body.get("name"), str(body.get("publicKey", "")))
         except PermissionError as e:
@@ -1446,10 +1441,10 @@ def main():
     elif args.command == "devices":
         devices = load_devices()
         if not devices:
-            print("No device is paired yet.")
+            print("No paired devices.")
         for d in devices:
             seen = time.strftime("%Y-%m-%d", time.localtime(d["seen"])) if d.get("seen") else "never"
-            print(f"{d['id']}  added {d['added']}  from outside: {seen}  {d['name']}")
+            print(f"{d['id']}  paired {d['added']}  last remote connection: {seen}  {d['name']}")
     elif args.command == "remove":
         if remove(args.id):
             print(f"Removed {args.id}: it is locked out from now on.")
@@ -1472,12 +1467,12 @@ def main():
         r = live.get("reach") or report()
         n = live.get("netbird") or netbird_report()
         print("Certificates:   " + ("made" if ready() else "not made yet (run scripts/remote.sh setup)"))
-        print("Remote access:  " + ("on" if enabled() else "off"))
-        print("Way in:         " + ("NetBird" if (live.get("way") or way()) == "netbird" else "the port on the router") + " (one at a time)")
-        print("Router's port:  " + r["text"])
-        print("NetBird:        " + n["text"])
-        print("Addresses:      " + (", ".join("%s:%s" % (e["host"], e["port"]) for e in endpoints()) or "none yet"))
-        print(f"Devices paired: {len(load_devices())}")
+        print("Remote Connectivity:        " + ("Enabled" if enabled() else "Disabled"))
+        print("Remote Connectivity Method: " + ("NetBird VPN" if (live.get("way") or way()) == "netbird" else "Port Forwarding"))
+        print("Port Forwarding:            " + r["text"])
+        print("NetBird VPN:                " + n["text"])
+        print("Public Endpoints:           " + (", ".join("%s:%s" % (e["host"], e["port"]) for e in endpoints()) or "none"))
+        print(f"Paired Devices:             {len(load_devices())}")
         print("Code:           " + ("asked for (REMOTE_PIN)" if setting("REMOTE_PIN") else "none"))
 
 

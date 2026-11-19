@@ -190,7 +190,7 @@ def clean_time(value, what="time"):
 def clean_position(body):
     """A position with exactly the fields the box knows, or ValueError in plain words."""
     if not isinstance(body, dict):
-        raise ValueError("A position is a JSON object.")
+        raise ValueError("A location must be a JSON object.")
     name = body.get("name")
     if not isinstance(name, str) or bad_text(name) or not 1 <= len(name.strip()) <= 24:
         raise ValueError("The name must have 1 to 24 characters.")
@@ -269,10 +269,10 @@ def post_position(position, caller, outside):
         uid = position["uid"]
         if uid not in positions:
             if len(positions) >= MAX_PEOPLE:
-                raise Refused(507, "The box cannot take more devices that share. Try again later.")
+                raise Refused(507, "The server cannot accept more sharing devices. Try again later.")
             mine = sum(1 for p in positions.values() if p["caller"] == caller)
             if mine >= (MAX_PER_PHONE if outside else MAX_PER_ADDRESS):
-                raise Refused(507, "This device sends too many positions.")
+                raise Refused(507, "This device sends too many location updates.")
         positions[uid] = {"position": position, "at": clock(), "outside": outside, "caller": caller}
 
 
@@ -344,7 +344,7 @@ def written():
         markers.update(before[2])
         removed[:] = before[3]
         print("The shared markers could not be written: %s" % e, flush=True)
-        raise Refused(507, "The box cannot save the change. The disk of the box can be full.")
+        raise Refused(507, "The server could not save the change. Its disk may be full.")
 
 
 def put_marker(feature):
@@ -353,9 +353,9 @@ def put_marker(feature):
     marker_id, size = feature["id"], len(json.dumps(feature))
     with lock:
         if marker_id not in markers and len(markers) >= MAX_MARKERS:
-            raise Refused(507, "The box cannot keep more shared markers. Remove some markers first.")
+            raise Refused(507, "The server cannot store more shared markers. Remove some markers first.")
         if sum(m["bytes"] for i, m in markers.items() if i != marker_id) + size > MAX_MARKER_BYTES:
-            raise Refused(507, "The box cannot keep more shared markers. Remove some markers first.")
+            raise Refused(507, "The server cannot store more shared markers. Remove some markers first.")
         with written():
             rev += 1
             markers[marker_id] = {"rev": rev, "feature": feature, "bytes": size}
@@ -538,7 +538,7 @@ class Handler(BaseHTTPRequestHandler):
             raise
         except Exception:                           # a fault of the box's: say so, and stay up
             traceback.print_exc()
-            self.send(500, {"error": "An error occurred on the box."})
+            self.send(500, {"error": "An error occurred on the server."})
 
     do_GET = do_POST = do_PUT = do_DELETE = answer
 
@@ -547,13 +547,13 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         who = caller(self.headers)
         if who is None:
-            raise Refused(403, "Only devices on the box's network and paired devices can use sharing.")
+            raise Refused(403, "Location sharing is available to local and paired devices only.")
         if not allow("all", who, RATE_ALL):
-            raise Refused(429, "Too many requests. Try again in some seconds.")
+            raise Refused(429, "Too many requests. Try again in a few seconds.")
         marker = MARKER_PATH.fullmatch(url.path)
         methods = ("PUT", "DELETE") if marker else ROUTES.get(url.path)
         if methods is None or len(self.path) > 200:
-            raise Refused(404, "This address is not on the box.")
+            raise Refused(404, "Not found.")
         if self.command not in methods:
             raise Refused(405, "This method is not permitted for this address.")
         if url.query and url.path != "/state":
@@ -567,7 +567,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/state":
             since = re.fullmatch(r"since=([0-9]{1,18})", url.query)
             if url.query and not since:
-                raise Refused(400, "since must be a rev the box gave out.")
+                raise Refused(400, "since must be a rev the server gave out.")
             return 200, state(int(since.group(1)) if since else None)
         if url.path == "/position":
             post_position(clean_position(self.body(POSITION_BYTES)), who, who[0] == "outside")
@@ -586,7 +586,7 @@ class Handler(BaseHTTPRequestHandler):
     def admin(self, who):
         """The Devices page: the switch, and who is sharing right now. Never from outside."""
         if who[0] == "outside":
-            raise Refused(403, "This is only on the box's network.")
+            raise Refused(403, "Available on the local network only.")
         if self.command == "POST":
             body = self.body(ADMIN_BYTES)
             if not isinstance(body, dict) or not isinstance(body.get("on"), bool):
@@ -595,9 +595,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise Refused(429, "Too many requests. Try again in 1 minute.")
             pin = setting("REMOTE_PIN")
             if pin and not secrets.compare_digest(str(body.get("pin", "")).strip().encode(), pin.encode()):
-                return 403, {"error": "The code is not correct.", "pin": True}
+                return 403, {"error": "Incorrect access code.", "pin": True}
             set_enabled(body["on"])
-            print("Sharing switched " + ("on." if on else "off."), flush=True)
+            print("Location sharing " + ("enabled." if on else "disabled."), flush=True)
         with lock:
             return 200, {"service": "fieldmap-share", "version": VERSION, "enabled": on, "pin": bool(setting("REMOTE_PIN")),
                          "interval": INTERVAL, "stale": STALE, "people": people(), "markers": len(markers)}
@@ -655,7 +655,7 @@ def serve(host, port):
         threading.Thread(target=by_port.serve_forever, daemon=True).start()
         print(f"...and on http://{host}:{port}/", flush=True)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    print("Sharing is " + ("on." if on else "off: switch it on on the Devices page.") + f" Shared markers: {len(markers)}.", flush=True)
+    print("Location sharing is " + ("enabled." if on else "disabled (enable it on the Devices page).") + f" Shared markers: {len(markers)}.", flush=True)
     try:
         by_socket.serve_forever()
     except KeyboardInterrupt:
@@ -684,7 +684,7 @@ def main():
                 count = len(json.load(f)["markers"])
         except (OSError, ValueError, KeyError, TypeError):
             count = 0
-        print("Sharing:        " + ("on" if load_settings() else "off (the switch is on the Devices page)") + f"; shared markers: {count}")
+        print("Location Sharing:           " + ("Enabled" if load_settings() else "Disabled (Admin > Devices)") + f"; shared markers: {count}")
 
 
 if __name__ == "__main__":

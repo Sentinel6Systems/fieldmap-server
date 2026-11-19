@@ -97,7 +97,7 @@ def fetch():
     """The newest published release, when it differs from what the box has. Returns a line to print."""
     have = current()
     if have and have.get("source") == "by hand":
-        return "The app on this box was added by hand (%s). The box keeps it. To use the published app, type ./scripts/app.sh remove, then ./scripts/app.sh fetch." % have["version"]
+        return "The app on this server was added manually (%s). The server keeps it. To use the published app, type ./scripts/app.sh remove, then ./scripts/app.sh fetch." % have["version"]
     try:
         with get("https://api.github.com/repos/%s/releases/latest" % REPO) as r:
             release = json.load(r)
@@ -115,7 +115,7 @@ def fetch():
     want = want[7:] if want.startswith("sha256:") else ""
     version = release.get("tag_name") or asset["name"]
     if have and want and have.get("sha256") == want:
-        return "The app on this box is the newest: %s." % have["version"]
+        return "The app on this server is up to date: %s." % have["version"]
     if not 0 < int(asset.get("size") or 0) <= MAX_BYTES:
         raise ValueError("The app file in the release is not a size an app can be.")
     os.makedirs(APP, exist_ok=True)
@@ -140,7 +140,7 @@ def fetch():
                 os.unlink(tmp.name)
             except OSError:
                 pass
-    return "The app on this box is now %s (%d MB)." % (info["version"], round(info["size"] / 1e6))
+    return "The app on this server is now %s (%d MB)." % (info["version"], round(info["size"] / 1e6))
 
 
 def main():
@@ -152,14 +152,14 @@ def main():
             check_apk(args[1])
             version = args[2] if len(args) == 3 else re.sub(r"\.apk$", "", os.path.basename(args[1]))
             info = put(args[1], version, "by hand")
-            print("The app on this box is now %s (%d MB, added by hand)." % (info["version"], round(info["size"] / 1e6)))
+            print("The app on this server is now %s (%d MB, added manually)." % (info["version"], round(info["size"] / 1e6)))
         elif args == ["remove"]:
             for path in (APK, INFO):
                 try:
                     os.unlink(path)
                 except FileNotFoundError:
                     pass
-            print("The box offers no app now.")
+            print("The server offers no app now.")
         elif args == ["status"]:
             info = current()
             print("App:            " + ("%s, %d MB, %s, SHA-256 %s" % (info["version"], round(info["size"] / 1e6),

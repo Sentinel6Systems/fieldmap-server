@@ -73,34 +73,33 @@
   document.body.dataset.mode = location.pathname.endsWith("/remote.html") ? "access" : "devices";
   if (document.body.dataset.mode === "access") {
     document.getElementById("fm-bar").dataset.page = "access";
-    document.title = "Remote access";
+    document.title = "Remote Access";
   }
 </script>
 <script src="nav.js"></script>
 
 <header class="top" data-for="devices">
   <h1>Devices</h1>
-  <p class="lead">Get the Fieldmap app for Android phones and tablets. Pair a device. Let the devices share their
-    positions and markers.</p>
+  <p class="lead">Install the Fieldmap Android app, pair devices for remote use, and manage location sharing.</p>
 </header>
 <header class="top" data-for="access">
-  <h1>Remote access</h1>
-  <p class="lead">With remote access, the paired devices can use the maps of the box from outside the box's network.
-    Only paired devices can come in. They get the maps, and the shared positions and markers when sharing is on.</p>
+  <h1>Remote Access</h1>
+  <p class="lead">Let paired devices use the server's maps from the internet. Devices that are not paired cannot
+    connect.</p>
 </header>
 
 <main>
   <p class="error" id="error" role="alert" hidden></p>
 
   <section class="card" id="code-card" hidden>
-    <h2>The box's code</h2>
-    <p class="quiet">The box has a code. Type the code to make changes on this page.</p>
-    <div class="row"><input id="code" type="password" autocomplete="off" aria-label="The box's code"></div>
+    <h2>Access Code</h2>
+    <p class="quiet">Enter the access code to make changes on this page.</p>
+    <div class="row"><input id="code" type="password" autocomplete="off" aria-label="Access Code"></div>
   </section>
 
   <section class="card" data-for="access">
     <div class="switch">
-      <h2>On or off</h2>
+      <h2>Remote Connectivity</h2>
       <span class="state" id="state"></span>
       <button id="toggle" type="button"></button>
     </div>
@@ -109,36 +108,37 @@
   </section>
 
   <section class="card" id="way-card" data-for="access">
-    <h2>Way in</h2>
-    <p class="quiet">Devices outside come in one way at a time. When you choose a way, the box closes the other way.</p>
+    <h2>Remote Connectivity Method</h2>
+    <p class="quiet">Only one method can be active. Selecting one disables the other.</p>
     <label class="way" id="way-direct-row"><input type="radio" name="way" id="way-direct" value="direct">
-      <span><b>Port on the router</b><span class="quiet">The router opens a port for the box, or you forward a port. Use
-        this with most home internet.</span></span></label>
+      <span><b>Port Forwarding</b><span class="quiet">The router forwards a port to the server (UPnP or manual). Works
+        with most home internet.</span></span></label>
     <label class="way" id="way-netbird-row"><input type="radio" name="way" id="way-netbird" value="netbird">
-      <span><b>NetBird</b><span class="quiet">Use this with Starlink, with mobile internet, or with a router that you
-        cannot change. You need a NetBird account.</span></span></label>
+      <span><b>NetBird VPN</b><span class="quiet">For Starlink, cellular internet, or a router you cannot configure.
+        Requires a NetBird account.</span></span></label>
     <p class="quiet" id="way-note"></p>
   </section>
 
   <section class="card" id="outside-card" data-for="access">
-    <h2>From outside</h2>
+    <h2>Connectivity Status</h2>
     <p class="reach" id="reach"></p>
     <p class="mono" id="addresses"></p>
-    <div class="row"><button id="recheck" type="button">Ask the router again</button><span class="quiet" id="checked"></span></div>
+    <div class="row"><button id="recheck" type="button">Retry Port Mapping</button><span class="quiet" id="checked"></span></div>
   </section>
 
   <section class="card" id="forward-card" data-for="access">
-    <h2>Port forwarding</h2>
-    <label class="check"><input type="checkbox" id="manual"> <span>I forward the port on the router myself. Use this when the router does not
-      open the port with UPnP.</span></label>
+    <h2>Port Forwarding</h2>
+    <label class="check"><input type="checkbox" id="manual"> <span><b>Manual Port Forwarding</b><br><span class="quiet">Use when the
+      router does not support UPnP.</span></span></label>
     <div id="manual-box" hidden>
       <p class="forward" id="forward-line"></p>
-      <div class="row"><button id="new-port" type="button">New random port</button><span class="quiet" id="port-note"></span></div>
-      <p class="quiet">Type the internet address of the router. The status page of the router shows it. You can also type a
-        name that points to it. The devices get the address when you pair them, and each time they are on the box's network.</p>
+      <div class="row"><button id="new-port" type="button">Generate New Port</button><span class="quiet" id="port-note"></span></div>
+      <label class="field" for="address"><span>Public IP Address</span>
+        <small>The router's public IP address or a host name that points to it. Devices receive it when they pair and
+          whenever they are on the local network.</small></label>
       <div class="row">
-        <input id="address" type="text" autocomplete="off" spellcheck="false" placeholder="For example 203.0.113.30" aria-label="The internet address of the router">
-        <button id="find" type="button" title="The box asks one public server on the internet for the address">Find it</button>
+        <input id="address" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 203.0.113.30" aria-label="Public IP Address">
+        <button id="find" type="button" title="Asks one public server on the internet for this address">Detect</button>
         <button id="save-address" type="button" class="primary">Save</button>
       </div>
     </div>
@@ -146,82 +146,76 @@
   </section>
 
   <section class="card" id="netbird-card" data-for="access">
-    <h2>NetBird</h2>
-    <p class="quiet">NetBird is a service that connects the devices to the box through the internet. The router does not open
-      a port for it.</p>
-    <div class="row" id="nb-change-row"><button id="nb-change" type="button">Change the setup key</button></div>
+    <h2>NetBird VPN</h2>
+    <p class="quiet">NetBird connects devices to the server over the internet without opening a port on the router.</p>
+    <div class="row" id="nb-change-row"><button id="nb-change" type="button">Change Setup Key</button></div>
     <div id="nb-form">
       <ol>
-        <li>Make a NetBird account and a setup key. The User Guide tells you how: <a href="/guide/#netbird">Come in
-          through NetBird</a>.</li>
-        <li>Type the setup key in the field below.</li>
-        <li>Press <b>Connect</b>.</li>
+        <li>Create a NetBird account and a reusable setup key (see the <a href="/guide/#netbird">User Guide</a>).</li>
+        <li>Enter the setup key below.</li>
+        <li>Click <b>Connect</b>.</li>
       </ol>
-      <label class="field"><span>Setup key</span>
+      <label class="field"><span>Setup Key</span>
         <small id="nb-key-note"></small>
         <input id="nb-key" type="password" autocomplete="off" spellcheck="false" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"></label>
-      <label class="field"><span>Management server</span>
-        <small>This is the address of NetBird's own service. Change it only if you have your own NetBird server.</small>
+      <label class="field"><span>Management URL</span>
+        <small>NetBird's cloud service. Change only for a self-hosted NetBird server.</small>
         <input id="nb-management" type="text" autocomplete="off" spellcheck="false"></label>
       <div class="row"><button id="nb-connect" type="button" class="primary">Connect</button></div>
     </div>
-    <p class="quiet">The box keeps the setup key and does not show it again. The box gives the setup key only to paired
-      devices.</p>
+    <p class="quiet">The setup key is stored on the server and not shown again. Only paired devices receive it.</p>
   </section>
 
   <section class="card" id="app-card" data-for="devices">
-    <h2>Get the Fieldmap app</h2>
+    <h2>Android App</h2>
     <div id="app-there" hidden>
-      <p>Fieldmap <b id="app-version"></b> for Android phones and tablets (<span id="app-size"></span>). You get it from the
-        box. You do not need an app store or an account.</p>
+      <p>Fieldmap <b id="app-version"></b> for Android phones and tablets (<span id="app-size"></span>), served by this
+        server. No app store or account needed.</p>
       <ol>
-        <li>Connect the device to the box's network.</li>
+        <li>Connect the device to the server's local network.</li>
         <li>On the device, open this address in the browser: <b class="mono-strong" id="app-address"></b></li>
-        <li>Press <b>Download the app</b>.</li>
-        <li>Open the file that you downloaded.</li>
-        <li>If Android asks for permission to install apps from the browser, press <b>Settings</b>. Switch on
-          <b>Allow from this source</b>. Go back.</li>
-        <li>Press <b>Install</b>. If Google Play Protect shows a message, press <b>Install anyway</b>.</li>
+        <li>Tap <b>Download App</b>, then open the downloaded file.</li>
+        <li>If Android asks, allow installs from the browser (<b>Settings</b> &gt; <b>Allow from this source</b>), then go back.</li>
+        <li>Tap <b>Install</b>. If Google Play Protect warns, tap <b>Install anyway</b>.</li>
       </ol>
-      <div class="row"><a class="button primary" id="app-download" href="fieldmap.apk" download>Download the app</a></div>
-      <p class="quiet">To update the app, do the same steps again. The app keeps its map areas and markers.</p>
+      <div class="row"><a class="button primary" id="app-download" href="fieldmap.apk" download>Download App</a></div>
+      <p class="quiet">To update, install the new version over the old one. Offline areas and markers are kept.</p>
       <p class="mono" id="app-sum"></p>
     </div>
-    <p class="quiet" id="app-none" hidden>The box has no app yet. To add the newest app, type
-      <span class="mono">./scripts/app.sh fetch</span> on the box. To add an app file, type
+    <p class="quiet" id="app-none" hidden>No app is installed on the server. To download the latest release, run
+      <span class="mono">./scripts/app.sh fetch</span> on the server. To add an app file, run
       <span class="mono">./scripts/app.sh add &lt;file.apk&gt;</span>.</p>
   </section>
 
   <section class="card" id="pair-card" data-for="devices">
-    <h2>Pair a device</h2>
-    <p class="quiet" id="pair-off" hidden>To pair a device, switch on remote access first: <a href="remote.html">Admin, Remote access</a>.</p>
+    <h2>Device Pairing</h2>
+    <p class="quiet" id="pair-off" hidden>Enable remote connectivity first: <a href="remote.html">Remote Access</a>.</p>
     <ol>
-      <li>Connect the device to the box's network.</li>
-      <li>Open the Fieldmap app on the device.</li>
-      <li>Press <b>Pair a device</b> on this page.</li>
-      <li>In the app, press <b>Menu</b>, <b>Box</b>, <b>Pair this device</b>. Do this in 10 minutes or less.</li>
+      <li>Connect the device to the server's local network and open the Fieldmap app.</li>
+      <li>Click <b>Start Pairing</b> below.</li>
+      <li>Within 10 minutes, in the app tap <b>Menu</b> &gt; <b>Server</b> &gt; <b>Pair Device</b>.</li>
     </ol>
     <div class="row">
-      <button id="pair" type="button" class="primary">Pair a device</button>
-      <button id="pair-stop" type="button" hidden>Stop</button>
+      <button id="pair" type="button" class="primary">Start Pairing</button>
+      <button id="pair-stop" type="button" hidden>Stop Pairing</button>
       <span class="left" id="pair-left"></span>
     </div>
   </section>
 
   <section class="card" data-for="devices">
-    <h2>Paired devices</h2>
+    <h2>Paired Devices</h2>
     <div id="phones"></div>
   </section>
 
   <section class="card" id="share-card" data-for="devices" hidden>
     <div class="switch">
-      <h2>Sharing positions and markers</h2>
+      <h2>Location Sharing</h2>
       <span class="state" id="share-state"></span>
       <button id="share-toggle" type="button"></button>
     </div>
     <p class="quiet" id="share-text"></p>
     <div id="share-now" hidden>
-      <h3>Devices that share now</h3>
+      <h3>Active Devices</h3>
       <div id="people"></div>
       <p class="quiet" id="share-markers"></p>
     </div>
@@ -236,10 +230,10 @@
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, pin: $("code").value }) })
     .then(async (r) => {
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw Object.assign(new Error(data.error || "The box did not answer (" + r.status + ")."), data);
+      if (!r.ok) throw Object.assign(new Error(data.error || "The server did not respond (HTTP " + r.status + ")."), data);
       return data;
     });
-  const when = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "not yet";
+  const when = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "Never";
   const ago = (seconds) => seconds < 60 ? `${seconds} seconds ago` : `${Math.floor(seconds / 60)} minutes ago`;
   const SHARE = "../mapshare/admin";    // the sharing service, beside this page on the box's web server
   let busy = false;
@@ -247,7 +241,7 @@
   let managementEdited = false;
   let lastWay = "direct", lastKeySet = false;
   let wantNetbird = false;       // NetBird chosen on the page, but no setup key yet: the form shows
-  let changeKey = false;         // "Change the setup key" pressed
+  let changeKey = false;         // "Change Setup Key" pressed
 
   function error(e) {
     $("error").hidden = !e;
@@ -281,16 +275,16 @@
       $("app-version").textContent = app.version;
       $("app-size").textContent = `${Math.max(1, Math.round(app.size / 1e6))} MB`;
       $("app-address").textContent = location.origin + location.pathname;
-      $("app-sum").textContent = `SHA-256 ${app.sha256}` + (app.source === "by hand" ? ` · added by hand on ${app.added}` : "");
+      $("app-sum").textContent = `SHA-256 ${app.sha256}` + (app.source === "by hand" ? ` · added manually on ${app.added}` : "");
     }
     const on = info.enabled;
-    $("state").textContent = on ? "On" : "Off";
+    $("state").textContent = on ? "Enabled" : "Disabled";
     $("state").className = "state" + (on ? " on" : "");
-    $("toggle").textContent = on ? "Switch off" : "Switch on";
+    $("toggle").textContent = on ? "Disable" : "Enable";
     $("toggle").className = on ? "danger" : "primary";
     $("switch-text").textContent = on
-      ? "Remote access is on. Paired devices can use the box from outside. Press Switch off to keep the box on its own network. The box then closes the port on the router. The paired devices stay on the list."
-      : "Remote access is off. Devices outside the box's network cannot use the box. You cannot pair a device. Press Switch on to start remote access. Pairing then opens for 10 minutes.";
+      ? "Remote connectivity is enabled. Paired devices can connect from the internet."
+      : "Remote connectivity is disabled. Devices can connect on the local network only. Enabling it also starts pairing for 10 minutes.";
     for (const id of ["outside-card", "forward-card", "way-card", "netbird-card"]) $(id).setAttribute("aria-disabled", String(!on));
     $("pair-off").hidden = on;
     const fw = info.forwarding;
@@ -304,29 +298,29 @@
     $("way-direct-row").className = "way" + (shown === "direct" ? " chosen" : "");
     $("way-netbird-row").className = "way" + (shown === "netbird" ? " chosen" : "");
     $("way-note").textContent = wantNetbird
-      ? "Type the setup key below and press Connect. Until then, devices come in through the port on the router."
-      : viaNetbird ? "Devices outside come in through NetBird. The port on the router is closed."
-      : "Devices outside come in through the port on the router. NetBird is off.";
+      ? "Enter the setup key below and click Connect. Until then, Port Forwarding stays in use."
+      : viaNetbird ? "Method in use: NetBird VPN. Port forwarding is disabled."
+      : "Method in use: Port Forwarding. NetBird VPN is disabled.";
     $("forward-card").hidden = shown !== "direct";
     $("netbird-card").hidden = shown !== "netbird";
     $("manual").checked = fw.manual;
     $("manual-box").hidden = !fw.manual;
     $("forward-line").textContent = fw.changingTo
-      ? `The box changes to port ${fw.changingTo}.`
-      : `On your router, forward TCP port ${fw.port} to ${fw.boxAddress || "this box"}.`;
+      ? `Changing to port ${fw.changingTo}…`
+      : `Forward TCP port ${fw.port} to ${fw.boxAddress || "this server"} on your router.`;
     $("new-port").disabled = !!fw.changingTo;
-    $("port-note").textContent = fw.changingTo ? "This takes some seconds." : "";
+    $("port-note").textContent = fw.changingTo ? "This takes a few seconds." : "";
     if (document.activeElement !== $("address") && !addressEdited) $("address").value = fw.address;
     $("auto-text").textContent = fw.manual ? "" :
-      `The box asks the router to open the port. If the router does not do this, tick the option above and forward port ${fw.port} yourself.`;
+      `The server asks the router to open the port via UPnP or NAT-PMP. If that fails, enable Manual Port Forwarding and forward port ${fw.port}.`;
     $("auto-off").checked = info.autoOff.on;
-    $("auto-off-text").textContent = `Switch off remote access when no device comes in from outside for ${info.autoOff.days} days.` +
-      (info.autoOff.at ? ` This will occur on ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })} if no device comes in before that date.` : "");
+    $("auto-off-text").textContent = `Auto-disable after ${info.autoOff.days} days without a remote connection` +
+      (info.autoOff.at ? ` (next: ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })})` : "");
     $("reach").textContent = viaNetbird ? nb.text : info.reach.text;
     $("reach").className = "reach " + (viaNetbird ? nb.status : info.reach.status);
     $("addresses").textContent = on && info.endpoints.length
-      ? "The devices use these addresses: " + info.endpoints.map((e) => e.host + ":" + e.port).join(", ") : "";
-    $("checked").textContent = info.reach.checked && !viaNetbird ? "The box asked the router on " + when(info.reach.checked) + "." : "";
+      ? "Public endpoints: " + info.endpoints.map((e) => e.host + ":" + e.port).join(", ") : "";
+    $("checked").textContent = info.reach.checked && !viaNetbird ? "Last port mapping attempt: " + when(info.reach.checked) : "";
     $("recheck").hidden = viaNetbird;
     $("recheck").disabled = !on || !info.direct;
     // NetBird: the form while it is not connected, or when the owner changes the key.
@@ -335,25 +329,25 @@
     $("nb-form").hidden = !form;
     $("nb-change-row").hidden = form;
     $("nb-key-note").textContent = nb.keySet
-      ? "The box has a setup key. Leave this field empty to use it. Type a setup key only to change it."
-      : "Copy the setup key from the NetBird dashboard.";
+      ? "A setup key is stored. Leave empty to keep it."
+      : "Paste the setup key from the NetBird dashboard.";
     if (document.activeElement !== $("nb-management") && !managementEdited) $("nb-management").value = nb.management;
     const left = info.pairing.seconds;
     $("pair").hidden = left > 0;
     $("pair").disabled = !on;
     $("pair-stop").hidden = left <= 0;
-    $("pair-left").textContent = left > 0 ? `Pairing is open. Time left: ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "";
+    $("pair-left").textContent = left > 0 ? `Pairing mode active: ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} remaining` : "";
     $("phones").replaceChildren(...(list.devices.length ? list.devices.map((d) => {
       const row = document.createElement("div");
       row.className = "phone";
       row.innerHTML = "<div><b></b><small></small></div><button type=\"button\" class=\"danger\">Remove</button>";
       row.querySelector("b").textContent = d.name;
-      row.querySelector("small").textContent = `Paired on ${d.added} · last time from outside: ${when(d.seen)}`;
+      row.querySelector("small").textContent = `Paired: ${d.added} · Last remote connection: ${when(d.seen)}`;
       row.querySelector("button").onclick = () => {
-        if (confirm(`Remove ${d.name}? The device cannot use the box from outside until you pair it again.`)) act("remove", { id: d.id });
+        if (confirm(`Remove ${d.name}? It can no longer connect remotely until it is paired again.`)) act("remove", { id: d.id });
       };
       return row;
-    }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No device is paired yet." })]));
+    }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No paired devices." })]));
     showSharing();
   }
 
@@ -367,55 +361,54 @@
     if ($("share-card").hidden) return;
     if (share.pin) $("code-card").hidden = false;
     const on = share.enabled;
-    $("share-state").textContent = on ? "On" : "Off";
+    $("share-state").textContent = on ? "Enabled" : "Disabled";
     $("share-state").className = "state" + (on ? " on" : "");
-    $("share-toggle").textContent = on ? "Switch off" : "Switch on";
+    $("share-toggle").textContent = on ? "Disable" : "Enable";
     $("share-toggle").className = on ? "danger" : "primary";
     $("share-text").textContent = on
-      ? "Sharing is on. Each device that has sharing on in the app shows its position to the other devices. The devices also see the markers that a person shared. This includes all devices on the box's network, and paired devices outside. The box does not keep the positions. A device that stops sharing goes off the map of the others in 2 minutes. The box keeps the shared markers. Press Switch off to stop sharing for all devices."
-      : "Sharing is off. The box does not take or give positions and markers. Press Switch on to start sharing. Then each person switches on sharing in the app.";
+      ? "Location sharing is enabled for local and paired remote devices. Locations are not stored; a device that stops sharing disappears after 2 minutes. Shared markers are kept on the server."
+      : "Location sharing is disabled. After enabling it, each user starts sharing in the app (Menu > Location Sharing).";
     $("share-now").hidden = !on;
     $("people").replaceChildren(...(share.people.length ? share.people.map((p) => {
       const row = document.createElement("div");
       row.className = "phone";
       row.innerHTML = "<div><b></b><small></small></div>";
       row.querySelector("b").textContent = p.name;
-      row.querySelector("small").textContent = `${ago(p.age)} · ${p.outside ? "outside" : "on the box's network"}`;
+      row.querySelector("small").textContent = `${ago(p.age)} · ${p.outside ? "Remote" : "Local"}`;
       return row;
-    }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No device shares its position now." })]));
-    $("share-markers").textContent = share.markers === 1 ? "The box keeps 1 shared marker."
-      : `The box keeps ${share.markers} shared markers.`;
+    }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No active devices." })]));
+    $("share-markers").textContent = `Shared markers: ${share.markers}`;
   }
 
   $("toggle").onclick = () => {
-    const on = $("state").textContent === "On";
-    if (on && !confirm("Switch off remote access? The paired devices can then use the box only on the box's network.")) return;
+    const on = $("state").textContent === "Enabled";
+    if (on && !confirm("Disable remote connectivity? Paired devices can then connect on the local network only.")) return;
     act("enabled", { on: !on });
   };
   $("share-toggle").onclick = () => {
-    const on = $("share-state").textContent === "On";
-    if (on && !confirm("Switch off sharing? The devices then do not see each other. The box keeps the shared markers.")) return;
+    const on = $("share-state").textContent === "Enabled";
+    if (on && !confirm("Disable location sharing for all devices? Shared markers are kept.")) return;
     act(SHARE, { on: !on });
   };
   $("auto-off").onchange = () => act("auto-off", { on: $("auto-off").checked });
   $("manual").onchange = () => act("forwarding", { manual: $("manual").checked });
   // The way in. A device that is outside now cannot follow a change: it must be on the box's network one time.
-  const MOVE = " A paired device that is outside now cannot connect until it is on the box's network one time.";
+  const MOVE = " Remote devices must connect on the local network once to pick up the change.";
   $("way-direct").onchange = () => {
     wantNetbird = false;
     if (lastWay !== "netbird") return show();
-    if (!confirm("Use the port on the router? The box stops NetBird and opens the port on the router." + MOVE)) return show();
+    if (!confirm("Switch to Port Forwarding? NetBird VPN will be disabled." + MOVE)) return show();
     act("way", { way: "direct" });
   };
   $("way-netbird").onchange = () => {
     if (!lastKeySet) { wantNetbird = true; return show(); }
-    if (!confirm("Use NetBird? The box closes the port on the router and starts NetBird." + MOVE)) return show();
+    if (!confirm("Switch to NetBird VPN? Port forwarding will be disabled." + MOVE)) return show();
     act("way", { way: "netbird" });
   };
   $("nb-change").onclick = () => { changeKey = true; show(); };
   $("nb-management").oninput = () => { managementEdited = true; };
   $("nb-connect").onclick = async () => {
-    if (lastWay !== "netbird" && !confirm("Connect to NetBird? The box closes the port on the router." + MOVE)) return;
+    if (lastWay !== "netbird" && !confirm("Connect to NetBird VPN? Port forwarding will be disabled." + MOVE)) return;
     const body = { on: true, management: $("nb-management").value };
     if ($("nb-key").value.trim()) body.setupKey = $("nb-key").value;
     await act("netbird", body);
@@ -429,9 +422,9 @@
     $("find").disabled = false;
   };
   $("new-port").onclick = () => {
-    if (confirm("Change to a new port? Then forward the new port on the router. A paired device outside gets the new port when it is on the box's network again.")) act("new-port", {});
+    if (confirm("Generate a new port? Update the forwarding rule on your router afterward. Remote devices pick up the new port the next time they are on the local network.")) act("new-port", {});
   };
-  $("recheck").onclick = () => { $("checked").textContent = "The box asks the router now."; act("recheck", {}); };
+  $("recheck").onclick = () => { $("checked").textContent = "Retrying port mapping…"; act("recheck", {}); };
   $("pair").onclick = () => act("pairing", { open: true });
   $("pair-stop").onclick = () => act("pairing", { open: false });
   show();

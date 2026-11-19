@@ -45,7 +45,7 @@ PY
     echo "Wrote an empty data/$name.mbtiles (run $builder for the real layers)."
 }
 
-placeholder basemap "build-region.sh, or the map builder page," pbf
+placeholder basemap "build-region.sh, or the Map Builder page," pbf
 placeholder contours build-contours.sh pbf contours_major contours_minor
 placeholder hillshade build-hillshade.sh raster webp ""
 placeholder extras build-extras.sh pbf power pipeline barrier tower landmark building_large exit runway

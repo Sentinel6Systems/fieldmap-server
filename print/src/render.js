@@ -73,7 +73,7 @@ export async function renderSheet(opts) {
     unit: "in", format: [lay.page.w, lay.page.h],
     orientation: lay.page.w > lay.page.h ? "landscape" : "portrait", compress: true,
   });
-  pdf.setProperties({ title: opts.title || "Map", creator: "Emergency Box print tool" });
+  pdf.setProperties({ title: opts.title || "Map", creator: "Fieldmap print tool" });
   let first = true;
   const addPage = () => { if (!first) pdf.addPage([lay.page.w, lay.page.h], lay.page.w > lay.page.h ? "landscape" : "portrait"); first = false; };
   const check = () => { if (opts.signal && opts.signal.aborted) throw new Error("Cancelled"); };
@@ -114,7 +114,7 @@ export async function renderSheet(opts) {
   if (wantList) {
     // Made last, once every map page has shown its symbols; in an atlas it then moves to
     // its place after the index.
-    status("Adding the key page…");
+    status("Adding the legend page…");
     const before = pdf.getNumberOfPages();
     addPage();
     await addListPage(pdf, lay, opts, gridInfo, atlas, total);
@@ -331,15 +331,15 @@ async function renderCoverPage(pdf, lay, opts, atlas, g, feats, total, status) {
   const dms = (v, pos, neg) => `${Math.abs(v).toFixed(4)}° ${v >= 0 ? pos : neg}`;
   const facts = [
     ["Scale", `1:${opts.scale.toLocaleString("en-US")} (nominal across the atlas)`],
-    ["Pages", `${atlas.cells.length} map pages A1–${last}, plus cover, index${total - atlas.cells.length > 2 ? " and key" : ""} · ${total} pages`],
+    ["Pages", `${atlas.cells.length} map pages A1–${last}, plus cover, index${total - atlas.cells.length > 2 ? " and legend" : ""} · ${total} pages`],
     ["Sheet", `${lay.page.w} × ${lay.page.h} in, each map ${cellKm.w.toFixed(1)} × ${cellKm.h.toFixed(1)} km, 1 cm overlap`],
     ["Coverage", `${widthKm.toFixed(1)} × ${heightKm.toFixed(1)} km · about ${Math.round(widthKm * heightKm).toLocaleString("en-US")} km² (${Math.round(widthKm * heightKm * 0.3861).toLocaleString("en-US")} sq mi)`],
     ["Bounds", `${dms(nth, "N", "S")} to ${dms(sth, "N", "S")} · ${dms(w, "E", "W")} to ${dms(e, "E", "W")}`],
-    ["Centre", `${g.centerMGRS} · ${opts.center.lat.toFixed(5)}, ${opts.center.lng.toFixed(5)}`],
+    ["Center", `${g.centerMGRS} · ${opts.center.lat.toFixed(5)}, ${opts.center.lng.toFixed(5)}`],
     ["Grid", `MGRS / USNG, UTM zone ${g.zone}${g.band}, 100 km square${squares.size > 1 ? "s" : ""} ${[...squares].join(", ")} · 1 km lines · WGS 84`],
-    ["Declination", `${fmtAngle(decl.declination)} at centre (${decl.asOf.getUTCFullYear()}), moving ${Math.abs(decl.annualChange).toFixed(2)}°/yr ${decl.annualChange < 0 ? "west" : "east"} · G-M angle ${fmtAngle(decl.gmAngle)} · ${decl.model}`],
+    ["Declination", `${fmtAngle(decl.declination)} at center (${decl.asOf.getUTCFullYear()}), moving ${Math.abs(decl.annualChange).toFixed(2)}°/yr ${decl.annualChange < 0 ? "west" : "east"} · G-M angle ${fmtAngle(decl.gmAngle)} · ${decl.model}`],
     ["Contours", `${cfg.contourMinor || 40} ${cfg.contourUnit || "ft"}, index ${cfg.contourMajor || 200} ${cfg.contourUnit || "ft"} · terrain ${cfg.terrainSource || "Copernicus GLO-30"}`],
-    ["Map data", `${opts.credits}${cfg.dataDate ? ` · ${cfg.dataDate}` : ""} · printed ${new Date().toISOString().slice(0, 10)} from the Emergency Box, offline`],
+    ["Map data", `${opts.credits}${cfg.dataDate ? ` · ${cfg.dataDate}` : ""} · printed ${new Date().toISOString().slice(0, 10)} from the Fieldmap server, offline`],
   ];
   if (opts.terrain) facts.push(["Terrain", `${opts.terrain.inputs} · ${opts.terrain.data}`]);
 
@@ -415,7 +415,7 @@ async function renderCoverPage(pdf, lay, opts, atlas, g, feats, total, status) {
     ctx.fillStyle = "#bbb"; ctx.fillRect(px(M), howY, px(colW), px(0.012));
     ctx.font = `bold ${px(0.085)}px ${FAM}`; ctx.fillStyle = "#555"; ctx.fillText("USING THIS ATLAS", px(M), howY + px(0.28));
     ctx.font = `${px(0.095)}px ${FAM}`; ctx.fillStyle = INK;
-    wrapText(ctx, `The index page shows every map page in position. Pages are named by row (A at the north) and column (1 at the west); red tabs on each page name its neighbours. Blue numbers on the map edges are the MGRS 1 km grid: read right, then up. Compass bearings must be corrected by the G-M angle printed on every page. Scale is ${(2.54 / (opts.scale / 100000)).toFixed(1)} cm per km (${(63360 / opts.scale).toFixed(2)} in per mile).`, px(M), howY + px(0.46), px(colW), px(0.14));
+    wrapText(ctx, `The index page shows every map page in position. Pages are named by row (A at the north) and column (1 at the west); red tabs on each page name its neighbors. Blue numbers on the map edges are the MGRS 1 km grid: read right, then up. Compass bearings must be corrected by the G-M angle printed on every page. Scale is ${(2.54 / (opts.scale / 100000)).toFixed(1)} cm per km (${(63360 / opts.scale).toFixed(2)} in per mile).`, px(M), howY + px(0.46), px(colW), px(0.14));
   }
   ctx.fillStyle = "#1b1f24"; ctx.fillRect(px(M), px(lay.page.h) - px(0.35), px(colW), px(0.03));
 
@@ -1033,7 +1033,7 @@ async function addListPage(pdf, lay, opts, g, atlas, total) {
   const where = (lng, lat) => { if (atlas.n < 2) return ""; const c = cellFor(atlas.cells, lng, lat); return c ? `   Page ${c.name}` : "   (off the atlas)"; };
 
   pdf.setFont("helvetica", "bold"); pdf.setFontSize(14); pdf.setTextColor(0);
-  pdf.text(`${opts.title || `${g.gzd} ${g.square}`} — key${atlas.n > 1 ? `   (page 3 of ${total})` : ""}`, M, y + 0.1); y += 0.3;
+  pdf.text(`${opts.title || `${g.gzd} ${g.square}`} — Legend${atlas.n > 1 ? `   (page 3 of ${total})` : ""}`, M, y + 0.1); y += 0.3;
   line(`Sheet 1:${opts.scale.toLocaleString("en-US")} · MGRS ${g.gzd} ${g.square} · WGS 84 · Declination ${fmtAngle(decl.declination)} (${decl.asOf.getUTCFullYear()}) · G-M ${fmtAngle(decl.gmAngle)} · Printed ${new Date().toISOString().slice(0, 10)}`, 8, "normal", [80, 80, 80]);
   y += 0.1;
   const swatch = (hex, yy) => { const [r, gg, b] = hexRgb(hex); pdf.setFillColor(r, gg, b); pdf.setDrawColor(0); pdf.setLineWidth(0.005); pdf.rect(M, yy - 0.11, 0.14, 0.14, "FD"); };
@@ -1097,7 +1097,7 @@ async function addListPage(pdf, lay, opts, g, atlas, total) {
       pdf.setFont("helvetica", "normal"); pdf.setFontSize(9);
       // jsPDF's standard fonts have no superscript 2: write square units out.
       const summary = shapeSummary(s, opts.units).replace("km²", "sq km");
-      pdf.text(`${SHAPE_NAMES[s.type]}   ${summary}   ${s.type === "circle" ? "Centre" : "Middle"} MGRS ${toMGRS(c.lat, c.lng, 5)}${where(c.lng, c.lat)}`, M + 1.6, y);
+      pdf.text(`${SHAPE_NAMES[s.type]}   ${summary}   ${s.type === "circle" ? "Center" : "Middle"} MGRS ${toMGRS(c.lat, c.lng, 5)}${where(c.lng, c.lat)}`, M + 1.6, y);
       y += 0.24;
     }
   }
@@ -1250,7 +1250,7 @@ function drawBlock(ctx, lay, dpi, opts, g, extra = {}) {
   y += px(0.14);
   ctx.fillStyle = "#333";
   const lines = [
-    `Centre ${g.centerMGRS}  ·  ${opts.center.lat.toFixed(5)}, ${opts.center.lng.toFixed(5)}${extra.pageNote ? "  ·  " + extra.pageNote : ""}`,
+    `Center ${g.centerMGRS}  ·  ${opts.center.lat.toFixed(5)}, ${opts.center.lng.toFixed(5)}${extra.pageNote ? "  ·  " + extra.pageNote : ""}`,
     `Contours ${cfg.contourMinor || 40} ${unit}, index ${cfg.contourMajor || 200} ${unit}  ·  Terrain ${cfg.terrainSource || "Copernicus GLO-30"}`,
     `${opts.credits}${cfg.dataDate ? ` · ${cfg.dataDate}` : ""}  ·  Printed ${new Date().toISOString().slice(0, 10)}`,
   ];
@@ -1460,5 +1460,5 @@ function drawDeclination(ctx, x, y, dpi, d, blockHin) {
   ctx.font = `${px(0.065)}px ${FAM}`; ctx.fillStyle = "#555";
   // An expired model is carried forward at its last rate of change; say so in place of "angles drawn true" to keep the line short.
   const valid = d.expired ? ` expired ${d.validThrough} · extrapolated` : `${d.validThrough ? ` valid to ${d.validThrough}` : ""} · angles drawn true`;
-  ctx.fillText(`${d.model}${valid} · local anomalies not modelled`, tx, ty);
+  ctx.fillText(`${d.model}${valid} · local anomalies not modeled`, tx, ty);
 }

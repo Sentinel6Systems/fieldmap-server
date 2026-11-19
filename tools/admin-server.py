@@ -114,16 +114,16 @@ def check_selection(body):
     """Validated (regions, layers, options) of a request; raises BadRequest in plain words."""
     ids = body.get("regions")
     if not isinstance(ids, list) or not ids or not all(isinstance(i, str) and i in REGIONS for i in ids):
-        raise BadRequest("Choose at least one region on the map.")
+        raise BadRequest("Select at least one region on the map.")
     ids = sorted(set(ids))
     for i in ids:
         inside = [a for a in ancestors(i) if a in ids]
         if inside:
-            raise BadRequest(f"{REGIONS[i]['name']} is part of {REGIONS[inside[0]]['name']}, and you chose both. "
-                             "Remove one of the two from your list.")
+            raise BadRequest(f"{REGIONS[i]['name']} is part of {REGIONS[inside[0]]['name']}, and both are selected. "
+                             "Remove one of them.")
     layers = [k for k in ORDER if k in (body.get("layers") or []) and k != "detail"]
     if not layers:
-        raise BadRequest("Tick at least one layer.")
+        raise BadRequest("Select at least one layer.")
     o = body.get("options") or {}
     options = {"world": bool(o.get("world")), "fresh": bool(o.get("fresh")), "units": "m" if o.get("units") == "m" else "ft",
                "terrain": o.get("terrain") if o.get("terrain") in ("10m", "1m") else "30m",
@@ -131,29 +131,29 @@ def check_selection(body):
     regions = [REGIONS[i] for i in ids]
     usa = [r for r in regions if is_us(r)]
     if "usdata" in layers and not usa:
-        raise BadRequest("US government data exists only for regions in the United States.")
+        raise BadRequest("US Government Data is available only for regions in the United States.")
     if options["terrain"] == "1m":
         d = o.get("detail") or {}
         try:
             lon, lat, km = float(d["lon"]), float(d["lat"]), int(d["km"])
         except (KeyError, TypeError, ValueError):
-            raise BadRequest("Place the very sharp area on the map first. You find it under More options.")
+            raise BadRequest("Select the very high resolution area on the map first (under Advanced Options).")
         if km not in DETAIL_KM or not -180 < lon < 180 or not -80 < lat < 80:
-            raise BadRequest("The very sharp area is not valid. Place it again.")
+            raise BadRequest("The very high resolution area is not valid. Select it on the map again.")
         if not usa:
-            raise BadRequest("Very sharp terrain exists only for the United States. Choose a region there, "
-                             "or choose another Terrain detail.")
+            raise BadRequest("Very high resolution terrain is available only in the United States. Select a US region, "
+                             "or change the Terrain Resolution.")
         if not any(r["bbox"][1] <= lat <= r["bbox"][3] and
                    (r["bbox"][0] <= lon <= r["bbox"][2] if r["bbox"][0] <= r["bbox"][2]
                     else lon >= r["bbox"][0] or lon <= r["bbox"][2]) for r in usa):
-            raise BadRequest("The very sharp area is outside the regions you chose. Place it again.")
+            raise BadRequest("The very high resolution area is outside the selected regions. Select it on the map again.")
         if "hillshade" not in layers and not layers_status()["hillshade"]["present"]:
-            raise BadRequest("The very sharp area goes on top of the hillshade. Tick Hillshade as well.")
+            raise BadRequest("The very high resolution area requires the Hillshade layer. Select Hillshade as well.")
         options["detail"] = {"lon": round(lon, 5), "lat": round(lat, 5), "km": km}
         w, s, e, n = detail_bbox(options["detail"])
         area = (e - w) * (n - s) * 111.32 ** 2 * math.cos(math.radians((s + n) / 2))
         if area > DETAIL_MAX_KM2 * 1.01:
-            raise BadRequest(f"The very sharp area is {area:,.0f} km². The box permits {DETAIL_MAX_KM2:,} km² at the most.")
+            raise BadRequest(f"The very high resolution area is {area:,.0f} km². The maximum is {DETAIL_MAX_KM2:,} km².")
         layers = [k for k in ORDER if k in layers or k == "detail"]
     return regions, layers, options
 
@@ -295,18 +295,18 @@ def estimate(regions, layers, options):
 
     if "basemap" in layers or "extras" in layers:
         shared = 0 if os.path.exists(os.path.join(DATA, "sources", "water-polygons-split-3857.zip")) else 1.5
-        add("osm", "OpenStreetMap download", (osm - cached) + osm + shared, 0, (osm - cached) * 1024 / 10 / 3600)
+        add("osm", "OpenStreetMap Download", (osm - cached) + osm + shared, 0, (osm - cached) * 1024 / 10 / 3600)
     if "basemap" in layers:
         if options["world"] and not os.path.exists(world_file(options)):
-            add("world", "Whole world, zoomed out (first time only)", 3, 160, 10 * slow)
-        add("basemap", "Base map", osm * 1.1 + 0.1, osm * 8 + 3, 0.1 + osm * 0.35 * slow)
+            add("world", "World Overview (First Build Only)", 3, 160, 10 * slow)
+        add("basemap", "Base Map", osm * 1.1 + 0.1, osm * 8 + 3, 0.1 + osm * 0.35 * slow)
     terrain = [k for k in ("contours", "hillshade", "elevation") if k in layers]
     if terrain:
         gb = cells * 0.025 + us_cells * 0.35
-        add("dem", "Elevation data download", gb, 0, gb * 1024 / 10 / 3600)
+        add("dem", "Elevation Download", gb, 0, gb * 1024 / 10 / 3600)
     if "contours" in layers:
         final = kb(5.5, 1.85)
-        add("contours", "Contour lines", final, (cells - us_cells) * 0.2 + us_cells * 0.5 - final,
+        add("contours", "Contour Lines", final, (cells - us_cells) * 0.2 + us_cells * 0.5 - final,
             (land - us_land + us_land * 2.5) / 1000 * 4.5 * slow / 3600)
     if "hillshade" in layers:
         add("hillshade", "Hillshade", kb(0.25, 16), (cells - us_cells) * 0.03 + us_cells * 0.2,
@@ -316,16 +316,16 @@ def estimate(regions, layers, options):
         # surveys; the hillshade raster and the finished tiles as measured on two test areas
         # (100 km2: 1 and 4 GB of downloads, under 2 minutes).
         km = options["detail"]["km"]
-        add("detail", "Very sharp terrain area", (km // 10 + 1) ** 2 * 1.0 + km * km * 0.0002,
+        add("detail", "Very High Resolution Area", (km // 10 + 1) ** 2 * 1.0 + km * km * 0.0002,
             km * km * 0.0015, 0.05 + km * km / 2500 * slow)
     if "elevation" in layers:
-        add("elevation", "Elevation for the terrain tools", kb(1.4, 4), 0,
+        add("elevation", "Elevation Data", kb(1.4, 4), 0,
             (land - us_land + us_land * 7.2) / 1000 * 1.0 * slow / 3600)
     if "extras" in layers:
-        add("extras", "Extra details for printed maps", osm * 0.15 + 0.05, osm * 3 + 2, 0.05 + osm * 0.1 * slow)
+        add("extras", "Printed Map Details", osm * 0.15 + 0.05, osm * 3 + 2, 0.05 + osm * 0.1 * slow)
     if "usdata" in layers:
         states = sum(1 for r in regions if is_us(r)) if not any(r["id"] == "us" for r in regions) else 51
-        add("usdata", "US government data", 0.05 + states * 0.08, 1 + states * 0.1, 0.1 + states * 0.05)
+        add("usdata", "US Government Data", 0.05 + states * 0.08, 1 + states * 0.1, 0.1 + states * 0.05)
     have = on_hand(regions, layers, options)
     have["dem"] = min(have.get("dem", 0), next((i["kept_gb"] for i in items if i["key"] == "dem"), 0))
     need, kept, back = 0, 0, have[""]
@@ -417,8 +417,8 @@ def job_status():
         return None
     starting = job.get("pid") is None and time.time() - job.get("started", 0) < 30
     if job["state"] == "running" and not starting and not is_build_process(job.get("pid")):
-        job.update(state="failed", message="The build stopped without a reason. Was the box switched off? "
-                                           "The maps on the box did not change.")
+        job.update(state="failed", message="The build stopped unexpectedly. Was the server shut down? "
+                                           "The current maps did not change.")
         write_json(JOB, job)
     done, current = log_steps(job["started"])
     step_of = {v[0]: k for k, v in LAYERS.items()}
@@ -498,8 +498,8 @@ def run_job():
         ids = docker("ps", "-q", "--filter", f"label={LABEL}").stdout.split()
         if ids:
             docker("kill", *ids)
-        finish("cancelled", "You stopped the build. The maps on the box did not change. "
-                            "The box keeps the completed parts. Start the same build again to continue.")
+        finish("cancelled", "Build canceled. The current maps did not change. "
+                            "The server keeps the completed parts; start the same build again to resume.")
 
     def finish(state, message):
         job.update(state=state, message=message, finished=int(time.time()))
@@ -519,7 +519,7 @@ def run_job():
         if os.path.basename(old) != name + ".osm.pbf":
             os.remove(old)
             print(f"Removed {os.path.basename(old)}, the merged map data of an earlier selection.", flush=True)
-    print(f"Map builder: {', '.join(request['names'])}; steps: {' '.join(steps)}", flush=True)
+    print(f"Map Builder: {', '.join(request['names'])}; steps: {' '.join(steps)}", flush=True)
     env = dict(os.environ)
     env.pop("LANGUAGE", None)          # a locale setting, not the label language of a build
     if request["options"].get("fresh"):
@@ -533,9 +533,9 @@ def run_job():
     if code == 0:
         swapped.append(True)
     else:
-        finish("failed", "The build stopped with an error. The maps on the box did not change. "
-                         "The technical details below show the problem. The box keeps the completed parts. "
-                         "Solve the problem, then start the same build again. The build continues from where it stopped.")
+        finish("failed", "The build failed. The current maps did not change. "
+                         "The Build Log below shows the error. The server keeps the completed parts. "
+                         "Fix the problem, then start the same build again to resume from where it stopped.")
     state = read_json(STATE, {})
     for k in request["layers"]:
         state[k] = {"regions": request["regions"], "names": request["names"], "built": int(time.time()),
@@ -549,9 +549,9 @@ def run_job():
         r = docker("compose", *(["-f", pi] if os.path.exists(pi) else []), "up", "-d", cwd=ROOT)
     print(r.stdout, flush=True)
     if r.returncode != 0:
-        finish("done", "The new maps are in place, but the box does not show them yet. "
-                       "On the box, run: docker compose up -d")
-    finish("done", "The new maps are in place. The box shows them now.")
+        finish("done", "The new maps are installed, but the map server did not restart. "
+                       "On the server, run: docker compose up -d")
+    finish("done", "The new maps are installed and available now.")
 
 
 def cancel_build():
@@ -647,7 +647,7 @@ class Handler(BaseHTTPRequestHandler):
         # Only this page's own requests: a JSON body, and no other site as the sender.
         origin = self.headers.get("Origin")
         if origin and urlparse(origin).netloc != self.headers.get("Host"):
-            raise BadRequest("This request did not come from the Map builder page.")
+            raise BadRequest("This request did not come from the Map Builder page.")
         if "application/json" not in self.headers.get("Content-Type", ""):
             raise BadRequest("Expected JSON.")
         n = int(self.headers.get("Content-Length", 0))
@@ -696,10 +696,10 @@ class Handler(BaseHTTPRequestHandler):
                 now = time.time()
                 TRIES[:] = [t for t in TRIES if now - t < 60]
                 if len(TRIES) >= 8:
-                    return self.send(429, {"error": "Too many tries. Wait one minute, then try again."})
+                    return self.send(429, {"error": "Too many attempts. Wait one minute, then try again."})
                 TRIES.append(now)
                 if not secrets.compare_digest(str(body.get("pin", "")).strip().encode(), (pin() or "").encode()):
-                    return self.send(403, {"error": "That code is not correct."})
+                    return self.send(403, {"error": "Incorrect Access Code."})
                 token = secrets.token_urlsafe(24)
                 SESSIONS.add(token)
                 return self.send(200, {"ok": True}, headers=[("Set-Cookie", f"fm_admin={token}; Path=/; HttpOnly; SameSite=Strict")])
@@ -718,17 +718,17 @@ class Handler(BaseHTTPRequestHandler):
                     if job and job["state"] == "running":
                         raise BadRequest("A build is already in progress.")
                     if not shutil.which("docker"):
-                        raise BadRequest("The box does not have Docker. The build needs Docker.")
+                        raise BadRequest("Docker is not installed on the server. The build requires Docker.")
                     if not est["ok"]:
                         raise BadRequest(f"Not enough free space. The build needs about {est['need_gb']:.0f} GB, but only "
-                                         f"{est['free_gb']:.0f} GB is free. Choose fewer regions or fewer layers.")
+                                         f"{est['free_gb']:.0f} GB is free. Select fewer regions or layers.")
                     start_build(regions, layers, options)
                 return self.send(200, {"ok": True})
             self.send(404, {"error": "not found"})
         except BadRequest as e:
             self.send(400, {"error": str(e)})
         except ValueError:
-            self.send(400, {"error": "The box cannot read the request."})
+            self.send(400, {"error": "The server could not read the request."})
 
 
 LOCK = threading.Lock()
@@ -758,7 +758,7 @@ def serve():
         sys.exit(f"Error: {ADMIN} belongs to another user (often root, when Docker made it).\n"
                  f"Fix it with:  sudo chown -R $(id -un) {ADMIN}   (scripts/install.sh does this too)")
     os.chmod(SOCKET, 0o666)             # nginx runs as another user
-    print("Map builder: http://<this device's address>/mapadmin/", flush=True)
+    print("Map Builder: http://<server address>/mapadmin/", flush=True)
     port = os.environ.get("ADMIN_PORT") or os.environ.get("PORT")
     if port:
         servers.append(ThreadingHTTPServer((os.environ.get("ADMIN_HOST", "0.0.0.0"), int(port)), Handler))

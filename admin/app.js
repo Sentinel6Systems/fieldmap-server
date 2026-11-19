@@ -10,21 +10,21 @@ const el = (tag, props = {}, ...kids) => {
 
 // The layers of step 2, in build order. `key` is the server's name for the layer.
 const LAYERS = [
-  { key: "basemap", name: "Base map", line: "Roads, towns, rivers, borders and place names.",
-    help: "This is the map itself, made from OpenStreetMap. The other layers go on top of it. Keep it ticked, unless you only want to build one of the other layers again." },
-  { key: "contours", name: "Contour lines", line: "Lines that show height, as on a hiking map.",
-    help: "Each line joins places of the same height. Lines close together show steep ground. This is usually the largest layer and the slowest to build." },
-  { key: "hillshade", name: "Hillshade", line: "Soft shadows that make hills and valleys easy to see.",
-    help: "A picture of the ground with light from the north-west. It shows the shape of the land clearly, on the screen and on paper." },
-  { key: "elevation", name: "Elevation for the terrain tools", line: "The Print a map page uses it to show what you can see from a hill and where a radio reaches.",
-    help: "The heights themselves, kept as numbers. The map does not show this layer. The Print a map page uses it for line of sight and radio coverage. If you do not use these, do not tick this layer." },
-  { key: "extras", name: "Extra details for printed maps", line: "Power lines, fences, towers, springs and other landmarks.",
-    help: "Small features that help you find your way on the ground. The printed map styles show them." },
-  { key: "usdata", name: "US government data", line: "Aircraft obstacles, official place names, survey marks and public land.", us: true,
-    help: "Free data from United States agencies (FAA, USGS, NOAA). The printed map styles show it. This data exists only for the United States." },
+  { key: "basemap", name: "Base Map", line: "Roads, towns, rivers, borders, and place names.",
+    help: "The map itself, built from OpenStreetMap. The other layers go on top of it, so keep it selected unless you only want to rebuild another layer." },
+  { key: "contours", name: "Contour Lines", line: "Elevation lines, as on a topographic map.",
+    help: "Each line connects points of the same elevation; lines close together show steep ground. This is usually the largest layer and the slowest to build." },
+  { key: "hillshade", name: "Hillshade", line: "Shading that makes hills and valleys easy to see.",
+    help: "Shaded relief lit from the northwest. It shows the shape of the land clearly on screen and on paper." },
+  { key: "elevation", name: "Elevation Data", line: "Used by Print Map for viewshed and radio coverage.",
+    help: "Elevation values for the terrain tools; the map does not display this layer. Print Map uses it for viewshed and radio coverage, so leave it unselected if you do not use these tools." },
+  { key: "extras", name: "Printed Map Details", line: "Power lines, fences, towers, springs, and other landmarks.",
+    help: "Small features that help with navigation on the ground. The print map styles show them." },
+  { key: "usdata", name: "US Government Data", line: "Aircraft obstacles, official place names, survey marks, and public land.", us: true,
+    help: "Free data from US agencies (FAA, USGS, NOAA), shown in the print map styles. Available for the United States only." },
 ];
 // Not a layer to tick: the 1 m area of "More options", which is its own step of a build.
-const DETAIL = { key: "detail", name: "Very sharp terrain area" };
+const DETAIL = { key: "detail", name: "Very High Resolution Area" };
 const layerOf = key => LAYERS.find(l => l.key === key) || DETAIL;
 
 let LAND = [], PLACES = [];    // coastlines and town names behind the regions (admin/land.json, places.json)
@@ -47,7 +47,7 @@ async function api(path, body) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await r.json().catch(() => ({}));
   if (r.status === 401) { showLogin(); throw new Error("pin"); }
-  if (!r.ok) throw new Error(data.error || "The box did not answer. Check that the Map builder still runs on the box.");
+  if (!r.ok) throw new Error(data.error || "The server did not respond. Check that the Map Builder service is running on the server.");
   return data;
 }
 
@@ -199,7 +199,7 @@ window.addEventListener("resize", () => setBox(box));
 
 function toggle(id) {
   const above = chosenAbove(id);
-  if (above) return say(`${REG[id].name} is already in your list, as part of ${REG[above].name}.`);
+  if (above) return say(`${REG[id].name} is already included in ${REG[above].name}.`);
   if (chosen.has(id)) chosen.delete(id);
   else {
     for (const c of [...chosen]) if (ancestors(c).includes(id)) chosen.delete(c);   // the whole replaces its parts
@@ -217,15 +217,15 @@ function pick(id) {
   const r = REG[id], above = chosenAbove(id), sheet = $("sheet"), buttons = [];
   let text;
   if (above) {
-    text = `You chose all of ${REG[above].name}, so ${r.name} is already in your list.`;
-    buttons.push(el("button", { className: "primary", textContent: `Choose only parts of ${REG[above].name} instead`,
+    text = `All of ${REG[above].name} is selected, so ${r.name} is already included.`;
+    buttons.push(el("button", { className: "primary", textContent: `Select Parts of ${REG[above].name} Instead`,
       onclick: () => { chosen.delete(above); save(); closeSheet(); draw(); refresh(); say(`Now click the parts of ${REG[above].name} that you want.`); } }));
   } else {
     const all = chosen.has(id);
-    text = all ? `All of ${r.name} is chosen.` : hasChosenInside(id) ? `Part of ${r.name} is chosen.` : `${r.name}: all of it, or only parts of it?`;
-    buttons.push(el("button", { className: all ? "" : "primary", textContent: all ? "Remove it" : `Add all of ${r.name}`,
+    text = all ? `All of ${r.name} is selected.` : hasChosenInside(id) ? `${r.name} is partially selected.` : `${r.name}: select all of it, or only some parts?`;
+    buttons.push(el("button", { className: all ? "" : "primary", textContent: all ? "Remove" : `Select All of ${r.name}`,
       onclick: () => { closeSheet(); toggle(id); } }));
-    buttons.push(el("button", { className: all ? "primary" : "", textContent: all ? "Choose only parts of it instead ›" : "Choose parts of it ›",
+    buttons.push(el("button", { className: all ? "primary" : "", textContent: all ? "Select Parts Instead ›" : "Select Parts ›",
       onclick: () => { if (all) { chosen.delete(id); save(); refresh(); } lookInside(id); } }));
   }
   sheet.replaceChildren(el("p", {}, el("b", { textContent: text })), el("div", { className: "row" }, ...buttons),
@@ -333,8 +333,8 @@ function drawDetail() {
   if (!on) return;
   if (detail) detail.km = +$("opt-detail-km").value;
   $("detail-where").textContent = detail
-    ? `Placed: ${detail.km} × ${detail.km} km (${Math.round(detail.km * 0.62)} × ${Math.round(detail.km * 0.62)} miles), middle at ${Math.abs(detail.lat).toFixed(3)}° ${detail.lat >= 0 ? "N" : "S"}, ${Math.abs(detail.lon).toFixed(3)}° ${detail.lon >= 0 ? "E" : "W"}. The orange square on the map shows it.`
-    : "Not placed yet.";
+    ? `Selected: ${detail.km} × ${detail.km} km (${Math.round(detail.km * 0.62)} × ${Math.round(detail.km * 0.62)} miles), centered at ${Math.abs(detail.lat).toFixed(3)}° ${detail.lat >= 0 ? "N" : "S"}, ${Math.abs(detail.lon).toFixed(3)}° ${detail.lon >= 0 ? "E" : "W"}. The orange square on the map shows the area.`
+    : "No area selected.";
 }
 
 function setHot(id) {
@@ -348,8 +348,8 @@ function drawCrumbs() {
   const trail = view ? [...ancestors(view).reverse(), view] : [];
   const c = $("crumbs");
   c.replaceChildren();
-  if (!view) return c.append(el("span", { className: "here", textContent: "The world" }));
-  c.append(el("button", { textContent: "‹ The world", onclick: () => lookInside("") }));
+  if (!view) return c.append(el("span", { className: "here", textContent: "World" }));
+  c.append(el("button", { textContent: "‹ World", onclick: () => lookInside("") }));
   for (const id of trail.slice(0, -1)) c.append(el("button", { textContent: `‹ ${REG[id].name}`, onclick: () => lookInside(id) }));
   c.append(el("span", { className: "here", textContent: REG[view].name }));
 }
@@ -359,11 +359,11 @@ function regionRow(id, where) {
   const li = el("li");
   li.dataset.id = id;
   li.append(el("span", { className: "name" }, r.name,
-    el("small", { textContent: where || (above ? `included with ${REG[above].name}` : hasChosenInside(id) ? "part of it is chosen" : "") })));
+    el("small", { textContent: where || (above ? `Included in ${REG[above].name}` : hasChosenInside(id) ? "Partially Selected" : "") })));
   if (where) li.append(el("button", { textContent: "Show", title: `Show ${r.name} on the map`, onclick: () => showOnMap(id) }));
-  else if (KIDS[id]) li.append(el("button", { textContent: "Its parts ›", title: `Show the parts of ${r.name}. Then you can choose only some of them.`, onclick: () => lookInside(id) }));
-  if (!above) li.append(el("button", { className: chosen.has(id) ? "on" : "", textContent: chosen.has(id) ? "✓ Chosen" : "Add",
-    title: chosen.has(id) ? "Click to remove it from your list" : "Add this region to your list", onclick: () => toggle(id) }));
+  else if (KIDS[id]) li.append(el("button", { textContent: "Parts ›", title: `Show the parts of ${r.name} to select only some of them.`, onclick: () => lookInside(id) }));
+  if (!above) li.append(el("button", { className: chosen.has(id) ? "on" : "", textContent: chosen.has(id) ? "✓ Selected" : "Add",
+    title: chosen.has(id) ? "Click to remove this region from the selection." : "Add this region to the selection.", onclick: () => toggle(id) }));
   li.addEventListener("pointerenter", () => setHot(id));
   li.addEventListener("pointerleave", () => setHot(null));
   return li;
@@ -374,15 +374,15 @@ function drawList() {
   list.replaceChildren();
   let ids;
   if (q) {
-    $("list-title").textContent = "Search results";
+    $("list-title").textContent = "Search Results";
     ids = Object.keys(REG).filter(id => REG[id].name.toLowerCase().includes(q))
       .sort((a, b) => REG[a].name.toLowerCase().indexOf(q) - REG[b].name.toLowerCase().indexOf(q) || REG[a].name.localeCompare(REG[b].name)).slice(0, 40);
   } else {
     const whole = view && (chosen.has(view) ? view : chosenAbove(view));
-    $("list-title").textContent = (view ? `Parts of ${REG[view].name}` : "Parts of the world") + (whole ? ` (all of ${REG[whole].name} is chosen)` : "");
+    $("list-title").textContent = (view ? `Visible Regions: ${REG[view].name}` : "Visible Regions") + (whole ? ` (all of ${REG[whole].name} selected)` : "");
     ids = [...(KIDS[view] || [])].sort((a, b) => REG[a].name.localeCompare(REG[b].name));
   }
-  if (!ids.length) list.append(el("li", { className: "empty", textContent: q ? "No region has that name. Try a country or a state." : "This region has no smaller parts." }));
+  if (!ids.length) list.append(el("li", { className: "empty", textContent: q ? "No matching regions. Try a country or state name." : "This region has no smaller parts." }));
   for (const id of ids) list.append(regionRow(id, q && REG[id].parent ? `in ${REG[REG[id].parent].name}` : ""));
 }
 $("search").addEventListener("input", drawList);
@@ -390,9 +390,9 @@ $("search").addEventListener("input", drawList);
 function drawChosen() {
   const ul = $("chosen");
   ul.replaceChildren();
-  if (!chosen.size) return ul.append(el("li", { className: "none", textContent: "None yet. Click a region on the map." }));
+  if (!chosen.size) return ul.append(el("li", { className: "none", textContent: "No regions selected. Click a region on the map." }));
   for (const id of [...chosen].sort((a, b) => REG[a].name.localeCompare(REG[b].name)))
-    ul.append(el("li", {}, REG[id].name, el("button", { textContent: "×", title: `Remove ${REG[id].name} from the list`, ariaLabel: `Remove ${REG[id].name} from the list`, onclick: () => toggle(id) })));
+    ul.append(el("li", {}, REG[id].name, el("button", { textContent: "×", title: `Remove ${REG[id].name}`, ariaLabel: `Remove ${REG[id].name}`, onclick: () => toggle(id) })));
 }
 
 // ---------- step 2: layers and options ----------
@@ -408,12 +408,12 @@ function drawLayers() {
     const q = el("button", { className: "help", textContent: "?", title: L.help, ariaLabel: `Explain ${L.name}`, onclick: ev => { ev.preventDefault(); help.hidden = !help.hidden; } });
     const what = el("span", { className: "what" }, el("b", {}, L.name, q), el("span", { textContent: L.line }));
     const state = el("div", { className: "now" });
-    if (now && now.present) state.append("On the box now: ", el("b", { textContent: now.names ? now.names.join(", ") : "a map built outside this page" }),
+    if (now && now.present) state.append("Installed: ", el("b", { textContent: now.names ? now.names.join(", ") : "built outside the Map Builder" }),
       now.built ? ` (${day(now.built)}, ${gb(now.size_gb)})` : ` (${gb(now.size_gb)})`);
-    else state.textContent = "Not on the box yet";
+    else state.textContent = "Not Installed";
     const li = el("li", {}, el("label", {}, box, what), state, help);
-    if (item && ticked.has(L.key)) li.append(el("div", { className: "size", textContent: `${item.kept_gb < 0.05 ? "Under 50 MB" : "About " + gb(item.kept_gb)} after the build.` + (now && now.present ? " It replaces the layer that is on the box now." : "") }));
-    else if (now && now.present && !ticked.has(L.key)) li.append(el("div", { className: "size", textContent: "Not ticked. It does not change." }));
+    if (item && ticked.has(L.key)) li.append(el("div", { className: "size", textContent: `Size after the build: ${item.kept_gb < 0.05 ? "under 50 MB" : "about " + gb(item.kept_gb)}.` + (now && now.present ? " It replaces the installed layer." : "") }));
+    else if (now && now.present && !ticked.has(L.key)) li.append(el("div", { className: "size", textContent: "Not selected. The installed layer does not change." }));
     ul.append(li);
   }
 }
@@ -441,10 +441,10 @@ function drawFreshness() {
   const have = got.filter(a => a !== undefined);
   const days = n => n === 0 ? "today" : n === 1 ? "yesterday" : `${n} days ago`;
   $("fresh-age").textContent = !chosen.size ? ""
-    : !have.length ? "The box has no map data for these regions yet. The build downloads it."
-    : `The box downloaded the map data for these regions ${days(Math.min(...have))}${Math.max(...have) !== Math.min(...have) ? ` to ${days(Math.max(...have))}` : ""}` +
-      (have.length < got.length ? ". It has no data for some of them yet" : "") +
-      `. The build downloads data that is older than ${limit} days again.`;
+    : !have.length ? "The server has no map data for these regions yet. The build downloads it."
+    : `The server downloaded the map data for these regions ${days(Math.min(...have))}${Math.max(...have) !== Math.min(...have) ? ` to ${days(Math.max(...have))}` : ""}` +
+      (have.length < got.length ? ". Some regions have no data yet" : "") +
+      `. The build downloads again any data older than ${limit} days.`;
 }
 
 async function refresh() {
@@ -456,9 +456,9 @@ async function refresh() {
   if (!sel.regions.length || !sel.layers.length) {
     estimate = null;
     $("space").hidden = true; $("space-empty").hidden = false;
-    $("space-empty").textContent = "Choose a region and at least one layer. This step then shows the space that the build needs.";
+    $("space-empty").textContent = "Select a region and at least one layer to see the storage the build needs.";
     $("start").disabled = true;
-    $("start-why").textContent = !sel.regions.length ? "Choose at least one region first." : "Tick at least one layer first.";
+    $("start-why").textContent = !sel.regions.length ? "Select at least one region." : "Select at least one layer.";
     return drawLayers();
   }
   try {
@@ -485,19 +485,19 @@ async function refresh() {
   // When the sharper terrain is most of it, that is the choice to change, not the small layers.
   const terrain = e.standard_need_gb !== undefined && e.standard_need_gb < e.need_gb * 0.7 && cls !== "ok";
   $("verdict").textContent = (cls === "over"
-    ? `This does not fit. The build needs about ${gb(e.need_gb)}, but only ${gb(e.free_gb)} is free.` + (terrain ? "" : " Choose fewer or smaller regions, or untick a layer.")
-    : `${cls === "tight" ? "This fits, but with little space left" : "This fits"}. The build needs about ${gb(e.need_gb)} while it works, and ${gb(e.free_gb)} is free. ` +
-      (e.more_after_gb >= 0.05 ? `After the build, about ${gb(e.more_after_gb)} more space is in use than now.` : "After the build, no more space is in use than now.")) +
-    (terrain ? ` Most of this space is for the sharper terrain. With “Standard” for “Terrain detail” under “More options”, the build needs about ${gb(e.standard_need_gb)}.` : "");
+    ? `Not enough storage. The build needs about ${gb(e.need_gb)}, but only ${gb(e.free_gb)} is free.` + (terrain ? "" : " Select fewer or smaller regions, or fewer layers.")
+    : `${cls === "tight" ? "This fits, but storage will be low" : "This fits"}. The build needs about ${gb(e.need_gb)} while it runs, and ${gb(e.free_gb)} is free. ` +
+      (e.more_after_gb >= 0.05 ? `After the build, about ${gb(e.more_after_gb)} more storage is in use.` : "After the build, storage use does not increase.")) +
+    (terrain ? ` Most of this is for the high-resolution terrain. With Terrain Resolution set to Standard (under Advanced Options), the build needs about ${gb(e.standard_need_gb)}.` : "");
   $("space-have").textContent = e.on_hand_gb >= 0.05
-    ? `${gb(e.on_hand_gb)} of this is already on the box. It is elevation data from earlier builds, or parts of a build that did not finish. The estimate does not count it again.` : "";
-  $("time").textContent = `The build takes ${hours(e.hours)} on the box, plus the download time. The download time depends on the internet connection.`;
+    ? `${gb(e.on_hand_gb)} of this is already on the server (elevation data from earlier builds, or parts of an unfinished build) and is not counted again.` : "";
+  $("time").textContent = `Build time: ${hours(e.hours)} on the server, plus download time, which depends on the internet connection.`;
   const body = $("space-table").tBodies[0];
   body.replaceChildren();
   for (const i of e.items) body.append(el("tr", {}, el("td", { textContent: i.label }), el("td", { textContent: gb(i.kept_gb) }),
     el("td", { textContent: i.temp_gb ? gb(i.temp_gb) : "–" }), el("td", { textContent: hours(i.hours) })));
   $("start").disabled = !e.ok;
-  $("start-why").textContent = e.ok ? "" : "There is not enough free space for this build.";
+  $("start-why").textContent = e.ok ? "" : "Not enough free storage for this build.";
 }
 
 // ---------- step 4: start ----------
@@ -506,13 +506,13 @@ $("start").onclick = () => {
   const sel = selection(), b = $("confirm-body");
   b.replaceChildren(
     el("p", {}, "Regions: ", el("b", { textContent: sel.regions.map(id => REG[id].name).join(", ") })),
-    el("p", { textContent: "The box will build:" }),
+    el("p", { textContent: "Layers to build:" }),
     el("ul", {}, ...sel.layers.map(k => { const L = layerOf(k), now = status.layers[k];
-      return el("li", {}, el("b", { textContent: L.name }), now.present ? ` — replaces the layer on the box${now.names ? ` (${now.names.join(", ")})` : ""}` : " — new"); }),
+      return el("li", {}, el("b", { textContent: L.name }), now.present ? ` — replaces the installed layer${now.names ? ` (${now.names.join(", ")})` : ""}` : " — new"); }),
       ...(sel.options.terrain === "1m" ? [el("li", {}, el("b", { textContent: DETAIL.name }), ` — ${sel.options.detail.km} × ${sel.options.detail.km} km, on top of the hillshade`)] : [])),
-    ...(sel.options.fresh ? [el("p", { textContent: "The box downloads the newest map data again." })] : []),
-    ...(carriesOn(sel) ? [el("p", { textContent: "The box keeps the parts that the last build completed. This build continues from where the last build stopped." })] : []),
-    el("p", { textContent: `The build needs about ${gb(estimate.need_gb)} of space and takes ${hours(estimate.hours)}, plus the download time. The maps on the box now work until the build is complete.` }));
+    ...(sel.options.fresh ? [el("p", { textContent: "The server downloads the latest map data." })] : []),
+    ...(carriesOn(sel) ? [el("p", { textContent: "This build continues from where the last build stopped and reuses its completed parts." })] : []),
+    el("p", { textContent: `The build needs about ${gb(estimate.need_gb)} of storage and takes ${hours(estimate.hours)}, plus download time. The current maps work until the build is complete.` }));
   $("confirm").showModal();
 };
 $("confirm-no").onclick = () => $("confirm").close();
@@ -589,26 +589,26 @@ function drawJob() {
   $("progress").hidden = !show;
   // In step 4 once the card of the last build is closed: one of the two buttons at a time.
   $("repeat-last").hidden = $("repeat-what").hidden = !job || show;
-  if (job && !show) $("repeat-what").textContent = `The last build${{ failed: ", which did not finish", cancelled: ", which you stopped" }[job.state] || ""}: ${job.request.names.join(", ")}, ${day(job.started)}.`;
+  if (job && !show) $("repeat-what").textContent = `Last build${{ failed: " (failed)", cancelled: " (canceled)" }[job.state] || ""}: ${job.request.names.join(", ")}, ${day(job.started)}.`;
   $("chooser").hidden = !!(job && job.state === "running");
   if (!show) return;
   const running = job.state === "running", names = job.request.names.join(", ");
-  $("progress-title").textContent = { running: "Building your maps…", done: "Your maps are ready", failed: "The build did not finish", cancelled: "You stopped the build" }[job.state];
+  $("progress-title").textContent = { running: "Building Maps…", done: "Build Complete", failed: "Build Failed", cancelled: "Build Canceled" }[job.state];
   $("progress-text").textContent = running ? `Regions: ${names}.` : `${job.message} (Regions: ${names}.)`;
   const steps = $("progress-steps");
   steps.replaceChildren();
   for (const k of job.request.layers) {
     const L = layerOf(k), done = job.done.includes(k) || job.state === "done";
-    steps.append(el("li", { className: done ? "done" : job.current === k ? "now" : "", textContent: L.name + (done ? "" : job.current === k ? " — in progress now" : "") }));
+    steps.append(el("li", { className: done ? "done" : job.current === k ? "now" : "", textContent: L.name + (done ? "" : job.current === k ? " — in progress" : "") }));
   }
   $("progress-note").textContent = running
-    ? `Started ${ago(job.started)}. You can close this page and come back later. The build continues. The maps on the box now work until the build is complete.`
-    : job.finished ? `Ended ${ago(job.finished)}.` : "";
+    ? `Started ${ago(job.started)}. You can close this page; the build continues. The current maps work until the build is complete.`
+    : job.finished ? `Finished ${ago(job.finished)}.` : "";
   $("cancel").hidden = !running;
   $("again").hidden = $("repeat").hidden = running;
-  $("repeat").textContent = job.state === "done" ? "Build the same again" : "Start it again";
-  $("repeat").title = job.state === "done" ? "Fills in the same regions, layers and options. Asks before the build starts."
-    : "The same regions, layers and options. The build continues from where it stopped.";
+  $("repeat").textContent = job.state === "done" ? "Rebuild" : "Resume Build";
+  $("repeat").title = job.state === "done" ? "Uses the same regions, layers, and options. Asks before the build starts."
+    : "Uses the same regions, layers, and options. The build continues from where it stopped.";
   // Beside the viewer and the print tool when this page is /mapadmin/ on the web front; else on its own port.
   const base = location.pathname.startsWith("/mapadmin") ? location.origin
     : `${location.protocol}//${location.hostname}${status.web_port === 80 ? "" : ":" + status.web_port}`;
@@ -619,7 +619,7 @@ function drawJob() {
   if (logFor !== job.started) {
     logFor = job.started;
     logAt = Math.max(0, job.log_size - 200000);
-    $("log").textContent = logAt ? "… (earlier lines left out)\n" : "";
+    $("log").textContent = logAt ? "… (earlier lines omitted)\n" : "";
   }
   if ($("details").open && job.log_size > logAt) readLog();
 }
@@ -637,7 +637,7 @@ async function readLog() {
 $("details").addEventListener("toggle", () => { if ($("details").open && status && status.job) readLog(); });
 
 $("cancel").onclick = async () => {
-  if (!confirm("Stop the build? The maps on the box do not change. The box keeps the downloaded data for the next build.")) return;
+  if (!confirm("Cancel the build? The current maps do not change, and the server keeps the downloaded data for the next build.")) return;
   await api("api/cancel", {}).catch(() => {});
   poll();
 };
@@ -645,7 +645,7 @@ $("again").onclick = () => { dismissed = String(status.job.started); sessionStor
 
 function drawDisk() {
   const used = 1 - status.free_gb / status.total_gb;
-  $("disk").replaceChildren(el("b", { textContent: gb(status.free_gb) }), ` free of ${gb(status.total_gb)} on the box`,
+  $("disk").replaceChildren(el("b", { textContent: gb(status.free_gb) }), ` free of ${gb(status.total_gb)} on the server`,
     el("div", { className: "bar" }, el("i", { style: `width:${Math.round(used * 100)}%` })));
 }
 
@@ -673,7 +673,7 @@ async function start() {
     for (const r of data.regions) { REG[r.id] = r; }
     for (const r of data.regions) (KIDS[REG[r.parent] ? r.parent : ""] ||= []).push(r.id);
     for (const id of [...chosen]) if (!REG[id]) chosen.delete(id);
-    const lang = { "": "all languages (largest)", en: "English", zh: "Chinese", hi: "Hindi", es: "Spanish", ar: "Arabic", fr: "French", bn: "Bengali", pt: "Portuguese", ru: "Russian", id: "Indonesian" };
+    const lang = { "": "All Languages (Largest)", en: "English", zh: "Chinese", hi: "Hindi", es: "Spanish", ar: "Arabic", fr: "French", bn: "Bengali", pt: "Portuguese", ru: "Russian", id: "Indonesian" };
     for (const code of ["", ...status.languages]) $("opt-language").append(el("option", { value: code, textContent: lang[code] || code }));
     setOptions(JSON.parse(localStorage.getItem("options") || "{}"));
     setInterval(poll, 3000);

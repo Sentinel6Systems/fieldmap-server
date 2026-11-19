@@ -87,7 +87,7 @@ docker restart tileserver >/dev/null
 echo "Started: tileserver, fieldmap-web (print tool), fieldmap-wmm."
 
 UNIT=/etc/systemd/system/fieldmap-admin.service
-echo "== Map builder page"
+echo "== Map Builder page"
 # With this file the web front answers "not here" for /mapadmin/, and the other pages'
 # header leaves the map builder out instead of calling it "not running".
 if [ "$BUILDER" = no ]; then touch data/admin/no-builder; else rm -f data/admin/no-builder; fi
@@ -125,13 +125,13 @@ WEB="http://$ADDRESS$([ "$WEB_PORT" = 80 ] || echo ":$WEB_PORT")"
 echo
 echo "Ready:"
 echo "  Maps                    $WEB/"
-echo "  Print a map             $WEB/mapprinter/"
+echo "  Print Map               $WEB/mapprinter/"
 echo "  Tile server (TAK)       http://$ADDRESS:$TILE_PORT/"
-[ "$BUILDER" = yes ] && echo "  Map builder             $WEB/mapadmin/"
+[ "$BUILDER" = yes ] && echo "  Map Builder             $WEB/mapadmin/"
 [ "$REMOTE" = yes ] && echo "  Devices                 $WEB/phones/"
 if [ -z "$(find data -maxdepth 1 -name 'basemap.mbtiles' -size +100k 2>/dev/null)" ]; then
-    echo "There are no maps on this device yet: the Maps page is blank until the first build."
-    [ "$BUILDER" = yes ] && echo "Open the map builder to choose your regions and start it."
+    echo "No maps are installed yet: the Maps page is blank until the first build."
+    [ "$BUILDER" = yes ] && echo "Open the Map Builder to select regions and start a build."
 fi
 
 echo

@@ -33,7 +33,7 @@ state.layers = { ...LAYER_DEFAULTS, ...(state.layers || {}) };
 
 // Print styles, in menu order. Only the ones the tile server actually has are offered.
 // ?style=<id> forces any style on the server for this visit.
-const PRINT_STYLES = [["topo-print", "Standard"], ["topo-usgs", "USGS quadrangle"]];
+const PRINT_STYLES = [["topo-print", "Standard"], ["topo-usgs", "USGS Quadrangle"]];
 // Tile server base. Tried in order: ?tiles=<url>, then /maps on this host (the Pi behind
 // Internet-in-a-Box), then this host's root (the docker-compose stack, where nginx fronts
 // TileServer GL), then port 8080 on this host.
@@ -113,7 +113,7 @@ for (const [k, p] of Object.entries(PAPERS)) paperSel.add(new Option(p.label, k)
 paperSel.value = state.paper;
 $("orientation").value = state.orientation;
 const atlasSel = $("atlas");
-for (const g of ATLAS_GRIDS) atlasSel.add(new Option(g === 1 ? "Single sheet" : `Atlas ${g} × ${g} (${g * g} pages + index)`, g));
+for (const g of ATLAS_GRIDS) atlasSel.add(new Option(g === 1 ? "Single Sheet" : `Atlas ${g} × ${g} (${g * g} pages + index)`, g));
 atlasSel.value = state.atlas || 1;
 $("binder").checked = !!state.binder;
 $("dpi").value = state.dpi;
@@ -377,9 +377,9 @@ function updateFootprint() {
   const phone = window.innerWidth <= 640 || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
   const warn = $("atlas-warning");
   if (atlas.n > 1 && phone) {
-    warn.textContent = `The browser makes every page of an atlas. On a phone or tablet, this is slow and the browser can run out of memory. Use a laptop for atlases.${pages > 30 ? " " + pages + " pages take several minutes." : ""}`;
+    warn.textContent = `Atlases are built in the browser. On a phone or tablet this is slow and can run out of memory, so use a computer.${pages > 30 ? " " + pages + " pages take several minutes." : ""}`;
   } else if (pages > 30) {
-    warn.textContent = `${pages} pages take several minutes and make a large file. The Standard quality of 200 dpi cuts the work by half.`;
+    warn.textContent = `${pages} pages take several minutes and make a large file. Standard (200 dpi) quality takes about half the time.`;
   } else {
     warn.textContent = "";
   }
@@ -572,9 +572,9 @@ function renderList(list, items, kind, emptyText, detail) {
     row.dataset.id = it.id;
     row.innerHTML = `
       <div class="item-row">
-        <button class="dot" title="Colour" style="background:${it.color}"></button>
+        <button class="dot" title="Color" style="background:${it.color}"></button>
         <input type="text" value="${escapeHtml(it.label)}" placeholder="Name" maxlength="30">
-        <button class="icon" title="Show on the map">◎</button>
+        <button class="icon" title="Show on Map">◎</button>
         <button class="icon danger" title="Remove">✕</button>
       </div>
       <div class="item-detail">${detail(it)}</div>`;
@@ -623,11 +623,11 @@ function setMode(m) {
     m === "marker" ? "Tap the map to place the marker." :
     m === "arrow-start" ? "Tap the map at the start of the arrow." :
     m === "arrow-end" ? "Tap the map at the end of the arrow." :
-    m === "circle-center" ? "Tap the centre of the circle." :
+    m === "circle-center" ? "Tap the center of the circle." :
     m === "circle-edge" ? "Tap the edge to set the radius. You can type an exact radius later." :
     m === "rect-start" ? "Tap one corner of the rectangle." :
     m === "rect-end" ? "Tap the opposite corner." :
-    m === "polygon" ? (corners < 3 ? `Tap the corners of the polygon. Corners so far: ${corners}.` : `${corners} corners. To finish the shape, tap the first corner, press Enter or press Finish shape.`) : "";
+    m === "polygon" ? (corners < 3 ? `Tap the corners of the polygon. Corners so far: ${corners}.` : `${corners} corners. To finish the shape, tap the first corner, press Enter or press Finish Shape.`) : "";
   $("finish-shape").hidden = !(m === "polygon" && corners >= 3);
 }
 $("add-marker").onclick = () => setMode(mode === "marker" ? null : "marker");
@@ -635,13 +635,13 @@ $("add-arrow").onclick = () => setMode(mode ? null : "arrow-start");
 for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).onclick = () => setMode(modes.includes(mode) ? null : modes[0]);
 $("finish-shape").onclick = finishPolygon;
 $("clear-all").onclick = () => {
-  if ((markers.length || arrows.length || shapes.length) && confirm("Remove all markers, arrows and shapes?")) {
+  if ((markers.length || arrows.length || shapes.length) && confirm("Clear all markers, arrows and shapes?")) {
     markers = []; arrows = []; shapes = []; saveMarkers(); saveArrows(); saveShapes();
   }
 };
 // Save to a file, and load one: GeoJSON (src/drawings.js).
 $("save-drawings").onclick = () => {
-  if (!markers.length && !arrows.length && !shapes.length) { fileHint("There is nothing to save. Add a marker, arrow or shape first."); return; }
+  if (!markers.length && !arrows.length && !shapes.length) { fileHint("Nothing to export. Add a marker, arrow or shape first."); return; }
   const data = toGeoJSON(markers, arrows, shapes, { title: state.title || "", saved: new Date().toISOString() });
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/geo+json" }));
   const a = Object.assign(document.createElement("a"), { href: url, download: fileName(state.title) });
@@ -649,7 +649,7 @@ $("save-drawings").onclick = () => {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  fileHint(`Saved ${countText(markers.length, arrows.length, shapes.length)} as ${a.download}.`);
+  fileHint(`Exported ${countText(markers.length, arrows.length, shapes.length)} to ${a.download}.`);
 };
 $("load-drawings").onclick = () => $("load-file").click();
 $("load-file").onchange = async (e) => {
@@ -658,11 +658,11 @@ $("load-file").onchange = async (e) => {
   if (!file) return;
   let got;
   try {
-    if (file.size > 20 * 1024 * 1024) throw new Error("This file is more than 20 MB. It is too large for a file of markers, arrows and shapes.");
+    if (file.size > 20 * 1024 * 1024) throw new Error("This file is larger than 20 MB and cannot be imported.");
     got = fromGeoJSON(await file.text(), state.color);
   } catch (err) { fileHint(err.message, true); return; }
   const total = got.markers.length + got.arrows.length + got.shapes.length;
-  if (!total) { fileHint(`The page cannot load anything from ${file.name}.${got.skipped ? ` The file has ${got.skipped} item${got.skipped === 1 ? "" : "s"} that this page cannot draw.` : ""}`, true); return; }
+  if (!total) { fileHint(`Nothing to import from ${file.name}.${got.skipped ? ` It has ${got.skipped} item${got.skipped === 1 ? "" : "s"} that this page cannot draw.` : ""}`, true); return; }
   for (const m of got.markers) markers.push({ ...m, id: uid() });
   for (const a of got.arrows) arrows.push({ ...a, id: uid() });
   for (const s of got.shapes) {
@@ -679,8 +679,8 @@ $("load-file").onchange = async (e) => {
   const b = pts.reduce((r, p) => [Math.min(r[0], p.lng), Math.min(r[1], p.lat), Math.max(r[2], p.lng), Math.max(r[3], p.lat)],
     [Infinity, Infinity, -Infinity, -Infinity]);
   map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 80, maxZoom: 15, duration: 0 });
-  fileHint(`Loaded ${countText(got.markers.length, got.arrows.length, got.shapes.length)} from ${file.name}` +
-    (got.skipped ? `. The page did not load ${got.skipped} item${got.skipped === 1 ? "" : "s"}. It draws only points, two-point lines and areas.` : "."));
+  fileHint(`Imported ${countText(got.markers.length, got.arrows.length, got.shapes.length)} from ${file.name}` +
+    (got.skipped ? `. Skipped ${got.skipped} item${got.skipped === 1 ? "" : "s"}: only points, two-point lines and areas are supported.` : "."));
 };
 function countText(m, a, s) {
   const part = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
@@ -746,9 +746,10 @@ function segmented(label, key, options) {
   }
   return row;
 }
-function toggle(text, checked, onchange) {
+function toggle(text, checked, onchange, title) {
   const l = document.createElement("label");
   l.className = "switch";
+  if (title) l.title = title;
   l.innerHTML = `<span>${text}</span><input type="checkbox" role="switch">`;
   const box = l.querySelector("input");
   box.checked = checked;
@@ -759,7 +760,7 @@ function renderLayerPanel() {
   const box = $("layer-controls");
   box.innerHTML = "";
   const have = groupsOf(rawStyle);
-  box.appendChild(segmented("Ink", "ink", [["colour", "Colour"], ["bw", "B&W"]]));
+  box.appendChild(segmented("Ink", "ink", [["colour", "Color"], ["bw", "B&W"]]));
   if (have.has("hillshade")) box.appendChild(segmented("Hillshade", "hillshade", [["off", "Off"], ["soft", "Soft"], ["sharp", "Sharp"]]));
   if (have.has("contours")) box.appendChild(segmented("Contours", "contours", [["off", "Off"], ["index", "Index"], ["all", "All"]]));
   const off = new Set(state.layers.off);
@@ -777,12 +778,12 @@ function renderLayerPanel() {
     }
   }
   const h = document.createElement("h3"); h.textContent = "Grid"; box.appendChild(h);
-  box.appendChild(toggle("MGRS grid lines. The numbers at the edges stay.", state.layers.grid !== false, (on) => { state.layers.grid = on; saveSettings(); }));
+  box.appendChild(toggle("MGRS Grid Lines", state.layers.grid !== false, (on) => { state.layers.grid = on; saveSettings(); }, "The grid numbers at the edges always print."));
   if (terrain && terrain.available) {
-    const ht = document.createElement("h3"); ht.textContent = "Terrain analysis"; box.appendChild(ht);
-    box.appendChild(toggle("Viewshed or radio overlay and its points", state.layers.terrain !== false, (on) => {
+    const ht = document.createElement("h3"); ht.textContent = "Terrain Analysis"; box.appendChild(ht);
+    box.appendChild(toggle("Analysis Overlay", state.layers.terrain !== false, (on) => {
       state.layers.terrain = on; saveSettings(); terrain.refresh(); updateFootprint();
-    }));
+    }, "The viewshed or radio coverage overlay and its points."));
   }
   const hidden = state.layers.off.filter((g) => have.has(g)).length;
   $("layers-summary").textContent = hidden ? `${hidden} hidden` : "";
@@ -827,18 +828,18 @@ async function makePdf(kind) {
       pdf.autoPrint();
       const url = pdf.output("bloburl");
       const w = window.open(url, "_blank");
-      if (!w) { status.textContent = "The browser blocked the pop-up. Press Download PDF instead."; return; }
+      if (!w) { status.textContent = "The browser blocked the pop-up. Use Download PDF instead."; return; }
     }
     status.textContent = `Done: ${pages} page${pages === 1 ? "" : "s"} in ${Math.round((Date.now() - t0) / 1000)} s.`;
   } catch (e) {
     console.error(e);
-    status.textContent = e.message === "Cancelled" ? "Cancelled." : "Failed: " + (e.message || e);
+    status.textContent = e.message === "Cancelled" ? "Canceled." : "Failed: " + (e.message || e);
   } finally {
     btns.forEach((b) => (b.disabled = false));
     $("cancel").hidden = true;
     aborter = null;
   }
 }
-$("cancel").onclick = () => { if (aborter) { aborter.abort(); $("status").textContent = "The print will stop after this page…"; } };
+$("cancel").onclick = () => { if (aborter) { aborter.abort(); $("status").textContent = "Canceling after this page…"; } };
 $("print").onclick = () => makePdf("print");
 $("download").onclick = () => makePdf("download");

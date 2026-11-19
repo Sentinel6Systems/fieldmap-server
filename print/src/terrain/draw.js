@@ -23,7 +23,7 @@ export function legend(t) {
   if (t.mode === "viewshed") {
     const out = [{ key: "ground", label: "Ground visible", style: STYLES.ground }];
     if (t.tgtH > 0) out.push({ key: "target", label: "Target visible, ground hidden", style: STYLES.target });
-    out.push({ key: "none", label: "Not visible: no colour" });
+    out.push({ key: "none", label: "Not visible: no color" });
     return out;
   }
   if (t.budgetOn) {
@@ -38,7 +38,7 @@ export function legend(t) {
     { key: "clear", label: "Clear: line of sight, 60 % of the Fresnel zone clear", style: STYLES.clear },
     { key: "marginal", label: "Marginal: line of sight, Fresnel zone partly blocked", style: STYLES.marginal },
     { key: "diffraction", label: "Diffraction: one ridge in the way, up to 20 dB extra loss", style: STYLES.diffraction },
-    { key: "none", label: "Blocked: more than 20 dB, or two or more ridges: no colour" },
+    { key: "none", label: "Blocked: more than 20 dB, or two or more ridges: no color" },
   ];
 }
 

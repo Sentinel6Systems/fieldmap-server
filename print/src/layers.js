@@ -8,12 +8,12 @@ const GROUP = "fieldmap:group";
 // Panel sections, in order. Groups a style does not have are hidden.
 // hillshade and contours have their own three-way controls, base is never switched off.
 export const SECTIONS = [
-  ["Terrain", [["peaks", "Peaks & spot heights"], ["terrain-names", "Terrain names"]]],
-  ["Cover", [["woodland", "Woodland"], ["ground", "Wetland, sand, rock, ice"], ["landuse", "Built-up & land use"], ["parks", "Parks & protected land"], ["public-land", "Public land access (PAD-US)"]]],
-  ["Water", [["water", "Water"], ["seasonal-water", "Seasonal water"], ["flow-arrows", "Flow arrows"], ["springs", "Springs & waterfalls"], ["water-names", "Water names"], ["flood", "Flood zones (FEMA)"]]],
-  ["Transport", [["roads", "Roads"], ["trails", "Trails & tracks"], ["railways", "Railways"], ["airfields", "Airfields"], ["road-names", "Road names & shields"], ["trail-names", "Trail names"]]],
-  ["Structures", [["buildings", "Buildings"], ["power", "Power lines & plants"], ["pipelines", "Pipelines"], ["towers", "Towers & masts"], ["barriers", "Fences, walls & gates"], ["obstacles", "Obstacles (FAA)"], ["pois", "Points of interest"]]],
-  ["Places", [["place-names", "Place names"], ["landmarks", "Landmarks"], ["survey-marks", "Survey marks (NGS)"], ["boundaries", "Admin boundaries"]]],
+  ["Terrain", [["peaks", "Peaks & Spot Heights"], ["terrain-names", "Terrain Names"]]],
+  ["Cover", [["woodland", "Woodland"], ["ground", "Wetland, Sand, Rock, Ice"], ["landuse", "Built-up & Land Use"], ["parks", "Parks & Protected Land"], ["public-land", "Public Land Access (PAD-US)"]]],
+  ["Water", [["water", "Water"], ["seasonal-water", "Seasonal Water"], ["flow-arrows", "Flow Arrows"], ["springs", "Springs & Waterfalls"], ["water-names", "Water Names"], ["flood", "Flood Zones (FEMA)"]]],
+  ["Transport", [["roads", "Roads"], ["trails", "Trails & Tracks"], ["railways", "Railways"], ["airfields", "Airfields"], ["road-names", "Road Names & Shields"], ["trail-names", "Trail Names"]]],
+  ["Structures", [["buildings", "Buildings"], ["power", "Power Lines & Plants"], ["pipelines", "Pipelines"], ["towers", "Towers & Masts"], ["barriers", "Fences, Walls & Gates"], ["obstacles", "Obstacles (FAA)"], ["pois", "Points of Interest"]]],
+  ["Places", [["place-names", "Place Names"], ["landmarks", "Landmarks"], ["survey-marks", "Survey Marks (NGS)"], ["boundaries", "Admin Boundaries"]]],
 ];
 export const OWN_CONTROLS = new Set(["base", "hillshade", "contours"]);
 

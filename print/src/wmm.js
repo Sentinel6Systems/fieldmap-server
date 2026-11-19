@@ -1,5 +1,5 @@
 // The magnetic model notice at the top of the panel: shown from SOON_DAYS before the World
-// Magnetic Model in use runs out, with an "Update magnetic model" button when the server runs
+// Magnetic Model in use runs out, with an "Update Magnetic Model" button when the server runs
 // tools/wmm-update.py serve (at wmm-api/). Without the service, or without Internet on the
 // server, printing carries on with the model it has.
 import { loadServedModel, currentModel } from "./declination.js";
@@ -20,7 +20,7 @@ export async function initWmmNotice(root) {
     text.textContent = days < 0
       ? `The magnetic model ${m.name} expired on ${fmtDate(m.end)}. The declination still comes from this model and becomes less accurate each year.`
       : `The magnetic model ${m.name} expires on ${fmtDate(m.end)}.`;
-    if (!api) text.textContent += " Run tools/wmm-update.py update on the box to update it.";
+    if (!api) text.textContent += " Run tools/wmm-update.py update on the server to update it.";
     btn.hidden = !api;
   };
 
@@ -29,12 +29,12 @@ export async function initWmmNotice(root) {
     try {
       const res = await fetch("wmm-api/update", { method: "POST", headers: { "X-Fieldmap": "wmm-update" } });
       const r = await res.json().catch(() => ({}));
-      result.textContent = r.message || `The box sent HTTP status ${res.status}.`;
+      result.textContent = r.message || `The server returned HTTP status ${res.status}.`;
       if (r.updated) await loadServedModel();
     } catch {
-      result.textContent = "The box did not reply. The page continues to use the current model.";
+      result.textContent = "The server did not respond. The current model stays in use.";
     }
-    btn.disabled = false; btn.textContent = "Update magnetic model";
+    btn.disabled = false; btn.textContent = "Update Magnetic Model";
     show();
     if (root.hidden && result.textContent) { root.hidden = false; text.textContent = ""; btn.hidden = true; }
   });

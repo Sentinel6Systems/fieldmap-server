@@ -3,7 +3,7 @@
 // and loads this file right after it. The header shows the name, a link to each page that
 // is there (the current one marked), and a Home button when the site sets one.
 //
-// Maps, Print a map and the User Guide are for everyone. What not everyone needs is under the
+// Maps, Print Map and the User Guide are for everyone. What not everyone needs is under the
 // Admin tab: remote access, the devices and the map builder now, more later. On those pages a
 // second row under the header names them (when there is more than one).
 //
@@ -11,7 +11,7 @@
 //   the print tool    /mapprinter/   (its config.json answers)
 //   the Maps page     /maps/ behind Internet-in-a-Box, else /   (styles.json answers)
 //   the User Guide    /guide/        (its fieldmap.css answers)
-//   the map builder   /mapadmin/     (answers; "not running" when only its place is there)
+//   the map builder   /mapadmin/     (answers; "Unavailable" when only its place is there)
 //   the Devices page  /phones/       (the Fieldmap app; the same, and only on the box's own network,
 //                                    where the page itself answers), and Remote access beside it
 //                                    at /phones/remote.html
@@ -22,9 +22,9 @@
   if (!bar) return;
   const here = bar.dataset.page;
   const own = new URL(bar.dataset.root || "./", location.href).pathname;
-  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print a map", "Print"], ["guide", "User Guide", "Guide"], ["admin", "Admin", "Admin"]];
+  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print Map", "Print"], ["guide", "User Guide", "Guide"], ["admin", "Admin", "Admin"]];
   // Under Admin, in this order. The Admin tab opens the first one that is running.
-  const ADMIN = [["access", "Remote access"], ["phones", "Devices"], ["builder", "Map builder"]];
+  const ADMIN = [["access", "Remote Access"], ["phones", "Devices"], ["builder", "Map Builder"]];
   const inAdmin = ADMIN.some(([key]) => key === here);
   const CACHE = "fieldmap.nav";
 
@@ -51,7 +51,7 @@
         current = inAdmin;
         href = inAdmin ? place(found, here) : running[0] || (ADMIN.some(([k]) => found[k] === "off") ? "off" : null);
       }
-      if (!current && href === "off") nav.append(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} pages do not run on this box now.` }, ...text, el("small", { textContent: "not running" })));
+      if (!current && href === "off") nav.append(el("span", { className: "fm-off", title: `${long} is unavailable on this server.` }, ...text, el("small", { textContent: "Unavailable" })));
       else if (current || href) {
         const a = el("a", { href, ariaLabel: long }, ...text);
         a.dataset.page = key;
@@ -72,7 +72,7 @@
     const items = [];
     for (const [key, long] of ADMIN) {
       const href = place(found, key);
-      if (key !== here && href === "off") items.push(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} does not run on this box now.` }, long, el("small", { textContent: "not running" })));
+      if (key !== here && href === "off") items.push(el("span", { className: "fm-off", title: `${long} is unavailable on this server.` }, long, el("small", { textContent: "Unavailable" })));
       else if (href) {
         const a = el("a", { href }, long);
         if (key === here) a.ariaCurrent = "page";

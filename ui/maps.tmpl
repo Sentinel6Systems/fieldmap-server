@@ -60,37 +60,37 @@
 
 {{#if styles}}
 <aside id="panel">
-  <label for="style">Map style</label>
+  <label for="style">Map Style</label>
   <select id="style">
     {{#each styles}}{{#if serving_data}}<option value="{{@key}}"{{#if serving_rendered}} data-drawn{{/if}} data-ground="{{styleJSON.layers.[0].type}}">{{name}}</option>{{/if}}{{/each}}
   </select>
-  <button id="apps" type="button" title="Get the tile addresses for ATAK, WinTAK, iTAK and other map apps">Use in another app</button>
+  <button id="apps" type="button" title="Tile URLs for ATAK, WinTAK, iTAK and other map apps">Tile URLs</button>
 </aside>
 {{else}}
-<div class="notice"><h1>No map styles</h1><p>The configuration of the tile server has no map styles.</p></div>
+<div class="notice"><h1>No Map Styles</h1><p>The tile server configuration has no map styles.</p></div>
 {{/if}}
 
 <div class="notice" id="no-maps" hidden>
-  <h1>The box has no maps yet</h1>
-  <p>Build the maps on the Map builder page, or with scripts/build-region.sh on the box.</p>
+  <h1>No Maps Installed</h1>
+  <p>Build maps on the Map Builder page, or run scripts/build-region.sh on the server.</p>
 </div>
 
 <dialog id="addresses" aria-labelledby="addresses-title">
-  <div class="dhead"><h1 id="addresses-title">Use these maps in another app</h1><button id="addresses-close" type="button">Close</button></div>
+  <div class="dhead"><h1 id="addresses-title">Tile URLs for Other Apps</h1><button id="addresses-close" type="button">Close</button></div>
   <div class="dbody">
-    <p>ATAK, WinTAK, iTAK and other map apps use a tile address. Copy the address of the map that you want. The address works for devices that connect to the box in the same way as you do now.</p>
-    <div class="fm-label">Map tiles</div>
+    <p>ATAK, WinTAK, iTAK and other map apps load maps from a tile URL. Copy the URL of the map you want. It works for devices that reach the server the same way you do now.</p>
+    <div class="fm-label">Map Tiles</div>
     <div id="tile-list">
     {{#each styles}}{{#if serving_rendered}}
     <div class="addr">
       <b>{{name}}</b>
-      <div class="copy"><input type="text" readonly data-tiles="{{@key}}" data-ground="{{styleJSON.layers.[0].type}}" aria-label="Tile address for {{name}}"><button type="button">Copy</button></div>
+      <div class="copy"><input type="text" readonly data-tiles="{{@key}}" data-ground="{{styleJSON.layers.[0].type}}" aria-label="Tile URL for {{name}}"><button type="button">Copy</button></div>
       <p class="more"><a href="{{@root.public_url}}styles/{{@key}}.json">TileJSON</a> · <a href="{{@root.public_url}}styles/{{@key}}/wmts.xml">WMTS</a>{{#if serving_data}} · <a href="{{@root.public_url}}styles/{{@key}}/style.json">Style</a>{{/if}}</p>
     </div>
     {{/if}}{{/each}}
     </div>
     {{#if data}}
-    <div class="fm-label">Data files</div>
+    <div class="fm-label">Data Sources</div>
     <div class="data">
       {{#each data}}<span>{{@key}}{{#if formatted_filesize}} ({{formatted_filesize}}){{/if}}</span><a href="{{@root.public_url}}data/{{@key}}.json">TileJSON</a><a href="{{@root.public_url}}data/{{@key}}/">Inspect</a>{{/each}}
     </div>

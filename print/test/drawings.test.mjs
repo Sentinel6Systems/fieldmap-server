@@ -52,7 +52,7 @@ test("files from other software: points, two-point lines, polygons, multi geomet
 });
 
 test("bad files give a plain message, bad values are not loaded", () => {
-  assert.throws(() => fromGeoJSON("not json", "#000000"), /not a map drawing file/);
+  assert.throws(() => fromGeoJSON("not json", "#000000"), /not a GeoJSON file/);
   assert.throws(() => fromGeoJSON('{"hello": 1}', "#000000"), /no map features/);
   const got = fromGeoJSON({ type: "FeatureCollection", features: [
     { type: "Feature", geometry: { type: "Point", coordinates: [10, 95] }, properties: {} },

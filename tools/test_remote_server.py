@@ -271,7 +271,7 @@ class RemoteServerTest(unittest.TestCase):
         self.rs.write_private(self.rs.REACH, json.dumps({"checked": 1, "problem": "shared-address", "ipv4": {"ok": False}, "ipv6": {"addresses": []}}).encode())
         r = self.rs.report()
         self.assertEqual("blocked", r["status"])
-        self.assertIn("shares one address", r["text"])
+        self.assertIn("shares one public IP address", r["text"])
         self.rs.write_private(self.rs.REACH, json.dumps({"checked": 1, "problem": "router-closed", "ipv4": {}, "ipv6": {"addresses": ["2001:db8:77::10"]}}).encode())
         self.assertEqual("maybe", self.rs.report()["status"])
 
@@ -380,7 +380,7 @@ class RemoteServerTest(unittest.TestCase):
             self.assertTrue(self.rs.switch_off_if_idle(switched_on + 151 * day))
             self.rs.time.sleep(0.2)
         self.assertFalse(self.rs.enabled())
-        self.assertIn("switched off automatically", self.rs.report()["text"])
+        self.assertIn("disabled automatically", self.rs.report()["text"])
         self.assertEqual(1, len(self.rs.load_devices()), "the phones are kept")
 
     def test_the_automatic_switch_off_can_be_unticked(self):
@@ -588,7 +588,7 @@ class RemoteServerTest(unittest.TestCase):
             self.assertIn("FIELDMAP_NETBIRD=off", open(self.rs.NETBIRD_CLIENT).read())
             self.assertFalse(json.load(open(self.rs.SETTINGS))["netbird"])
             self.assertEqual((False, "off"), (off["netbird"]["on"], off["netbird"]["status"]))
-            self.assertIn("switch on remote access", off["netbird"]["text"])
+            self.assertIn("Remote connectivity is disabled", off["netbird"]["text"])
             self.assertEqual(401, self.get("/gateway/netbird", {"X-Fieldmap-Fingerprint": device["sha1"]}).status)
             on = self.post("/enabled", {"on": True}).body
             self.rs.time.sleep(0.2)
@@ -607,7 +607,7 @@ class RemoteServerTest(unittest.TestCase):
         self.assertTrue(self.rs.newest("netbird") > 0)
         self.assertEqual(0, self.rs.newest("direct"))
         self.assertNotEqual("confirmed", self.rs.report()["status"], "nobody came in through the router's port")
-        self.assertIn("A device connected to the box through NetBird on", self.rs.netbird_report()["text"])
+        self.assertIn("Last remote connection via NetBird:", self.rs.netbird_report()["text"])
         self.assertEqual(204, self.get("/check", {**mine, "X-Fieldmap-Peer": "198.51.100.7"}).status)
         self.assertTrue(self.rs.newest("direct") > 0)
         self.post("/way", {"way": "direct"})
@@ -644,7 +644,7 @@ class RemoteServerTest(unittest.TestCase):
         self.assertEqual(("netbird", True), (json.load(open(self.rs.SETTINGS))["way"], json.load(open(self.rs.SETTINGS))["netbird"]))
         self.assertIn("FIELDMAP_NETBIRD=on", open(self.rs.NETBIRD_CLIENT).read())
         self.assertEqual("off", self.rs.report()["status"])
-        self.assertIn("because devices come in through NetBird", self.rs.report()["text"])
+        self.assertIn("Method in use: NetBird VPN", self.rs.report()["text"])
         self.netbird_says()
         self.assertIsNotNone(self.get("/gateway/netbird", mine).body["netbird"])
         # Back to the router's port: NetBird stops, its firewall rule goes, devices get no block.
@@ -652,7 +652,7 @@ class RemoteServerTest(unittest.TestCase):
                                                                                                 "external_port": 41000}, "ipv6": {}, "problem": ""}) as reach, \
                 mock.patch.object(self.rs.threading, "Thread") as later:
             info = self.post("/way", {"way": "direct"}).body
-            self.assertEqual("The box asks the router now.", info["reach"]["text"], "not the text of the way that was closed")
+            self.assertEqual("Retrying port mapping…", info["reach"]["text"], "not the text of the way that was closed")
             later.call_args.kwargs["target"]()     # the router answers
             self.rs.time.sleep(0.2)
             reach.assert_called()
@@ -661,7 +661,7 @@ class RemoteServerTest(unittest.TestCase):
         self.assertFalse(json.load(open(self.rs.SETTINGS))["netbird"])
         self.assertEqual({"netbird": None}, self.get("/gateway/netbird", mine).body)
         self.assertEqual((False, "off", True), (info["netbird"]["on"], info["netbird"]["status"], info["netbird"]["keySet"]))
-        self.assertIn("because devices come in through the port on the router", info["netbird"]["text"])
+        self.assertIn("Method in use: Port Forwarding", info["netbird"]["text"])
         self.assertEqual(2, len(self.rs.endpoints()))
         # And NetBird again, with the key the box kept.
         self.assertEqual("netbird", self.post("/way", {"way": "netbird"}).body["way"])
@@ -683,27 +683,27 @@ class RemoteServerTest(unittest.TestCase):
             f.write("key\nrpc error: code = PermissionDenied desc = couldn't add peer: setup key is invalid\n")
         r = self.rs.netbird_report()
         self.assertEqual("blocked", r["status"])
-        self.assertIn("did not accept the setup key", r["text"])
+        self.assertIn("Setup key rejected", r["text"])
         self.assertNotIn("rpc error", r["text"])
         with open(self.rs.NETBIRD_PROBLEM, "w") as f:
             f.write("server\ncontext deadline exceeded\n")
-        self.assertIn("cannot connect to the management server https://api.netbird.io:443", self.rs.netbird_report()["text"])
+        self.assertIn("Cannot reach the NetBird management URL https://api.netbird.io:443", self.rs.netbird_report()["text"])
         with open(self.rs.NETBIRD_PROBLEM, "w") as f:
             f.write("download\n")
-        self.assertIn("cannot download NetBird", self.rs.netbird_report()["text"])
+        self.assertIn("Cannot download NetBird", self.rs.netbird_report()["text"])
         # Docker refused to start the container: said at once, with Docker's reason.
         with open(self.rs.NETBIRD_PROBLEM, "w") as f:
             f.write("start\nError response from daemon: unknown log opt 'max-size' for journald log driver\n")
         r = self.rs.netbird_report()
         self.assertEqual("blocked", r["status"])
-        self.assertIn("NetBird did not start", r["text"])
-        self.assertIn("The box said: Error response from daemon: unknown log opt", r["text"])
+        self.assertIn("NetBird failed to start", r["text"])
+        self.assertIn("Details: Error response from daemon: unknown log opt", r["text"])
         os.remove(self.rs.NETBIRD_PROBLEM)
         old = time.time() - 3600
         os.utime(self.rs.NETBIRD_APPLY, (old, old))
-        self.assertIn("did not start", self.rs.netbird_report()["text"], "nothing answered for a long time")
+        self.assertIn("failed to start", self.rs.netbird_report()["text"], "nothing answered for a long time")
         self.netbird_says(connected=False, error="rpc error: code = Unavailable")
-        self.assertIn("cannot connect to the management server", self.rs.netbird_report()["text"])
+        self.assertIn("Cannot reach the NetBird management URL", self.rs.netbird_report()["text"])
         # A box that was a member already: NetBird does not look at a new key. The page says so.
         self.connect_netbird(setupKey="E" * 36)
         self.netbird_says()
@@ -711,7 +711,7 @@ class RemoteServerTest(unittest.TestCase):
             f.write("unchecked\n")
         r = self.rs.netbird_report()
         self.assertEqual(("connected", False), (r["status"], r["keyChecked"]))
-        self.assertIn("did not check the new setup key", r["text"])
+        self.assertIn("new setup key was not verified", r["text"])
         os.remove(self.rs.NETBIRD_CHECK)
         # A client that was started for an earlier request does not count: the box starts the new one.
         self.netbird_says()

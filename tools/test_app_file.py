@@ -84,7 +84,7 @@ class AppFileTest(unittest.TestCase):
             self.assertEqual(self.apk, f.read())
         self.assertNotIn("https://example.com/debug", self.asked, "never a debug build")
         with self.release():
-            self.assertIn("is the newest", self.af.fetch())
+            self.assertIn("is up to date", self.af.fetch())
         self.assertEqual(["https://api.github.com/repos/Sentinel6Systems/fieldmap-android/releases/latest"], self.asked,
                          "the same file is not downloaded again")
         newer = apk_bytes(b"y")
@@ -111,7 +111,7 @@ class AppFileTest(unittest.TestCase):
         info = self.af.current()
         self.assertEqual(("my-build", "by hand"), (info["version"], info["source"]))
         with self.release():
-            self.assertIn("added by hand", self.af.fetch())
+            self.assertIn("added manually", self.af.fetch())
         self.assertEqual([], self.asked, "GitHub is not even asked")
         self.assertEqual("by hand", self.af.current()["source"])
 
