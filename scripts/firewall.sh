@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # fieldmap-server: a firewall on the box itself, for remote access by the Fieldmap app.
-# From outside the local network it lets in only the remote gateway, SSH, and answers to what
-# the box asked for itself; from the local network, everything as before. It does not rely on
-# the router: some routers let IPv6 in unfiltered, and a mistake in a port mapping should
-# expose nothing.
+# From outside the local network it lets in only the remote gateway (while remote access is
+# switched on) and answers to what the box asked for itself; from the local network, everything
+# as before. It does not rely on the router: some routers let IPv6 in unfiltered, and a mistake
+# in a port mapping should expose nothing. SSH from outside is closed too, unless .env opens it.
 #
 # Usage (as root; scripts/remote.sh installs it as fieldmap-firewall, refreshed every five
 # minutes because the home network's IPv6 prefix can change):
@@ -15,7 +15,7 @@
 # firewall, Docker's, ufw). The one opening it makes elsewhere: while remote access is on, the
 # gateway's port in iptables (see below).
 # Settings in .env: REMOTE_FIREWALL=off, REMOTE_PORT (written by scripts/remote.sh setup), REMOTE_FIREWALL_ALLOW
-# (ports open from outside besides the gateway, default 22; empty for none).
+# (ports open from outside besides the gateway: none by default; 22 to reach SSH from outside).
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TABLE="inet fieldmap_guard"
@@ -88,15 +88,21 @@ if ! command -v nft >/dev/null; then
 fi
 command -v nft >/dev/null || { echo "nftables is not installed: no firewall on this box." >&2; exit 0; }
 
-ALLOW="$(setting REMOTE_FIREWALL_ALLOW 22)"
+ALLOW="$(setting REMOTE_FIREWALL_ALLOW "")"
 if [ "$ON" = no ]; then PORT=""; GATEWAY_RULE="# remote access switched off: no gateway"; else GATEWAY_RULE="tcp dport 8443 accept"; fi
 OPEN="$(echo "$PORT $ALLOW" | tr ', ' '\n\n' | grep -E '^[0-9]{1,5}$' | sort -un | paste -sd, - || true)"
 
-# The IPv6 networks this machine is on: devices at home have global addresses in them.
-PREFIXES="$(ip -j -6 route show 2>/dev/null | python3 -c '
+# The IPv6 networks this machine is on: devices at home have global addresses in them. Put
+# together with the local ranges into one list without overlaps: nft refuses a set in which one
+# network lies inside another, and a home network's own fd.. prefix lies inside fc00::/7.
+LAN6="$(ip -j -6 route show 2>/dev/null | python3 -c '
 import ipaddress, json, sys
-out = set()
-for r in json.load(sys.stdin or "[]"):
+out = [ipaddress.ip_network(n) for n in ("::1/128", "fe80::/10", "fc00::/7")]
+try:
+    routes = json.load(sys.stdin)
+except ValueError:
+    routes = []
+for r in routes:
     dst, dev = r.get("dst", ""), r.get("dev", "")
     if "/" not in dst or dev.startswith(("docker", "br-", "veth", "tailscale", "wg", "zt")):
         continue
@@ -105,9 +111,9 @@ for r in json.load(sys.stdin or "[]"):
     except ValueError:
         continue
     if not (net.is_link_local or net.is_multicast or net.is_loopback) and 32 <= net.prefixlen <= 64 and not r.get("gateway"):
-        out.add(str(net))
-print(", ".join(sorted(out)))' 2>/dev/null || true)"
-LAN6="::1/128, fe80::/10, fc00::/7${PREFIXES:+, $PREFIXES}"
+        out.append(net)
+print(", ".join(str(n) for n in ipaddress.collapse_addresses(out)))' 2>/dev/null || true)"
+LAN6="${LAN6:-::1/128, fe80::/10, fc00::/7}"
 
 nft -f - <<EOF
 table $TABLE
@@ -153,4 +159,11 @@ ${OPEN:+        elements = { $OPEN \}}
     }
 }
 EOF
-echo "Firewall on this box: from outside the local network only TCP ${OPEN:-(nothing)} get in${PORT:+ (the gateway is $PORT)}."
+if [ -n "$OPEN" ]; then
+    echo "Firewall on this box: from outside the local network it lets in TCP $OPEN only${PORT:+ (the gateway is $PORT)}."
+else
+    echo "Firewall on this box: nothing gets in from outside the local network."
+fi
+if ! echo ",$OPEN," | grep -q ",22,"; then
+    echo "SSH from outside the local network is closed (from this network it works as before). To open it: REMOTE_FIREWALL_ALLOW=22 in .env."
+fi

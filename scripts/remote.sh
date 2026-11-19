@@ -26,7 +26,7 @@
 #   4. starts the gateway, an nginx container that demands a certificate this box issued and
 #      serves only what the app needs, and updates it every week (fieldmap-remote-update);
 #   5. puts a firewall on the box itself that lets nothing in from outside the local network
-#      but the gateway and SSH (scripts/firewall.sh, fieldmap-firewall).
+#      but the gateway (scripts/firewall.sh, fieldmap-firewall).
 #
 # Settings, in .env (see .env.example), all optional:
 #   REMOTE_PORT            the gateway's port on this machine (chosen at random by the first setup)
@@ -34,7 +34,7 @@
 #   REMOTE_ADDRESS         host:port of the gateway from outside that you set up yourself
 #   REMOTE_DIRECT=off      do not ask the router to open a port
 #   REMOTE_FIREWALL=off    no firewall on the box
-#   REMOTE_FIREWALL_ALLOW  ports open from outside besides the gateway (default 22, for SSH)
+#   REMOTE_FIREWALL_ALLOW  ports open from outside besides the gateway (none by default; 22 for SSH)
 #   REMOTE_RELAY=tailscale also make the gateway reachable through Tailscale Funnel (needs the box
 #                          signed in to a Tailscale account: sudo tailscale up)
 set -euo pipefail

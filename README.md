@@ -874,9 +874,10 @@ No account, no outside service, nothing of anyone else's in between: the box tal
   certificate this box issued, checks every request against the list of phones, and serves only what the app
   needs: styles, fonts, symbols and data tiles, and the few addresses of sharing between phones (below). Not the
   pictures the tile server draws, not the print tool, not the map builder, nothing else. It limits connections per visitor and takes nginx's security fixes every week.
-- **A firewall on the box itself** lets nothing in from outside the local network but the gateway and SSH, over
-  IPv4 and IPv6, whatever the router does (`scripts/firewall.sh`). Devices at home, and the box's own connections
-  out, are not affected. Where the machine has a firewall already (Internet-in-a-Box's drops everything from the
+- **A firewall on the box itself** lets nothing in from outside the local network but the gateway, over
+  IPv4 and IPv6, whatever the router does (`scripts/firewall.sh`). SSH too is answered only on the local network,
+  unless you open it (`REMOTE_FIREWALL_ALLOW=22`). Devices at home, and the box's own connections out, are not
+  affected. Where the machine has a firewall already (Internet-in-a-Box's drops everything from the
   home network but its own ports), the gateway's port is let through it too, only while remote access is on.
 - **Nothing gives the box away.** The names in its certificates are random letters.
 
@@ -900,7 +901,7 @@ REMOTE_PIN=<code>                      # pairing, and removing a phone, ask for 
 REMOTE_ADDRESS=tak.example.com:8443    # an address of your own: a port you forwarded, a name of yours
 REMOTE_DIRECT=off                      # do not ask the router for anything
 REMOTE_FIREWALL=off                    # no firewall on the box (for a box that serves other things from outside)
-REMOTE_FIREWALL_ALLOW=22               # ports open from outside besides the gateway; empty for none
+REMOTE_FIREWALL_ALLOW=22               # ports open from outside besides the gateway (none by default); 22 is SSH
 REMOTE_RELAY=tailscale                 # also reach the gateway through Tailscale Funnel (sign the box in first)
 ```
 
@@ -921,6 +922,9 @@ Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port 
   `REMOTE_PIN`. A VPN into the home network counts as the home network.
 - Pairing runs over the home network unencrypted: it assumes that network is trusted at that moment.
 - A phone that was removed is told so the next time it tries from outside, and can be paired again at home.
+- The box's firewall closes SSH (port 22) to callers from outside the local network. From the local network, and
+  through a VPN into it, SSH works as before. If you log in to the box from outside directly, put
+  `REMOTE_FIREWALL_ALLOW=22` in `.env` **before** you update, then run `sudo ./scripts/firewall.sh apply`.
 - Back up `data/remote/` with the box. If it is lost, every phone has to be paired again.
 - The service is `tools/remote-server.py` with `tools/portmap.py` (Python's standard library, `openssl` and `ip`),
   run by `fieldmap-remote.service`. Tests: `python3 -m unittest tools/test_remote_server.py tools/test_portmap.py`.
@@ -1026,6 +1030,10 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- The box's own firewall no longer leaves SSH (port 22) open to callers from outside the local network: by
+  default nothing but the gateway gets in from outside, and that only while remote access is switched on. Whoever
+  logs in to the box from outside directly sets `REMOTE_FIREWALL_ALLOW=22` in `.env` first. The firewall is now
+  also put up on a home network that has a private IPv6 prefix of its own (`fd..`), where its rules were refused.
 - Sharing positions and markers between phones with the Fieldmap Android app, through the box and off until the
   owner switches it on (Phones page): at home for every phone on the box's network, away from home for the paired
   ones. Positions are held in memory only; shared markers are kept in `data/share/`. No new port, no sign-in, no
