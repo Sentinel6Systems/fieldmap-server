@@ -20,7 +20,8 @@
 #   6. sets up remote access for the Fieldmap Android app (scripts/remote.sh setup): phones
 #      paired on this network can then use the maps from anywhere, and the phones can share
 #      positions and markers with each other. Both are off until switched on on the Devices
-#      page. --no-remote leaves it out.
+#      page. Devices on this network can install the app itself from that page
+#      (scripts/app.sh fetch puts it on the box). --no-remote leaves all of it out.
 # Then build your maps: on the map builder page, or with build-region.sh.
 #
 # A Raspberry Pi behind Internet-in-a-Box uses scripts/install-pi.sh instead.
@@ -148,6 +149,10 @@ else
     echo "Left out (--no-remote)."
     echo "== The firewall on this box"
     $SUDO ./scripts/firewall.sh install
+fi
+if [ "$REMOTE" = yes ]; then
+    echo "== The Fieldmap app, for devices to install from the Devices page"
+    ./scripts/app.sh fetch || echo "WARNING: the app could not be fetched (see above). Everything else works." >&2
 fi
 
 # A firewall is the owner's to change: say what it needs, do not touch it.

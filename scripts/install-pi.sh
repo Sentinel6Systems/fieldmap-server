@@ -117,6 +117,8 @@ if [ "${REMOTE:-yes}" != no ]; then
     echo "== The firewall on this box"
     ./scripts/firewall.sh install
   fi
+  echo "== The Fieldmap app, for devices to install from the Devices page"
+  ./scripts/app.sh fetch || echo "WARNING: the app could not be fetched (see above). Everything else works." >&2
 else
   sudo -u "$OWNER" mkdir -p data/remote/run && sudo -u "$OWNER" touch data/remote/run/no-remote
   echo "== The firewall on this box"

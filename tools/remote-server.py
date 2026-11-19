@@ -15,6 +15,8 @@ How it works:
   * Off by default: until someone switches it on on the Devices page, nothing outside can
     reach the box, the router is not asked for anything, and no phone can pair
     (set_enabled). Switched off again, it is all closed, and the paired phones are kept.
+  * The app itself is kept on the box (scripts/app.sh, tools/app-file.py: data/app/), and devices
+    on the local network download it from the Devices page (`GET /fieldmap.apk`): no app store.
   * From outside, the app connects to the gateway (an nginx that demands such a
     certificate, see gateway_conf()), which asks this service for every request whether the
     certificate is still on the list (`GET /check`). Removing a phone locks it out at once.
@@ -50,6 +52,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import signal
 import socket
 import socketserver
@@ -77,6 +80,9 @@ NAME = os.path.join(GATEWAY, "name")                # the gateway's name in its 
 SETTINGS = os.path.join(REMOTE, "settings.json")    # the Devices page's switch; scripts/firewall.sh reads it too
 PAGE = os.path.join(ROOT, "phones")                 # the Devices page
 SHARED = os.path.join(ROOT, "ui")                   # the look and the header every page shares
+APP_DIR = os.environ.get("APP_DIR") or os.path.join(ROOT, "data", "app")     # the app (scripts/app.sh)
+APK = os.path.join(APP_DIR, "fieldmap.apk")
+APP_INFO = os.path.join(APP_DIR, "app.json")
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
          ".svg": "image/svg+xml"}
 
@@ -411,6 +417,22 @@ def write_seen():
                 d["seen"] = last_seen[d["id"]]
         last_seen.clear()
         save_devices(devices)
+
+
+# ---------- the app, for devices to install ----------
+
+def app():
+    """The app the box offers (scripts/app.sh): {"version", "size", "sha256", "source", "added"}, or None."""
+    try:
+        with open(APP_INFO) as f:
+            info = json.load(f)
+        if not isinstance(info, dict) or os.path.getsize(APK) != info.get("size"):
+            return None
+        version = re.sub(r"[^A-Za-z0-9._+-]", "", str(info.get("version", "")))[:32] or "?"
+        return {"version": version, "size": info["size"], "sha256": str(info.get("sha256", ""))[:64],
+                "source": "by hand" if info.get("source") == "by hand" else "release", "added": str(info.get("added", ""))[:10]}
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 # ---------- the switch ----------
@@ -789,13 +811,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def download(self):
+        """The app, for a device on the local network to install. Sent in pieces: it is tens of MB."""
+        info = app()
+        if not info:
+            return self.send(404, {"error": "There is no app on this box yet."})
+        with open(APK, "rb") as f:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.android.package-archive")
+            self.send_header("Content-Length", str(info["size"]))
+            self.send_header("Content-Disposition", 'attachment; filename="fieldmap-%s.apk"' % info["version"])
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            shutil.copyfileobj(f, self.wfile, 1 << 16)
+
     def info(self):
         return {"service": "fieldmap-remote", "version": 2, "ready": ready(), "enabled": enabled(), "pin": bool(setting("REMOTE_PIN")),
                 "autoOff": {"on": auto_off(), "days": IDLE_DAYS, "at": auto_off_at()},
                 "forwarding": {**forwarding(), "port": gateway_port(), "boxAddress": portmap.lan_ipv4() or "",
                                "changingTo": load_settings().get("changingPort") if load_settings().get("changingPort") != gateway_port() else None},
                 "pairing": {"open": pairing_left() > 0, "seconds": pairing_left()},
-                "endpoints": endpoints(), "reach": report(), "phones": len(load_devices())}
+                "endpoints": endpoints(), "reach": report(), "phones": len(load_devices()), "app": app()}
 
     def do_GET(self):
         if self.path == "/check":
@@ -810,6 +847,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(403, {"error": "Only on the box's own network."})
         if self.path in ("/", "/index.html") or self.path.lstrip("/") in ("fieldmap.css", "nav.js"):
             return self.page(self.path)
+        if self.path == "/fieldmap.apk":
+            return self.download()
         if self.path == "/info":
             self.send(200, self.info())
         elif self.path == "/devices":

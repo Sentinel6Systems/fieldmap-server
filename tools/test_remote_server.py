@@ -44,11 +44,12 @@ class FakeRequest:
         handler = rs.Handler.__new__(rs.Handler)
         handler.path, handler.headers, handler.rfile = path, self.headers, io.BytesIO(data)
         self.out = {}
+        self.sent_headers = {}
         handler.send = lambda status, payload=None: self.out.update(status=status, body=payload)
         handler.send_response = lambda status: self.out.update(status=status)
-        handler.send_header = lambda *a: None
+        handler.send_header = lambda name, value: self.sent_headers.update({name: value})
         handler.end_headers = lambda: None
-        handler.wfile = io.BytesIO()
+        handler.wfile = self.written = io.BytesIO()
         getattr(handler, "do_" + method)()
 
     @property
@@ -305,6 +306,33 @@ class RemoteServerTest(unittest.TestCase):
             self.assertIn("location /mapshare/ { return 404; }", conf, "the Devices page's switch is not among them")
             self.assertNotIn("admin", conf)
             self.assertEqual(1, conf.count("location / {"), "one catch-all only, or nginx refuses to start")
+
+    def test_devices_on_the_local_network_can_download_the_app(self):
+        self.assertIsNone(self.get("/info").body["app"])
+        self.assertEqual(404, self.get("/fieldmap.apk").status, "no app on the box yet")
+        folder = tempfile.mkdtemp(dir=self.tmp.name)
+        apk = b"PK" + b"x" * 300000
+        with open(os.path.join(folder, "fieldmap.apk"), "wb") as f:
+            f.write(apk)
+        with open(os.path.join(folder, "app.json"), "w") as f:
+            json.dump({"version": 'v1.2.0"; x', "size": len(apk), "sha256": "ab" * 32, "source": "github", "added": "2026-01-31"}, f)
+        with mock.patch.multiple(self.rs, APK=os.path.join(folder, "fieldmap.apk"), APP_INFO=os.path.join(folder, "app.json")):
+            info = self.get("/info").body["app"]
+            self.assertEqual({"version": "v1.2.0x", "size": len(apk), "sha256": "ab" * 32, "source": "release", "added": "2026-01-31"}, info)
+            r = self.get("/fieldmap.apk")
+            self.assertEqual(200, r.status)
+            self.assertEqual(apk, r.written.getvalue())
+            self.assertEqual("application/vnd.android.package-archive", r.sent_headers["Content-Type"])
+            self.assertEqual('attachment; filename="fieldmap-v1.2.0x.apk"', r.sent_headers["Content-Disposition"])
+            self.assertEqual(str(len(apk)), r.sent_headers["Content-Length"])
+            self.assertEqual(403, self.get("/fieldmap.apk", {"X-Real-IP": "203.0.113.30"}).status, "only on the box's own network")
+            self.assertEqual(403, self.get("/fieldmap.apk", {"X-Real-IP": "192.168.1.20", "X-Forwarded-For": "203.0.113.30"}).status)
+            with open(os.path.join(folder, "fieldmap.apk"), "ab") as f:
+                f.write(b"half a new file")
+            self.assertIsNone(self.get("/info").body["app"], "a file that does not match its description is not offered")
+            self.assertEqual(404, self.get("/fieldmap.apk").status)
+        conf = self.rs.gateway_conf("/maps/", "http://127.0.0.1:8080/", "8443", True)
+        self.assertNotIn("apk", conf, "never through the gateway")
 
     def test_off_by_default_and_nothing_opens_by_itself(self):
         os.remove(self.rs.SETTINGS)

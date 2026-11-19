@@ -203,6 +203,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `systemd/` | Start the compose stack, and optionally the map builder page, at boot |
 | `phones/`, `scripts/remote.sh`, `scripts/firewall.sh`, `tools/remote-server.py`, `tools/portmap.py` | Remote access for the Android app: the Devices page, pairing, the router's port, the gateway, the box's firewall |
 | `tools/share-server.py` | Sharing positions and markers between phones with the Android app |
+| `scripts/app.sh`, `tools/app-file.py` | The Android app kept on the box, for devices to install from the Devices page |
 | `data/` | Your mbtiles files (not in git) |
 
 ## The styles
@@ -844,6 +845,28 @@ at all. It does not rely on the router, over IPv4 and IPv6: some routers let IPv
   that serves other things to the internet).
 - `sudo ./scripts/firewall.sh show` lists the rules, with a count of what was dropped.
 
+## The Fieldmap app, from the box
+
+Devices on the box's network can install the [Fieldmap Android app](https://github.com/Sentinel6Systems/fieldmap-android)
+straight from the box: no app store, no account, no internet for the device. The **Devices** page has a card **Get
+the Fieldmap app** with the address to open on the device, a **Download the app** button and the three steps
+(Android asks once whether the browser may install apps). Updating is the same: download it again and install it over
+the old one; saved maps and markers stay.
+
+The installers put the newest published release of the app on the box (`./scripts/app.sh fetch`, from the app's
+GitHub releases, only when it is newer; its SHA-256 is checked against the one GitHub lists). The box then keeps it
+for its devices, also when it has no internet later. It is offered only on the box's own network, never through the
+remote gateway.
+
+```bash
+./scripts/app.sh status                    # which app the box offers
+./scripts/app.sh fetch                     # the newest published release, when it is newer
+./scripts/app.sh add <file.apk> [version]  # a file of your own instead (fetch leaves it alone from then on)
+./scripts/app.sh remove                    # offer none
+```
+
+`APP_FETCH=off` in `.env` stops the installers from downloading it. The file is kept in `data/app/`.
+
 ## Remote access for the Android app
 
 The [Fieldmap Android app](https://github.com/Sentinel6Systems/fieldmap-android) can use this box's maps away
@@ -1049,6 +1072,9 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- The Fieldmap Android app can be installed straight from the box: a **Get the Fieldmap app** card on the Devices
+  page, for devices on the box's network. The installers put the newest published release on the box
+  (`scripts/app.sh`); a file of your own can be added instead.
 - The box's firewall answers nothing from outside the local network and VPNs: pings from outside go unanswered too,
   as do closed ports (dropped, never refused). It is put up by every install, also without remote access, and stays
   when remote access is removed. VPN interfaces of ZeroTier and OpenVPN are let in beside Tailscale and WireGuard.

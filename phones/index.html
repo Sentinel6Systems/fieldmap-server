@@ -42,6 +42,7 @@
   .error { color: var(--warn); font-weight: 600; }
   #code { max-width: 14em; }
   #address { max-width: 20em; }
+  .mono-strong { font: 600 15px var(--mono); overflow-wrap: anywhere; }
   .forward { font: 600 17px var(--mono); padding: 12px 14px; border: 1px solid var(--sig); background: var(--panel2); margin: 12px 0 8px; overflow-wrap: anywhere; }
   .check { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; cursor: pointer; }
   .check input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
@@ -105,10 +106,31 @@
     <p class="quiet" id="auto-text"></p>
   </section>
 
+  <section class="card" id="app-card">
+    <h2>Get the Fieldmap app</h2>
+    <div id="app-there" hidden>
+      <p>Fieldmap <b id="app-version"></b> for Android phones and tablets, <span id="app-size"></span>, straight from
+        this box: no app store, no account.</p>
+      <ol>
+        <li>Connect the device to this box's network. In its browser, open <b class="mono-strong" id="app-address"></b></li>
+        <li>Press <b>Download the app</b> there, then open the downloaded file.</li>
+        <li>Android asks whether the browser may install apps: open <b>Settings</b> in that message, switch on
+          <b>Allow from this source</b>, go back and press <b>Install</b>. If Google Play Protect asks about an app it
+          does not know, choose <b>Install anyway</b>.</li>
+      </ol>
+      <div class="row"><a class="button primary" id="app-download" href="fieldmap.apk" download>Download the app</a></div>
+      <p class="quiet">To update the app, download it again here and install it over the old one: saved maps and markers stay.</p>
+      <p class="mono" id="app-sum"></p>
+    </div>
+    <p class="quiet" id="app-none" hidden>There is no app on this box yet. Whoever set up the box adds it on the box with
+      <span class="mono">./scripts/app.sh fetch</span> (the newest published release) or
+      <span class="mono">./scripts/app.sh add &lt;file.apk&gt;</span>.</p>
+  </section>
+
   <section class="card" id="pair-card">
     <h2>Pair a device</h2>
     <ol>
-      <li>Connect the device to this network and open the Fieldmap app.</li>
+      <li>Connect the device to this network and open the Fieldmap app (Get the Fieldmap app, above).</li>
       <li>Press <b>Pair a device</b> here.</li>
       <li>In the app: <b>Menu, Server, Pair this device</b>, within ten minutes.</li>
     </ol>
@@ -179,6 +201,16 @@
       return error(e);
     }
     if (info.pin) $("code-card").hidden = false;
+    // The app, for devices to install from here.
+    const app = info.app;
+    $("app-there").hidden = !app;
+    $("app-none").hidden = !!app;
+    if (app) {
+      $("app-version").textContent = app.version;
+      $("app-size").textContent = `${Math.max(1, Math.round(app.size / 1e6))} MB`;
+      $("app-address").textContent = location.origin + location.pathname;
+      $("app-sum").textContent = `SHA-256 ${app.sha256}` + (app.source === "by hand" ? ` · added by hand on ${app.added}` : "");
+    }
     const on = info.enabled;
     $("state").textContent = on ? "On" : "Off";
     $("state").className = "state" + (on ? " on" : "");
