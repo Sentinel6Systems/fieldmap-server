@@ -1,0 +1,12 @@
+# Runs scripts/remote.sh netbird-apply (fieldmap-netbird.path): downloads and starts NetBird's
+# container, the second way in for paired devices, or removes it. Installed by
+# scripts/remote.sh setup. Nothing of NetBird is on the box before the owner sets it up.
+[Unit]
+Description=fieldmap-server starts or removes NetBird
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/fieldmap-server
+ExecStart=/opt/fieldmap-server/scripts/remote.sh netbird-apply

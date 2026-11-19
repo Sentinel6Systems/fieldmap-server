@@ -26,11 +26,18 @@ How it works:
   * Reaching the gateway: every few minutes this service asks the home router to forward an
     outside port to it (UPnP or NAT-PMP, tools/portmap.py) and notes the box's IPv6
     addresses. The app learns these addresses whenever it is home, from `GET /info`.
+  * A second way in, for a box behind an internet connection where no port can be opened
+    (Starlink, a router nobody can change): NetBird (netbird.io). The owner types a setup key
+    of a NetBird network on the Remote access page; the box joins that network (a container,
+    see scripts/remote.sh netbird-apply and tools/netbird-run.sh) and gives the key to paired
+    devices only, which then reach the same gateway, with the same certificate, over the
+    NetBird network. Off until the owner sets it up. See "NetBird" below.
 
 Who may ask what:
   * through the box's web server, which puts the caller's address in X-Real-IP: only
     callers on the local network (see lan()), for /info, /devices, /pairing, /remove, /enrol;
-  * with no X-Real-IP at all: the gateway (only /check) and programs on the box itself.
+  * with no X-Real-IP at all: the gateway (/check, and /gateway/netbird for a paired device)
+    and programs on the box itself.
 
 Python's standard library and the `openssl` and `ip` commands only.
 
@@ -79,6 +86,15 @@ ADDRESS = os.path.join(REMOTE, "address")           # a relay's address (scripts
 REACH = os.path.join(REMOTE, "reach.json")          # what the router said last
 NAME = os.path.join(GATEWAY, "name")                # the gateway's name in its certificate
 SETTINGS = os.path.join(REMOTE, "settings.json")    # the Remote access page's switch; scripts/firewall.sh reads it too
+NETBIRD = os.path.join(REMOTE, "netbird.json")      # NetBird as set up on the Remote access page (no key in it)
+NETBIRD_DIR = os.path.join(REMOTE, "netbird")       # what the NetBird container reads and writes (tools/netbird-run.sh)
+NETBIRD_KEY = os.path.join(NETBIRD_DIR, "setup-key")        # the secret: paired devices get it, nobody else
+NETBIRD_CLIENT = os.path.join(NETBIRD_DIR, "client.env")    # on or off and the server, for scripts/remote.sh netbird-apply
+NETBIRD_APPLY = os.path.join(NETBIRD_DIR, "apply-request")  # fieldmap-netbird.path runs scripts/remote.sh netbird-apply
+NETBIRD_STATUS = os.path.join(NETBIRD_DIR, "status.json")   # `netbird status --json`, every few seconds
+NETBIRD_STATUS_FOR = os.path.join(NETBIRD_DIR, "status.for")    # the apply-request that the running client answers
+NETBIRD_PROBLEM = os.path.join(NETBIRD_DIR, "problem")      # why NetBird could not connect, if it could not
+NETBIRD_CHECK = os.path.join(NETBIRD_DIR, "key-check")      # "unchecked": the box joined before, NetBird did not look at the new key
 PAGE = os.path.join(ROOT, "phones")                 # the Devices page, and Admin's Remote access page
 SHARED = os.path.join(ROOT, "ui")                   # the look and the header every page shares
 APP_DIR = os.environ.get("APP_DIR") or os.path.join(ROOT, "data", "app")     # the app (scripts/app.sh)
@@ -97,11 +113,15 @@ PAIRING_SECONDS = 600           # how long "Pair a device" keeps pairing open
 IDLE_DAYS = 90                  # switched on, with no phone from outside this long: off by itself
 REACH_EVERY = 900               # how often the router is asked again
 SEEN_EVERY = 600                # how often "last used from outside" is written down
+NETBIRD_CLOUD = "https://api.netbird.io:443"    # NetBird's own management server (the client's default)
+NETBIRD_FRESH = 45              # a status older than this many seconds: the NetBird client is not running
+NETBIRD_START = 300             # how long a first start may take (it downloads NetBird)
 
 lock = threading.Lock()
 recent_enrols = []
 pairing_until = 0.0
 last_seen = {}                  # device id -> time it last came in from outside, not written yet
+last_way = {}                   # device id -> {"direct" | "netbird": time}, not written yet
 
 
 def openssl(*args, stdin=None):
@@ -309,7 +329,22 @@ server {{
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
         proxy_set_header X-Fieldmap-Fingerprint $ssl_client_fingerprint;
+        # The visitor's address, only to tell the two ways in apart (the router's port, NetBird).
+        proxy_set_header X-Fieldmap-Peer $remote_addr;
     }}
+
+    # NetBird, the second way in: a paired device asks here what it needs to join the NetBird
+    # network of this box (the setup key among it). The service itself checks the certificate
+    # against the device list, and takes this address from the gateway only.
+    location = /mapremote/netbird {{
+        if ($request_method != GET) {{ return 405; }}
+        proxy_pass http://unix:/run/fieldmap-remote/remote.sock:/gateway/netbird;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header X-Real-IP "";
+        proxy_set_header X-Fieldmap-Fingerprint $ssl_client_fingerprint;
+    }}
+    location /mapremote/ {{ return 404; }}
 
     location {prefix} {{
         if ($request_method !~ ^(GET|HEAD)$) {{ return 405; }}
@@ -392,19 +427,31 @@ def remove(device_id):
             return False
         save_devices(kept)
         last_seen.pop(device_id, None)
+        last_way.pop(device_id, None)
         return True
 
 
-def allowed(fingerprint):
-    """True when the certificate is on the list; notes when that device came in from outside."""
+def listed(fingerprint):
+    """The paired device this certificate belongs to, or None."""
     fingerprint = (fingerprint or "").strip().lower().replace(":", "")
     if not fingerprint:
-        return False
+        return None
     for d in load_devices():
         if secrets.compare_digest(fingerprint, d.get("sha1", "")):
-            last_seen[d["id"]] = int(time.time())
-            return True
-    return False
+            return d
+    return None
+
+
+def allowed(fingerprint, peer=None):
+    """True when the certificate is on the list; notes when that device came in from outside,
+    and by which way: `peer` is the address the gateway saw it come from."""
+    d = listed(fingerprint)
+    if d is None:
+        return False
+    now = int(time.time())
+    last_seen[d["id"]] = now
+    last_way.setdefault(d["id"], {})["netbird" if from_netbird(peer) else "direct"] = now
+    return True
 
 
 def write_seen():
@@ -416,8 +463,21 @@ def write_seen():
         for d in devices:
             if d["id"] in last_seen:
                 d["seen"] = last_seen[d["id"]]
+                d["way"] = {**d.get("way", {}), **last_way.get(d["id"], {})}
         last_seen.clear()
+        last_way.clear()
         save_devices(devices)
+
+
+def newest(way):
+    """When a device last came in from outside by this way ("direct", "netbird"); 0 if never.
+    A device that came in before the box knew two ways came in by the router's port."""
+    times = [w.get(way, 0) for w in last_way.values()]
+    for d in load_devices():
+        times.append(d.get("way", {}).get(way, 0))
+        if way == "direct" and "way" not in d:
+            times.append(d.get("seen", 0))
+    return max(times, default=0)
 
 
 # ---------- the app, for devices to install ----------
@@ -441,7 +501,9 @@ def app():
 def load_settings():
     """The Remote access page's settings: "enabled" (off by default), "autoOff" (switch off by itself
     after IDLE_DAYS with no phone from outside; on by default), "since" (when it was switched
-    on) and "offReason" ("idle" when it switched itself off)."""
+    on), "offReason" ("idle" when it switched itself off), "direct" (the router's port as a way
+    in; on by default) and "netbird" (NetBird as a way in, and running; scripts/firewall.sh
+    opens the gateway's port on NetBird's interface by it)."""
     try:
         with open(SETTINGS) as f:
             data = json.load(f)
@@ -464,6 +526,13 @@ def enabled():
 
 def auto_off():
     return load_settings().get("autoOff", True) is not False
+
+
+def direct():
+    """The router's port as a way in (the default). Off: the router is not asked, a port it
+    opened is closed, and the box's firewall lets nobody from outside reach the gateway's port
+    but through NetBird."""
+    return load_settings().get("direct", True) is not False
 
 
 def idle_since():
@@ -504,15 +573,28 @@ def set_enabled(on, reason=""):
     else:
         close_pairing()
         threading.Thread(target=release_router, daemon=True).start()
+    netbird_follow()                # NetBird runs only while remote access is on
 
 
-def release_router():
+def set_direct(on):
+    """The router's port as a way in, on or off (the Remote access page's tick)."""
+    was = direct()
+    save_settings(direct=bool(on))
+    if not enabled():
+        return
+    if was and not on:
+        threading.Thread(target=release_router, args=("direct-off",), daemon=True).start()
+    elif on:
+        threading.Thread(target=check_router, daemon=True).start()
+
+
+def release_router(problem="switched-off"):
     state = load_reach()
     try:
         portmap.release(state)
     except Exception as e:          # the router lets the port lapse by itself within two hours
         print("Closing the router's port failed: %s" % e, flush=True)
-    write_private(REACH, json.dumps({"checked": int(time.time()), "ipv4": {}, "ipv6": {}, "problem": "switched-off"}).encode())
+    write_private(REACH, json.dumps({"checked": int(time.time()), "ipv4": {}, "ipv6": {}, "problem": problem}).encode())
 
 
 # ---------- pairing ----------
@@ -552,6 +634,8 @@ def check_router():
     """Asks the router again (tools/portmap.py) and writes down what it said."""
     if not enabled():
         state = {"checked": int(time.time()), "ipv4": {}, "ipv6": {}, "problem": "switched-off"}
+    elif not direct():
+        state = {"checked": int(time.time()), "ipv4": {}, "ipv6": {}, "problem": "direct-off"}
     elif forwarding()["manual"]:
         # Forwarded by hand: the router is not asked; the box's IPv6 addresses still count.
         state = {"checked": int(time.time()), "ipv4": {}, "ipv6": {"addresses": portmap.global_ipv6()[:2]}, "problem": "manual"}
@@ -564,9 +648,10 @@ def check_router():
 
 
 def manual_address():
-    """Addresses set up by hand: REMOTE_ADDRESS, then a relay's (data/remote/address)."""
+    """Addresses set up by hand: REMOTE_ADDRESS, then a relay's (data/remote/address). With the
+    router's port switched off as a way in, only the relay's."""
     out = []
-    texts = [setting("REMOTE_ADDRESS")]
+    texts = [setting("REMOTE_ADDRESS") if direct() else ""]
     try:
         with open(ADDRESS) as f:
             texts.append(f.read())
@@ -577,7 +662,7 @@ def manual_address():
         if m:
             out.append({"host": m.group(1), "port": int(m.group(2))})
     f = forwarding()
-    if f["manual"] and f["address"]:
+    if direct() and f["manual"] and f["address"]:
         out.append({"host": f["address"], "port": gateway_port()})
     return out
 
@@ -678,6 +763,7 @@ PROBLEMS = {
                       "home internet do this. Devices outside cannot connect to the box over IPv4.",
     "off": "The box does not ask the router to open a port (REMOTE_DIRECT=off).",
     "manual": "",
+    "direct-off": "The box does not use a port on the router.",
     "switched-off": "Remote access is off. Devices outside cannot connect to the box. You cannot pair a device.",
     "switched-off-idle": "Remote access switched off automatically. No device came in from outside for %d days. "
                          "Devices outside cannot connect to the box until you switch on remote access again." % IDLE_DAYS,
@@ -685,17 +771,19 @@ PROBLEMS = {
 
 
 def report():
-    """For the Remote access page and the app: can devices reach the box from outside, and if not, why."""
+    """For the Remote access page and the app: can devices reach the box from outside through the
+    router's port, and if not, why. (NetBird, the other way in: netbird_report().)"""
     state = load_reach()
-    devices = load_devices()
-    newest_seen = max([d.get("seen", 0) for d in devices] + list(last_seen.values()), default=0)
+    newest_seen = newest("direct")
     manual = manual_address()
     v6 = state.get("ipv6", {}).get("addresses", [])
     if not enabled():
         idle = load_settings().get("offReason") == "idle"
         return {"status": "off", "text": PROBLEMS["switched-off-idle" if idle else "switched-off"], "checked": state.get("checked", 0)}
+    if not direct():
+        return {"status": "off", "text": PROBLEMS["direct-off"], "checked": 0}
     if newest_seen and time.time() - newest_seen < 7 * 86400:
-        status, text = "confirmed", "A device connected to the box from outside on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
+        status, text = "confirmed", "A device connected to the box from outside through the port on the router on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
     elif forwarding()["manual"] and not forwarding()["address"]:
         status, text = "blocked", "Forward the port on the router. Then type the internet address of the router below."
     elif forwarding()["manual"]:
@@ -712,6 +800,248 @@ def report():
     else:
         status, text = "unknown", "The box did not ask the router yet."
     return {"status": status, "text": text.strip(), "checked": state.get("checked", 0)}
+
+
+# ---------- NetBird, the second way in ----------
+#
+# For a box whose router cannot open a port. The owner makes a NetBird network (an account on
+# NetBird's cloud, or an own server) and types one reusable setup key here. The box joins with
+# it, and hands it to paired devices, which join too and then reach the gateway at the box's
+# NetBird address. NetBird is only the road: the gateway asks for the same certificate.
+#
+# Who does what:
+#   * this service keeps the settings (NETBIRD), the key (NETBIRD_KEY) and says what is wanted
+#     (NETBIRD_CLIENT), then touches NETBIRD_APPLY;
+#   * fieldmap-netbird.path sees that and runs `scripts/remote.sh netbird-apply` as root, which
+#     starts or removes the container "fieldmap-netbird" (NetBird's own image);
+#   * in the container, tools/netbird-run.sh joins and writes NETBIRD_STATUS every few seconds,
+#     and NETBIRD_PROBLEM when it cannot join;
+#   * scripts/firewall.sh lets in, on NetBird's interface, the gateway's port and nothing else.
+# The key is given out in two places only, both to a paired device: the answer to pairing, and
+# /gateway/netbird behind the gateway's certificate check. It is never printed or logged.
+
+def load_netbird():
+    """{"on": the owner connected it, "management": the server, "salt", "address": the box's
+    address in the NetBird network, "addressFor": the server that address is from}."""
+    try:
+        with open(NETBIRD) as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_netbird(**changes):
+    data = {**load_netbird(), **changes}
+    write_private(NETBIRD, json.dumps(data).encode())
+    return data
+
+
+def netbird_key():
+    try:
+        with open(NETBIRD_KEY) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def clean_management(text):
+    """The management server as typed, as scheme://host:port; "" if it is not an address.
+    Without a scheme it is https; without a port, the scheme's own."""
+    text = str(text or "").strip().rstrip("/")
+    if not text:
+        return NETBIRD_CLOUD
+    if "://" not in text:
+        text = "https://" + text
+    m = re.fullmatch(r"(https?)://([A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|\[[0-9A-Fa-f:]{2,39}\])(:([0-9]{1,5}))?", text)
+    if not m:
+        return ""
+    port = int(m.group(5) or (443 if m.group(1) == "https" else 80))
+    if not 0 < port < 65536:
+        return ""
+    return "%s://%s:%d" % (m.group(1), m.group(2).lower(), port)
+
+
+def clean_key(text):
+    """A setup key as typed: NetBird's are 36 letters, digits and dashes. "" if it is not one."""
+    text = re.sub(r"\s+", "", str(text or ""))
+    return text if re.fullmatch(r"[A-Za-z0-9-]{16,128}", text) else ""
+
+
+def netbird_on():
+    """The owner connected NetBird on the Remote access page (and a key is there)."""
+    return load_netbird().get("on") is True and bool(netbird_key())
+
+
+def netbird_wanted():
+    """NetBird runs only while remote access is switched on."""
+    return enabled() and netbird_on()
+
+
+def netbird_follow():
+    """Tells the rest of the box what is wanted now: the firewall (through the settings file),
+    and the container (through scripts/remote.sh netbird-apply)."""
+    nb = load_netbird()
+    wanted = netbird_wanted()
+    if load_settings().get("netbird", False) is not wanted:
+        save_settings(netbird=wanted)
+    if not nb.get("management") and not os.path.isfile(NETBIRD_CLIENT):
+        return                      # never set up on this box: nothing to start or stop
+    os.makedirs(NETBIRD_DIR, exist_ok=True)
+    os.chmod(NETBIRD_DIR, 0o700)
+    write_private(NETBIRD_CLIENT, ("NB_MANAGEMENT_URL=%s\nFIELDMAP_NETBIRD=%s\n" % (
+        nb.get("management") or NETBIRD_CLOUD, "on" if wanted else "off")).encode())
+    write_private(NETBIRD_APPLY, secrets.token_hex(8).encode())    # a new name for this request
+    os.chmod(NETBIRD_APPLY, 0o644)
+
+
+def set_netbird(on, management=None, key=None):
+    """Connect or disconnect (the Remote access page). A new key or server is kept first.
+    Disconnected, the key and the box's place in the NetBird network are kept for the next time."""
+    nb = load_netbird()
+    changes = {"on": bool(on)}
+    if management and management != nb.get("management"):
+        changes.update(management=management, address="", addressFor="")
+    if "salt" not in nb:
+        changes["salt"] = secrets.token_hex(16)
+    os.makedirs(NETBIRD_DIR, exist_ok=True)
+    os.chmod(NETBIRD_DIR, 0o700)
+    if key:
+        write_private(NETBIRD_KEY, (key + "\n").encode())
+    for stale in (NETBIRD_PROBLEM, NETBIRD_CHECK):      # what was wrong may be right now
+        try:
+            os.unlink(stale)
+        except OSError:
+            pass
+    save_netbird(**changes)
+    netbird_follow()
+
+
+def netbird_state():
+    """What the NetBird client in the container says, or None when it is not running:
+    {"connected", "address", "network", "error"}."""
+    try:
+        if time.time() - os.path.getmtime(NETBIRD_STATUS) > NETBIRD_FRESH:
+            return None
+        # A client that was started for an earlier request (another key, another server) is on
+        # its way out: what it says does not count.
+        with open(NETBIRD_STATUS_FOR) as f, open(NETBIRD_APPLY) as g:
+            if f.read().strip() != g.read().strip():
+                return None
+        with open(NETBIRD_STATUS) as f:
+            status = json.load(f)
+        management = status.get("management") or {}
+        ip = str(status.get("netbirdIp") or "")
+        network = ipaddress.ip_network(ip, strict=False) if "/" in ip else None
+        address = str(ipaddress.ip_address(ip.split("/")[0])) if ip else ""
+    except (OSError, ValueError, AttributeError):
+        return None
+    return {"connected": management.get("connected") is True and bool(address), "address": address,
+            "network": network, "error": str(management.get("error") or "")}
+
+
+_network = {"at": 0.0, "network": None}
+
+
+def from_netbird(peer):
+    """True when this address (as the gateway saw it) is in the box's NetBird network."""
+    if not peer or not load_settings().get("netbird"):
+        return False
+    now = time.time()
+    if now - _network["at"] > 30:       # asked for every tile: read the file now and then only
+        state = netbird_state()
+        _network.update(at=now, network=state["network"] if state else None)
+    try:
+        address = ipaddress.ip_address(peer.strip())
+        if getattr(address, "ipv4_mapped", None):
+            address = address.ipv4_mapped
+        return _network["network"] is not None and address in _network["network"]
+    except ValueError:
+        return False
+
+
+def netbird_address():
+    """The box's address in the NetBird network: what the client says now, or what it said last
+    for this server (it stays the same). Written down when it is new."""
+    nb = load_netbird()
+    state = netbird_state()
+    if state and state["connected"] and (state["address"] != nb.get("address") or nb.get("addressFor") != nb.get("management")):
+        nb = save_netbird(address=state["address"], addressFor=nb.get("management"))
+    return nb.get("address", "") if nb.get("addressFor") == nb.get("management") else ""
+
+
+def netbird_block():
+    """What a paired device needs to come in through NetBird, or None: only when remote access
+    and NetBird are on and the box has its address there. Holds the setup key: a secret."""
+    if not netbird_wanted():
+        return None
+    address, key, nb = netbird_address(), netbird_key(), load_netbird()
+    if not address or not key:
+        return None
+    block = {"management": nb.get("management") or NETBIRD_CLOUD, "setupKey": key, "host": address, "port": gateway_port()}
+    # Changes when anything in the block does; the salt keeps it from saying anything about the key.
+    block["rev"] = hashlib.sha256((nb.get("salt", "") + json.dumps(block, sort_keys=True)).encode()).hexdigest()[:12]
+    return block
+
+
+NETBIRD_PROBLEMS = {
+    "key": "The NetBird network did not accept the setup key. The key is not correct, or it expired, or it was used "
+           "too many times. Make a new setup key in the NetBird dashboard. Then type it below and press Connect.",
+    "server": "The box cannot connect to the management server %s. Check that the box has an internet connection. "
+              "If you use your own server, check the address.",
+    "download": "The box cannot download NetBird. Check that the box has an internet connection. The box tries again "
+                "when you press Connect.",
+    "start": "NetBird did not start on the box. On the box, type ./scripts/remote.sh setup and try again.",
+}
+
+
+def netbird_report():
+    """For the Remote access page: is NetBird set up, does it work, and if not, why.
+    status: none (not set up), off, starting, connected, blocked."""
+    nb = load_netbird()
+    management = nb.get("management") or NETBIRD_CLOUD
+    out = {"keySet": bool(netbird_key()), "wanted": nb.get("on") is True, "management": management, "address": "", "seen": 0}
+    if not out["keySet"]:
+        return {**out, "wanted": False, "status": "none", "text": "NetBird is not set up."}
+    if not out["wanted"]:
+        return {**out, "status": "off", "text": "NetBird is off. The box keeps the setup key. Press Connect to use NetBird again."}
+    if not enabled():
+        return {**out, "status": "off", "text": "Remote access is off. NetBird starts when you switch on remote access."}
+    state = netbird_state()
+    out["address"] = netbird_address()
+    out["seen"] = newest("netbird")
+    try:
+        with open(NETBIRD_PROBLEM) as f:
+            problem = f.read().split()[:1]
+    except OSError:
+        problem = []
+    if state and state["connected"]:
+        text = "The box is connected to the NetBird network. The address of the box in the NetBird network is %s." % state["address"]
+        try:
+            with open(NETBIRD_CHECK) as f:
+                out["keyChecked"] = f.read().strip() != "unchecked"
+        except OSError:
+            out["keyChecked"] = True
+        if not out["keyChecked"]:
+            text += (" The box was a member of the NetBird network before, so NetBird did not check the new setup key."
+                     " In the NetBird dashboard, make sure that the key shows as valid. A device that you pair needs a valid key.")
+        if out["seen"] and time.time() - out["seen"] < 7 * 86400:
+            text += " A device connected to the box through NetBird on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(out["seen"]))
+        else:
+            text += " No device came in through NetBird recently."
+        return {**out, "status": "connected", "text": text}
+    if problem and problem[0] in NETBIRD_PROBLEMS:
+        text = NETBIRD_PROBLEMS[problem[0]]
+        return {**out, "status": "blocked", "text": text % management if "%s" in text else text}
+    try:
+        asked = os.path.getmtime(NETBIRD_APPLY)
+    except OSError:
+        asked = 0
+    if state is None and time.time() - asked < NETBIRD_START:
+        return {**out, "status": "starting", "text": "The box starts NetBird. The first start downloads NetBird. This can take some minutes."}
+    if state is None:
+        return {**out, "status": "blocked", "text": NETBIRD_PROBLEMS["start"]}
+    return {**out, "status": "blocked", "text": NETBIRD_PROBLEMS["server"] % management}
 
 
 # ---------- the service ----------
@@ -830,8 +1160,13 @@ class Handler(BaseHTTPRequestHandler):
             shutil.copyfileobj(f, self.wfile, 1 << 16)
 
     def info(self):
-        return {"service": "fieldmap-remote", "version": 2, "ready": ready(), "enabled": enabled(), "pin": bool(setting("REMOTE_PIN")),
+        # "netbird": on and rev are for the app (is there something to ask the gateway for, and
+        # did it change); the rest is for the Remote access page. Nothing secret: not the key.
+        block = netbird_block()
+        return {"service": "fieldmap-remote", "version": 3, "ready": ready(), "enabled": enabled(), "pin": bool(setting("REMOTE_PIN")),
                 "autoOff": {"on": auto_off(), "days": IDLE_DAYS, "at": auto_off_at()},
+                "direct": direct(),
+                "netbird": {"on": block is not None, "rev": block["rev"] if block else "", **netbird_report()},
                 "forwarding": {**forwarding(), "port": gateway_port(), "boxAddress": portmap.lan_ipv4() or "",
                                "changingTo": load_settings().get("changingPort") if load_settings().get("changingPort") != gateway_port() else None},
                 "pairing": {"open": pairing_left() > 0, "seconds": pairing_left()},
@@ -845,7 +1180,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(403)
             if not enabled():
                 return self.send(401)
-            return self.send(204 if allowed(self.headers.get("X-Fieldmap-Fingerprint")) else 403)
+            return self.send(204 if allowed(self.headers.get("X-Fieldmap-Fingerprint"), self.headers.get("X-Fieldmap-Peer")) else 403)
+        if self.path == "/gateway/netbird":
+            # Only the gateway passes this on (/mapremote/netbird there), for a visitor whose
+            # certificate it checked; like /check it comes with no X-Real-IP. The certificate
+            # must be a paired device's: this answer holds the setup key.
+            if self.headers.get("X-Real-IP") is not None:
+                return self.send(404, {"error": "This address is not on the box."})
+            if not enabled():
+                return self.send(401)
+            if listed(self.headers.get("X-Fieldmap-Fingerprint")) is None:
+                return self.send(403)
+            return self.send(200, {"netbird": netbird_block()})
         if not lan(self.headers):
             return self.send(403, {"error": "This page is only on the box's network."})
         if self.path in ("/", "/index.html", "/remote.html") or self.path.lstrip("/") in ("fieldmap.css", "nav.js"):
@@ -863,7 +1209,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = self.body()
-        if self.path not in ("/enrol", "/pairing", "/remove", "/enabled", "/auto-off", "/recheck", "/forwarding", "/find-address", "/new-port"):
+        if self.path not in ("/enrol", "/pairing", "/remove", "/enabled", "/auto-off", "/recheck", "/forwarding", "/find-address", "/new-port",
+                             "/direct", "/netbird"):
             return self.send(404, {"error": "This address is not on the box."})
         if not lan(self.headers):
             return self.send(403, {"error": "You can pair a device only on the box's network."})
@@ -894,6 +1241,23 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/new-port":
             new_port()
             return self.send(202, self.info())
+        if self.path == "/direct":
+            set_direct(bool(body.get("on")))
+            return self.send(200, self.info())
+        if self.path == "/netbird":
+            # {"on": true, "management": "...", "setupKey": "..."} connects (a key that is kept
+            # needs no typing again); {"on": false} disconnects.
+            on = bool(body.get("on"))
+            management = clean_management(body.get("management")) if "management" in body else (load_netbird().get("management") or NETBIRD_CLOUD)
+            key = clean_key(body.get("setupKey")) if str(body.get("setupKey") or "").strip() else ""
+            if on and not management:
+                return self.send(400, {"error": "This is not an address of a management server. For NetBird's cloud, type %s." % NETBIRD_CLOUD})
+            if str(body.get("setupKey") or "").strip() and not key:
+                return self.send(400, {"error": "This is not a setup key. Copy the setup key from the NetBird dashboard."})
+            if on and not key and not netbird_key():
+                return self.send(400, {"error": "Type the setup key first."})
+            set_netbird(on, management or None, key)
+            return self.send(200, self.info())
         if self.path == "/pairing":
             if body.get("open") and not enabled():
                 return self.send(409, {"error": "Remote access is off. Switch on remote access first."})
@@ -918,8 +1282,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {"error": str(e)})
         with open(CA_CRT) as f:
             ca = f.read()
-        self.send(200, {"id": device["id"], "name": device["name"], "certificate": device["certificate"],
-                        "ca": ca, "gatewayName": gateway_name(), "endpoints": endpoints()})
+        answer = {"id": device["id"], "name": device["name"], "certificate": device["certificate"],
+                  "ca": ca, "gatewayName": gateway_name(), "endpoints": endpoints()}
+        block = netbird_block()
+        if block:                       # the second way in; the key in it is for this device only
+            answer["netbird"] = block
+        self.send(200, answer)
 
 
 class SocketServer(ThreadingHTTPServer):
@@ -934,6 +1302,7 @@ class SocketServer(ThreadingHTTPServer):
 def keep_up():
     """In the background: ask the router again now and then, and write down who came in from outside."""
     next_router = next_seen = 0.0
+    nb_was = "off"
     while True:
         now = time.time()
         try:
@@ -942,6 +1311,10 @@ def keep_up():
                 print("Router: %s" % report()["text"], flush=True)
                 # Sooner again while it says no: a router restarting, or UPnP just switched on.
                 next_router = now + (300 if state.get("problem") not in ("", "off") else REACH_EVERY)
+            was, state = nb_was, netbird_report()["status"] if netbird_wanted() else "off"
+            if state != was:
+                nb_was = state
+                print("NetBird: %s" % state, flush=True)
             if now >= next_seen:
                 write_seen()
                 switch_off_if_idle(now)
@@ -971,6 +1344,8 @@ def serve(host, port):
     # systemd stops the service with SIGTERM: leave through `finally`, which writes down who came in.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     print("Remote access is " + ("on." if enabled() else "off: switch it on on the Remote access page (Admin)."), flush=True)
+    if load_settings().get("netbird", False) is not netbird_wanted():     # the firewall follows this file
+        save_settings(netbird=netbird_wanted())
     threading.Thread(target=keep_up, daemon=True).start()
     try:
         by_socket.serve_forever()
@@ -982,6 +1357,29 @@ def serve(host, port):
             os.unlink(SOCKET)
         except OSError:
             pass
+
+
+def running():
+    """What the running service answers to /info (it knows who came in a moment ago), or None."""
+    try:
+        with socket.socket(socket.AF_UNIX) as s:
+            s.settimeout(5)
+            here = os.getcwd()
+            os.chdir(RUN)               # by its name from inside its folder, as it was bound
+            try:
+                s.connect(os.path.basename(SOCKET))
+            finally:
+                os.chdir(here)
+            s.sendall(b"GET /info HTTP/1.0\r\n\r\n")
+            data = b""
+            while True:
+                part = s.recv(65536)
+                if not part:
+                    break
+                data += part
+        return json.loads(data.split(b"\r\n\r\n", 1)[1])
+    except (OSError, ValueError, IndexError):
+        return None
 
 
 def main():
@@ -1000,6 +1398,7 @@ def main():
     p.add_argument("id")
     sub.add_parser("status", help="say what is set up")
     sub.add_parser("router", help="ask the router now and say what it answered")
+    sub.add_parser("netbird-forget", help="forget NetBird: the setup key and what was set up (scripts/remote.sh netbird-forget)")
     args = parser.parse_args()
 
     if args.command == "init":
@@ -1018,14 +1417,26 @@ def main():
             print(f"Removed {args.id}: it is locked out from now on.")
         else:
             sys.exit(f"No device with the id {args.id}. See: remote-server.py devices")
+    elif args.command == "netbird-forget":
+        for path in (NETBIRD, NETBIRD_KEY, NETBIRD_CLIENT):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        if load_settings().get("netbird"):
+            save_settings(netbird=False)
     elif args.command == "router":
         state = check_router()
         print(json.dumps(state, indent=1))
         print(report()["text"])
     elif args.command == "status":
-        r = report()
+        live = running() or {}
+        r = live.get("reach") or report()
+        n = live.get("netbird") or netbird_report()
         print("Certificates:   " + ("made" if ready() else "not made yet (run scripts/remote.sh setup)"))
-        print("From outside:   " + r["text"])
+        print("Remote access:  " + ("on" if enabled() else "off"))
+        print("Router's port:  " + r["text"])
+        print("NetBird:        " + n["text"])
         print("Addresses:      " + (", ".join("%s:%s" % (e["host"], e["port"]) for e in endpoints()) or "none yet"))
         print(f"Devices paired: {len(load_devices())}")
         print("Code:           " + ("asked for (REMOTE_PIN)" if setting("REMOTE_PIN") else "none"))

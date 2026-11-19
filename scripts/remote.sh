@@ -10,6 +10,7 @@
 #   ./scripts/remote.sh pair           open pairing for ten minutes (same as the Devices page button)
 #   ./scripts/remote.sh devices        the paired phones
 #   ./scripts/remote.sh remove <id>    lock one out
+#   ./scripts/remote.sh netbird-forget take NetBird off the box: its setup key and its place in the NetBird network
 #   ./scripts/remote.sh off            remove it: the gateway, the services, the Devices page (the box's
 #                                      firewall stays, closed to everything from outside)
 #                                      (to switch remote access off and on: Admin, Remote access; sharing: Admin, Devices)
@@ -29,6 +30,12 @@
 #   5. puts a firewall on the box itself that lets nothing in from outside the local network and
 #      VPNs but the gateway, and answers nothing else (scripts/firewall.sh, fieldmap-firewall).
 #
+# NetBird (netbird.io) is a second way in, for a box whose router cannot open a port (Starlink,
+# a router nobody can change). Nothing of it is on the box until the owner types a setup key on
+# the Remote access page. Then "netbird-apply" (run as root by fieldmap-netbird.path, which
+# "setup" installs) downloads NetBird's container and starts it; see tools/netbird-run.sh and
+# the "NetBird" part of tools/remote-server.py.
+#
 # Settings, in .env (see .env.example), all optional:
 #   REMOTE_PORT            the gateway's port on this machine (chosen at random by the first setup)
 #   REMOTE_PIN             a code that pairing then asks for
@@ -36,6 +43,7 @@
 #   REMOTE_DIRECT=off      do not ask the router to open a port
 #   REMOTE_FIREWALL=off    no firewall on the box
 #   REMOTE_FIREWALL_ALLOW  ports open from outside besides the gateway (none by default; 22 for SSH)
+#   NETBIRD_IMAGE          NetBird's container image (netbirdio/netbird:latest)
 #   REMOTE_RELAY=tailscale also make the gateway reachable through Tailscale Funnel (needs the box
 #                          signed in to a Tailscale account: sudo tailscale up)
 set -euo pipefail
@@ -88,6 +96,18 @@ ask() { curl -fsS -m 10 --unix-socket data/remote/run/remote.sock "http://box/$1
 # A systemd unit from systemd/, with this folder and its owner filled in.
 install_unit() {
     sed -e "s|/opt/fieldmap-server|$REPO_DIR|g" -e "s|^User=fieldmap$|User=$OWNER|" "systemd/$1" | $SUDO tee "/etc/systemd/system/$1" >/dev/null
+}
+
+# NetBird, as the Remote access page left it (data/remote/netbird/client.env, written by the service).
+NETBIRD_DIR=data/remote/netbird
+netbird_setting() { { grep -m1 "^$1=" "$NETBIRD_DIR/client.env" 2>/dev/null || true; } | cut -d= -f2-; }
+
+# Stops NetBird's client the slow way, so that it takes its interface down itself; an interface
+# that a killed client left behind is taken away here.
+netbird_stop() {
+    docker stop -t 20 fieldmap-netbird >/dev/null 2>&1 || true
+    docker rm -f fieldmap-netbird >/dev/null 2>&1 || true
+    if ip link show nb-fieldmap >/dev/null 2>&1; then $SUDO ip link delete nb-fieldmap 2>/dev/null || true; fi
 }
 
 tailscale_self() {
@@ -181,8 +201,17 @@ for _ in range(200):
     install_unit fieldmap-remote-update.timer
     install_unit fieldmap-remote-apply.service
     install_unit fieldmap-remote-apply.path
+    as_owner mkdir -p "$NETBIRD_DIR" && as_owner chmod 700 "$NETBIRD_DIR"      # fieldmap-netbird.path watches a file in it
+    install_unit fieldmap-netbird.service
+    install_unit fieldmap-netbird.path
     $SUDO systemctl daemon-reload
-    $SUDO systemctl enable -q --now fieldmap-remote-update.timer fieldmap-remote-apply.path
+    $SUDO systemctl enable -q --now fieldmap-remote-update.timer fieldmap-remote-apply.path fieldmap-netbird.path
+
+    # NetBird, where the owner set it up before: bring it up to date with the rest.
+    if [ -f "$NETBIRD_DIR/client.env" ]; then
+        echo "== NetBird"
+        $SUDO "$0" netbird-apply || echo "WARNING: NetBird did not start (see above). Everything else works." >&2
+    fi
 
     echo "== The firewall on this box"
     # The gateway's port is open only while remote access is switched on.
@@ -236,6 +265,7 @@ status)
     echo "Service:        $(systemctl is-active fieldmap-remote 2>/dev/null || true)"
     echo "Share service:  $(systemctl is-active fieldmap-share 2>/dev/null || true)"
     echo "Gateway:        $(docker inspect -f '{{.State.Status}}' fieldmap-remote 2>/dev/null || echo 'not started')"
+    echo "NetBird client: $(docker inspect -f '{{.State.Status}}' fieldmap-netbird 2>/dev/null | grep . || echo 'not on this box')"
     echo "Firewall:       $(systemctl is-active fieldmap-firewall.timer 2>/dev/null | sed 's/^active$/on/;s/^inactive$/off/' || true)"
     ;;
 
@@ -251,6 +281,50 @@ remove)
     server remove "$2"
     ;;
 
+netbird-apply)
+    # Makes the NetBird container what the Remote access page asked for: running (downloaded
+    # first, the first time) or gone. Run as root by fieldmap-netbird.path when the service
+    # touches data/remote/netbird/apply-request, and by "setup".
+    want="$(netbird_setting FIELDMAP_NETBIRD)"
+    management="$(netbird_setting NB_MANAGEMENT_URL)"
+    if [ "$want" = on ] && [ -n "$management" ]; then
+        # Another server than the one this box joined: its place there is of no use here.
+        if [ -f "$NETBIRD_DIR/state/.management" ] && [ "$(cat "$NETBIRD_DIR/state/.management")" != "$management" ]; then
+            netbird_stop
+            $SUDO rm -rf "$NETBIRD_DIR/state"
+        fi
+        $SUDO mkdir -p "$NETBIRD_DIR/state"
+        echo "$management" | $SUDO tee "$NETBIRD_DIR/state/.management" >/dev/null
+        if ! "${COMPOSE[@]}" --profile netbird pull -q netbird >/dev/null 2>&1 &&
+           ! docker image inspect "$(setting NETBIRD_IMAGE netbirdio/netbird:latest)" >/dev/null 2>&1; then
+            printf 'download
+' | $SUDO tee "$NETBIRD_DIR/problem" >/dev/null
+            echo "Error: NetBird could not be downloaded. Check the internet connection of this box." >&2
+            exit 1
+        fi
+        docker stop -t 20 fieldmap-netbird >/dev/null 2>&1 || true
+        $SUDO rm -f "$NETBIRD_DIR/status.json" "$NETBIRD_DIR/status.for" "$NETBIRD_DIR/key-check"
+        "${COMPOSE[@]}" --profile netbird up -d --force-recreate netbird
+        echo "NetBird is started. The Remote access page says if it is connected."
+    else
+        netbird_stop
+        $SUDO rm -f "$NETBIRD_DIR/status.json" "$NETBIRD_DIR/status.for" "$NETBIRD_DIR/problem"
+        echo "NetBird is not running on this box."
+    fi
+    # The firewall opens, or closes, the gateway's port on NetBird's interface.
+    if [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then $SUDO ./scripts/firewall.sh apply >/dev/null || true; fi
+    ;;
+
+netbird-forget)
+    # Takes NetBird off the box for good: the container, the setup key, the box's place in the
+    # NetBird network. The box's name stays in the NetBird dashboard until you delete it there.
+    netbird_stop
+    $SUDO rm -rf "$NETBIRD_DIR"
+    server netbird-forget
+    echo "NetBird is off this box. The setup key is deleted from the box."
+    echo "To remove the box from the NetBird network too, delete fieldmap-box in the NetBird dashboard (Peers)."
+    ;;
+
 update-gateway)
     # Weekly (fieldmap-remote-update.timer): the gateway is what faces the internet, so it takes
     # nginx's security fixes as they come. Recreated only when the image changed.
@@ -259,6 +333,14 @@ update-gateway)
     "${COMPOSE[@]}" --profile remote up -d remote
     after="$(docker inspect -f '{{.Image}}' fieldmap-remote 2>/dev/null || true)"
     [ "$before" = "$after" ] && echo "The gateway is up to date." || echo "The gateway was updated."
+    # NetBird's client too, where it runs: it is the other part of the box that talks to the internet.
+    if docker inspect fieldmap-netbird >/dev/null 2>&1; then
+        before="$(docker inspect -f '{{.Image}}' fieldmap-netbird 2>/dev/null || true)"
+        "${COMPOSE[@]}" --profile netbird pull -q netbird || true
+        "${COMPOSE[@]}" --profile netbird up -d netbird
+        after="$(docker inspect -f '{{.Image}}' fieldmap-netbird 2>/dev/null || true)"
+        [ "$before" = "$after" ] && echo "NetBird is up to date." || echo "NetBird was updated."
+    fi
     docker image prune -f >/dev/null 2>&1 || true
     ;;
 
@@ -268,7 +350,8 @@ off)
     fi
     as_owner rm -f data/remote/address
     "${COMPOSE[@]}" --profile remote stop remote >/dev/null 2>&1 || true
-    $SUDO systemctl disable -q --now fieldmap-remote fieldmap-share fieldmap-remote-update.timer fieldmap-remote-apply.path 2>/dev/null || true
+    netbird_stop                    # NetBird, the second way in, goes with the gateway
+    $SUDO systemctl disable -q --now fieldmap-remote fieldmap-share fieldmap-remote-update.timer fieldmap-remote-apply.path fieldmap-netbird.path 2>/dev/null || true
     as_owner mkdir -p data/remote/run && as_owner touch data/remote/run/no-remote   # no Devices tab, no gateway port
     # The firewall stays: with no gateway, nothing from outside gets in or gets an answer.
     $SUDO ./scripts/firewall.sh install
@@ -278,7 +361,7 @@ off)
     ;;
 
 *)
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

@@ -1,11 +1,18 @@
 # fieldmap-server: the firewall on the box itself (scripts/firewall.sh): only the local network
 # and VPNs get in. Installed by scripts/firewall.sh install (run by the installers), which fills
-# in this folder.
+# in this folder. At a start of the machine it runs before Docker: before the web pages have a
+# port, and before NetBird's client brings its interface up, so that neither is open for a
+# moment. After that the timer runs it every five minutes.
 [Unit]
 Description=fieldmap-server firewall on this box
 After=network-online.target
 Wants=network-online.target
+Before=docker.service
 
 [Service]
 Type=oneshot
+TimeoutStartSec=90
 ExecStart=/opt/fieldmap-server/scripts/firewall.sh apply
+
+[Install]
+WantedBy=multi-user.target

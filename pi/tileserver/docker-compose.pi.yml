@@ -29,3 +29,32 @@ services:
       - ./data/remote/gateway/nginx:/etc/nginx/conf.d:ro
       - ./data/remote/run:/run/fieldmap-remote
       - ./data/share/run:/run/fieldmap-share
+
+  # NetBird (netbird.io), a second way in for paired devices, for a box whose router cannot
+  # open a port. Not started, and not downloaded, until the owner types a setup key on the
+  # Remote access page (scripts/remote.sh netbird-apply; see docker-compose.yml).
+  netbird:
+    image: ${NETBIRD_IMAGE:-netbirdio/netbird:latest}
+    container_name: fieldmap-netbird
+    profiles: ["netbird"]
+    restart: always
+    network_mode: host
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      # To read the setup key and write its status in data/remote/netbird, which belong to
+      # the owner of this folder. It sees no other file of this machine.
+      - DAC_OVERRIDE
+    devices:
+      - /dev/net/tun
+    entrypoint: ["/bin/bash", "/fieldmap-tools/netbird-run.sh"]
+    volumes:
+      - ./tools:/fieldmap-tools:ro
+      - ./data/remote/netbird:/fieldmap
+      - ./data/remote/netbird/state:/var/lib/netbird
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"

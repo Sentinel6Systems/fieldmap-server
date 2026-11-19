@@ -435,5 +435,269 @@ class RemoteServerTest(unittest.TestCase):
         self.assertTrue(0 < self.rs.pairing_left() <= self.rs.PAIRING_SECONDS)
 
 
+    # ---------- NetBird, the second way in ----------
+
+    KEY = "test-setup-key-for-fieldmap-0001"
+
+    def netbird_says(self, connected=True, ip="100.92.14.7/16", error="", age=0):
+        """What tools/netbird-run.sh writes for the service: `netbird status --json`."""
+        os.makedirs(self.rs.NETBIRD_DIR, exist_ok=True)
+        with open(self.rs.NETBIRD_STATUS, "w") as f:
+            json.dump({"management": {"url": "https://api.netbird.io:443", "connected": connected, "error": error},
+                       "netbirdIp": ip, "fqdn": "fieldmap-box.netbird.cloud", "peers": {"total": 1, "connected": 1}}, f)
+        os.utime(self.rs.NETBIRD_STATUS, (time.time() - age, time.time() - age))
+        if os.path.isfile(self.rs.NETBIRD_APPLY):       # the client says which request it was started for
+            with open(self.rs.NETBIRD_APPLY) as src, open(self.rs.NETBIRD_STATUS_FOR, "w") as dst:
+                dst.write(src.read())
+        self.rs._network.update(at=0.0, network=None)
+
+    def connect_netbird(self, **more):
+        return self.post("/netbird", {"on": True, "setupKey": self.KEY, **more})
+
+    def test_netbird_is_not_there_until_the_owner_sets_it_up(self):
+        _, public = phone_key()
+        self.rs.open_pairing()
+        answer = self.post("/enrol", {"name": "Phone", "publicKey": public})
+        self.assertNotIn("netbird", answer.body)
+        info = self.get("/info").body
+        self.assertEqual((False, "", "none", False), (info["netbird"]["on"], info["netbird"]["rev"], info["netbird"]["status"], info["netbird"]["keySet"]))
+        self.assertTrue(info["direct"])
+        device = self.rs.load_devices()[0]
+        self.assertEqual({"netbird": None}, self.get("/gateway/netbird", {"X-Fieldmap-Fingerprint": device["sha1"]}).body)
+        with mock.patch.object(self.rs.portmap, "release", return_value=[]), mock.patch.object(self.rs.portmap, "reach", return_value={}):
+            self.post("/enabled", {"on": False})
+            self.post("/enabled", {"on": True})
+            self.rs.time.sleep(0.2)
+        self.assertFalse(os.path.exists(self.rs.NETBIRD_DIR), "nothing of NetBird is made on a box that does not use it")
+        self.assertNotIn("netbird", json.load(open(self.rs.SETTINGS)))
+
+    def test_connecting_keeps_the_key_to_itself_and_asks_for_the_container(self):
+        self.assertEqual(400, self.post("/netbird", {"on": True}).status, "no key yet")
+        self.assertEqual(400, self.post("/netbird", {"on": True, "setupKey": "not a key!"}).status)
+        self.assertEqual(400, self.connect_netbird(management="ftp://x").status)
+        self.assertEqual(400, self.connect_netbird(management="https://nb.example.com/path?x=1").status)
+        self.assertEqual(403, self.post("/netbird", {"on": True, "setupKey": self.KEY}, {"X-Real-IP": "203.0.113.30"}).status)
+        self.assertFalse(os.path.exists(self.rs.NETBIRD_KEY))
+        done = self.connect_netbird()
+        self.assertEqual(200, done.status, done.out)
+        self.assertEqual(self.KEY, open(self.rs.NETBIRD_KEY).read().strip())
+        self.assertEqual(0o600, os.stat(self.rs.NETBIRD_KEY).st_mode & 0o777)
+        self.assertEqual(0o700, os.stat(self.rs.NETBIRD_DIR).st_mode & 0o777)
+        self.assertEqual("NB_MANAGEMENT_URL=https://api.netbird.io:443\nFIELDMAP_NETBIRD=on\n", open(self.rs.NETBIRD_CLIENT).read())
+        self.assertTrue(os.path.isfile(self.rs.NETBIRD_APPLY), "scripts/remote.sh netbird-apply is asked to start it")
+        self.assertTrue(json.load(open(self.rs.SETTINGS))["netbird"], "the firewall opens the gateway on NetBird's interface")
+        nb = done.body["netbird"]
+        self.assertEqual((True, True, "starting", False), (nb["keySet"], nb["wanted"], nb["status"], nb["on"]))
+        for answer in (done.body, self.get("/info").body, self.get("/devices").body, json.load(open(self.rs.NETBIRD)),
+                       json.load(open(self.rs.SETTINGS)), open(self.rs.NETBIRD_CLIENT).read()):
+            self.assertNotIn(self.KEY, json.dumps(answer), "the key is in its own file and nowhere else")
+
+    def test_an_own_server_and_what_counts_as_an_address(self):
+        clean = self.rs.clean_management
+        self.assertEqual("https://api.netbird.io:443", clean(""))
+        self.assertEqual("https://nb.example.com:443", clean(" nb.example.com/ "))
+        self.assertEqual("https://nb.example.com:33073", clean("https://NB.example.com:33073"))
+        self.assertEqual("http://192.0.2.10:80", clean("http://192.0.2.10"))
+        for bad in ("ftp://nb.example.com", "https://nb.example.com/x", "https://user@nb.example.com", "https://nb.example.com:99999",
+                    "https://nb example.com", "https://nb.example.com;rm -rf /", "$(reboot)"):
+            self.assertEqual("", clean(bad), bad)
+        self.connect_netbird(management="nb.example.com:8443")
+        self.assertIn("NB_MANAGEMENT_URL=https://nb.example.com:8443\n", open(self.rs.NETBIRD_CLIENT).read())
+        self.assertEqual("https://nb.example.com:8443", self.get("/info").body["netbird"]["management"])
+
+    def test_the_block_goes_to_paired_devices_only(self):
+        os.environ["REMOTE_PORT"] = "41234"
+        try:
+            _, public = phone_key()
+            self.rs.open_pairing()
+            device = self.rs.enrol("Phone", public)
+            self.connect_netbird()
+            mine = {"X-Fieldmap-Fingerprint": device["sha1"]}
+            self.assertEqual({"netbird": None}, self.get("/gateway/netbird", mine).body, "the box did not join yet: no half block")
+            self.netbird_says(connected=False, ip="")
+            self.assertFalse(self.get("/info").body["netbird"]["on"])
+            self.netbird_says()
+            info = self.get("/info").body
+            self.assertTrue(info["netbird"]["on"])
+            self.assertRegex(info["netbird"]["rev"], r"^[0-9a-f]{12}$")
+            self.assertEqual("connected", info["netbird"]["status"])
+            self.assertEqual("100.92.14.7", info["netbird"]["address"])
+            self.assertNotIn(self.KEY, json.dumps(info), "not in an open answer")
+            block = {"management": "https://api.netbird.io:443", "setupKey": self.KEY, "host": "100.92.14.7", "port": 41234, "rev": info["netbird"]["rev"]}
+            # A paired device, through the gateway...
+            self.assertEqual({"netbird": block}, self.get("/gateway/netbird", mine).body)
+            # ...and nobody else: not the box's web server (it adds X-Real-IP), not a stranger's certificate, not no certificate.
+            self.assertEqual(404, self.get("/gateway/netbird", {**mine, "X-Real-IP": "192.168.1.20"}).status)
+            self.assertEqual(403, self.get("/gateway/netbird", {"X-Fieldmap-Fingerprint": "0" * 40}).status)
+            self.assertEqual(403, self.get("/gateway/netbird", {}).status)
+            self.assertEqual(404, self.post("/gateway/netbird", {}, mine).status, "only GET")
+            # Pairing gives it too.
+            _, other = phone_key()
+            answer = self.post("/enrol", {"name": "Tablet", "publicKey": other}).body
+            self.assertEqual(block, answer["netbird"])
+            # Asking for it is not "came in from outside".
+            self.assertEqual(0, self.rs.newest("direct") + self.rs.newest("netbird"))
+            # A new key: a new rev. The box's address is kept while the client restarts.
+            self.connect_netbird(setupKey="B" * 36)
+            self.netbird_says(age=600)
+            changed = self.get("/gateway/netbird", mine).body["netbird"]
+            self.assertEqual(("B" * 36, "100.92.14.7"), (changed["setupKey"], changed["host"]))
+            self.assertNotEqual(block["rev"], changed["rev"])
+            # Another server: the address from the old one is not given out.
+            self.connect_netbird(management="https://nb.example.com")
+            self.assertEqual({"netbird": None}, self.get("/gateway/netbird", mine).body)
+            # A removed device gets nothing; with remote access off, 401 like every address of the gateway.
+            self.rs.remove(device["id"])
+            self.assertEqual(403, self.get("/gateway/netbird", mine).status)
+            self.rs.write_private(self.rs.SETTINGS, json.dumps({"enabled": False}).encode())
+            self.assertEqual(401, self.get("/gateway/netbird", mine).status)
+        finally:
+            os.environ.pop("REMOTE_PORT", None)
+
+    def test_disconnecting_netbird_keeps_the_key_for_the_next_time(self):
+        self.connect_netbird()
+        self.netbird_says()
+        self.assertIsNotNone(self.rs.netbird_block())
+        off = self.post("/netbird", {"on": False})
+        self.assertEqual(200, off.status)
+        self.assertIsNone(self.rs.netbird_block())
+        self.assertEqual((False, "off", True, False), (off.body["netbird"]["on"], off.body["netbird"]["status"], off.body["netbird"]["keySet"], off.body["netbird"]["wanted"]))
+        self.assertIn("FIELDMAP_NETBIRD=off", open(self.rs.NETBIRD_CLIENT).read())
+        self.assertFalse(json.load(open(self.rs.SETTINGS))["netbird"], "the firewall closes NetBird's interface again")
+        again = self.post("/netbird", {"on": True})
+        self.assertEqual(200, again.status, "the key that is kept needs no typing")
+        self.assertIsNotNone(self.rs.netbird_block())
+
+    def test_netbird_runs_only_while_remote_access_is_on(self):
+        _, public = phone_key()
+        device = self.rs.enrol("Phone", public)
+        self.connect_netbird()
+        self.netbird_says()
+        self.assertTrue(self.get("/info").body["netbird"]["on"])
+        with mock.patch.object(self.rs.portmap, "release", return_value=[]), mock.patch.object(self.rs.portmap, "reach", return_value={}):
+            off = self.post("/enabled", {"on": False}).body
+            self.assertIn("FIELDMAP_NETBIRD=off", open(self.rs.NETBIRD_CLIENT).read())
+            self.assertFalse(json.load(open(self.rs.SETTINGS))["netbird"])
+            self.assertEqual((False, "off"), (off["netbird"]["on"], off["netbird"]["status"]))
+            self.assertIn("switch on remote access", off["netbird"]["text"])
+            self.assertEqual(401, self.get("/gateway/netbird", {"X-Fieldmap-Fingerprint": device["sha1"]}).status)
+            on = self.post("/enabled", {"on": True}).body
+            self.rs.time.sleep(0.2)
+        self.assertIn("FIELDMAP_NETBIRD=on", open(self.rs.NETBIRD_CLIENT).read())
+        self.assertTrue(json.load(open(self.rs.SETTINGS))["netbird"])
+        self.assertTrue(on["netbird"]["on"], "the box's address in the NetBird network is the same as before")
+        self.assertEqual("starting", on["netbird"]["status"])
+
+    def test_the_two_ways_are_counted_apart(self):
+        _, public = phone_key()
+        device = self.rs.enrol("Phone", public)
+        self.connect_netbird()
+        self.netbird_says()
+        mine = {"X-Fieldmap-Fingerprint": device["sha1"]}
+        self.assertEqual(204, self.get("/check", {**mine, "X-Fieldmap-Peer": "100.92.200.9"}).status)
+        self.assertTrue(self.rs.newest("netbird") > 0)
+        self.assertEqual(0, self.rs.newest("direct"))
+        self.assertNotEqual("confirmed", self.rs.report()["status"], "nobody came in through the router's port")
+        self.assertIn("A device connected to the box through NetBird on", self.rs.netbird_report()["text"])
+        self.assertEqual(204, self.get("/check", {**mine, "X-Fieldmap-Peer": "198.51.100.7"}).status)
+        self.assertTrue(self.rs.newest("direct") > 0)
+        self.assertEqual("confirmed", self.rs.report()["status"])
+        self.rs.write_seen()
+        saved = self.rs.load_devices()[0]
+        self.assertEqual({"direct", "netbird"}, set(saved["way"]))
+        self.assertTrue(self.rs.newest("netbird") > 0 and self.rs.newest("direct") > 0, "and after it was written down")
+        # A device from before the box knew two ways came in through the router's port.
+        self.rs.save_devices([{k: v for k, v in saved.items() if k != "way"}])
+        self.assertTrue(self.rs.newest("direct") > 0)
+        self.assertEqual(0, self.rs.newest("netbird"))
+
+    def test_the_port_on_the_router_can_be_switched_off_as_a_way_in(self):
+        os.environ["REMOTE_ADDRESS"] = "tak.example.com:8443"
+        self.rs.write_private(self.rs.REACH, json.dumps({"checked": 1, "problem": "", "ipv4": {"ok": True, "external_ip": "203.0.113.30",
+                                                                                              "external_port": 41000}, "ipv6": {}}).encode())
+        self.assertEqual(2, len(self.rs.endpoints()))
+        with mock.patch.object(self.rs.portmap, "release", return_value=[]) as release, mock.patch.object(self.rs.portmap, "reach") as reach:
+            info = self.post("/direct", {"on": False}).body
+            self.rs.time.sleep(0.2)
+            release.assert_called_once()            # the port the router opened is closed
+            self.assertEqual("direct-off", self.rs.check_router()["problem"])
+            reach.assert_not_called()               # and the router is not asked again
+        self.assertFalse(info["direct"])
+        self.assertEqual([], self.rs.endpoints())
+        self.assertFalse(json.load(open(self.rs.SETTINGS))["direct"], "the firewall closes the gateway's port to the world")
+        self.assertEqual("off", self.rs.report()["status"])
+        self.assertIn("does not use a port on the router", self.rs.report()["text"])
+        with mock.patch.object(self.rs.portmap, "reach", return_value={"checked": 2, "ipv4": {"ok": True, "external_ip": "203.0.113.30",
+                                                                                                "external_port": 41000}, "ipv6": {}, "problem": ""}):
+            self.assertTrue(self.post("/direct", {"on": True}).body["direct"])
+            self.rs.time.sleep(0.2)
+        self.assertEqual(2, len(self.rs.endpoints()))
+
+    def test_netbird_says_in_plain_words_why_it_does_not_connect(self):
+        self.connect_netbird()
+        self.assertEqual("starting", self.rs.netbird_report()["status"])
+        with open(self.rs.NETBIRD_PROBLEM, "w") as f:
+            f.write("key\nrpc error: code = PermissionDenied desc = couldn't add peer: setup key is invalid\n")
+        r = self.rs.netbird_report()
+        self.assertEqual("blocked", r["status"])
+        self.assertIn("did not accept the setup key", r["text"])
+        self.assertNotIn("rpc error", r["text"])
+        with open(self.rs.NETBIRD_PROBLEM, "w") as f:
+            f.write("server\ncontext deadline exceeded\n")
+        self.assertIn("cannot connect to the management server https://api.netbird.io:443", self.rs.netbird_report()["text"])
+        with open(self.rs.NETBIRD_PROBLEM, "w") as f:
+            f.write("download\n")
+        self.assertIn("cannot download NetBird", self.rs.netbird_report()["text"])
+        os.remove(self.rs.NETBIRD_PROBLEM)
+        old = time.time() - 3600
+        os.utime(self.rs.NETBIRD_APPLY, (old, old))
+        self.assertIn("did not start", self.rs.netbird_report()["text"], "nothing answered for a long time")
+        self.netbird_says(connected=False, error="rpc error: code = Unavailable")
+        self.assertIn("cannot connect to the management server", self.rs.netbird_report()["text"])
+        # A box that was a member already: NetBird does not look at a new key. The page says so.
+        self.connect_netbird(setupKey="E" * 36)
+        self.netbird_says()
+        with open(self.rs.NETBIRD_CHECK, "w") as f:
+            f.write("unchecked\n")
+        r = self.rs.netbird_report()
+        self.assertEqual(("connected", False), (r["status"], r["keyChecked"]))
+        self.assertIn("did not check the new setup key", r["text"])
+        os.remove(self.rs.NETBIRD_CHECK)
+        # A client that was started for an earlier request does not count: the box starts the new one.
+        self.netbird_says()
+        self.assertEqual("connected", self.rs.netbird_report()["status"])
+        self.connect_netbird(setupKey="D" * 36)
+        self.assertEqual("starting", self.rs.netbird_report()["status"])
+        # Typing the key again clears what was wrong before.
+        with open(self.rs.NETBIRD_PROBLEM, "w") as f:
+            f.write("key\n")
+        self.connect_netbird(setupKey="C" * 36)
+        self.assertFalse(os.path.exists(self.rs.NETBIRD_PROBLEM))
+
+    def test_the_gateway_has_one_address_for_netbird_and_the_service_checks_the_device(self):
+        for prefix in ("/maps/", "/"):
+            conf = self.rs.gateway_conf(prefix, "http://127.0.0.1:8080/", "8443", True)
+            block = re.search(r"    location = /mapremote/netbird \{\n(.*?)\n    \}\n", conf, re.S).group(1)
+            self.assertIn("if ($request_method != GET) { return 405; }", block)
+            self.assertIn("proxy_pass http://unix:/run/fieldmap-remote/remote.sock:/gateway/netbird;", block)
+            self.assertIn('proxy_set_header X-Real-IP "";', block, "a visitor cannot pass for the web server, or for nobody")
+            self.assertIn("proxy_set_header X-Fieldmap-Fingerprint $ssl_client_fingerprint;", block)
+            self.assertIn("location /mapremote/ { return 404; }", conf, "nothing else of the service is behind the gateway")
+            device = re.search(r"    location = /_device \{\n(.*?)\n    \}\n", conf, re.S).group(1)
+            self.assertIn("proxy_set_header X-Fieldmap-Peer $remote_addr;", device)
+
+    def test_the_netbird_client_is_kept_to_the_gateway(self):
+        script = open(os.path.join(HERE, "netbird-run.sh")).read()
+        for flag in ("--disable-firewall", "--disable-dns", "--disable-client-routes", "--disable-server-routes", "--block-lan-access",
+                     "--interface-name", "--setup-key-file"):
+            self.assertIn(flag, script)
+        for never in ("--allow-server-ssh", "--allow-remote-jobs", "--setup-key "):
+            self.assertNotIn(never, script, "never on, and the key never on a command line")
+        self.assertEqual(0, subprocess.run(["bash", "-n", os.path.join(HERE, "netbird-run.sh")]).returncode)
+        firewall = open(os.path.join(HERE, "..", "scripts", "firewall.sh")).read()
+        self.assertIn('NB_IF="nb-fieldmap"', firewall)
+        self.assertIn('INTERFACE="${FIELDMAP_NETBIRD_INTERFACE:-nb-fieldmap}"', script, "the firewall's rule is for this name")
+
+
 if __name__ == "__main__":
     unittest.main()

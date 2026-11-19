@@ -342,7 +342,7 @@
       to the app. Both functions are off when you get the box. Switch them on only if you need them.</p>
     <ul>
       <li><b>Remote access</b> lets paired devices use the box from outside the box's network, through the
-        internet.</li>
+        internet. There are two ways in: a port on the router, and NetBird. You can use one or the two.</li>
       <li><b>Sharing</b> lets the devices see the positions of the other devices, and share markers.</li>
     </ul>
     <p>The two functions are separate. You can use sharing without remote access. Then only the devices on the box's
@@ -363,6 +363,126 @@
       stay on the list.</p>
     <div class="caution"><b>Caution</b>Switch off remote access when nobody needs it. Then nothing outside the box's
       network can use the box.</div>
+    <p>Some internet connections do not let a router open a port. Then <b>From outside</b> tells you that devices
+      cannot connect to the box. Use NetBird for these connections. See the next part.</p>
+
+    <h3 id="netbird">Come in through NetBird</h3>
+    <p>NetBird is a service on the internet that connects computers and devices in a private network. The box and the
+      paired devices become members of your NetBird network, and the devices reach the box through it.</p>
+    <p>Use NetBird when the router cannot open a port. This occurs with:</p>
+    <ul>
+      <li>Starlink</li>
+      <li>internet from the mobile network</li>
+      <li>a router that you cannot change, for example in a rented building or on a camp site</li>
+    </ul>
+    <p>NetBird is only the way to the box. The box does the same check of each device as before. A member of your
+      NetBird network that is not a paired device gets nothing from the box.</p>
+    <p>You need a NetBird account. NetBird has a free plan for small networks. Only you need the account. The persons
+      who use the devices do not need an account, and they type nothing.</p>
+    <div class="caution"><b>Caution</b>Make a NetBird account that is only for the box. Do not use a NetBird network
+      that has other computers in it. Each paired device becomes a member of the network. A member can reach the other
+      computers in the network.</div>
+
+    <h3 id="netbird-account">NetBird step 1: make an account</h3>
+    <ol>
+      <li>Use a computer that has an internet connection.</li>
+      <li>Open <b>app.netbird.io</b> in the browser.</li>
+      <li>Sign up for a new account. The page tells you how.</li>
+      <li>If NetBird asks you to add a computer or to install NetBird, close that window. You do not install NetBird
+        on your computer.</li>
+    </ol>
+    <p>The pages of your NetBird account are the NetBird dashboard.</p>
+
+    <h3 id="netbird-key">NetBird step 2: make a setup key</h3>
+    <p>A setup key lets the box and the paired devices join your NetBird network.</p>
+    <ol>
+      <li>In the NetBird dashboard, press <b>Settings</b>. It is at the bottom of the menu on the left.</li>
+      <li>Press <b>Setup Keys</b>.</li>
+      <li>Press <b>Create Key</b>. Some versions of the dashboard show <b>Create Setup Key</b>.</li>
+      <li>In <b>Name</b>, type <b>Fieldmap</b>.</li>
+      <li>Switch on <b>Make this key reusable</b>.</li>
+      <li>Do not type a number in <b>Usage limit</b>.</li>
+      <li>Remove the number in <b>Expires in</b>. The field then shows <b>Unlimited</b>, and the key does not
+        expire.</li>
+      <li>Do not switch on <b>Ephemeral Peers</b>. Do not change the other fields.</li>
+      <li>Press <b>Create Setup Key</b>.</li>
+      <li>NetBird shows the setup key one time. Copy the setup key now.</li>
+      <li>Press <b>Close</b>.</li>
+    </ol>
+    <div class="caution"><b>Caution</b>Keep the setup key secret. A person who has the setup key can add a computer
+      to your NetBird network.</div>
+    <div class="note"><b>Note</b>If you keep a number of days in <b>Expires in</b>, the key stops after that time.
+      The box and the devices that joined before continue to work. A device that you pair after that time cannot
+      join. Then make a new setup key and type it on the box.</div>
+
+    <h3 id="netbird-box">NetBird step 3: connect the box</h3>
+    <ol>
+      <li>On the box's network, press <b>Admin</b>, <b>Remote access</b>.</li>
+      <li>Make sure that remote access is on.</li>
+      <li>Go to the part <b>NetBird</b>.</li>
+      <li>In <b>Setup key</b>, type the setup key. You can also paste it.</li>
+      <li>Do not change <b>Management server</b>.</li>
+      <li>Press <b>Connect</b>.</li>
+      <li>Wait. The first time, the box downloads NetBird. This can take some minutes.</li>
+    </ol>
+    <p>When it works, the page shows <b>The box is connected to the NetBird network</b>. The box keeps the setup key.
+      The page does not show the setup key again.</p>
+    <p>If the page shows <b>The NetBird network did not accept the setup key</b>, make a new setup key. Then type it
+      and press <b>Connect</b>.</p>
+
+    <h3 id="netbird-devices">NetBird step 4: the devices</h3>
+    <p>The devices get the setup key from the box. The box gives it only to paired devices.</p>
+    <ul>
+      <li>A device that you pair now gets the setup key when you pair it. See <a href="#pair">Pair a device</a>.</li>
+      <li>A device that you paired before gets the setup key automatically. Connect the device to the box's network
+        and open the app one time.</li>
+    </ul>
+    <p>Outside the box's network, the app tries the port on the router first. If that does not answer, the app uses
+      NetBird. The app does this automatically, and it shows <b>Connected</b>.</p>
+
+    <h3 id="netbird-check">Make sure that NetBird works</h3>
+    <ol>
+      <li>Take a paired device off the box's network. For example, switch off Wi-Fi on a phone that has mobile
+        data.</li>
+      <li>Open the app. Wait one minute.</li>
+      <li>Make sure that the app shows <b>Connected</b> and that the map moves.</li>
+      <li>On the box's network, open <b>Admin</b>, <b>Remote access</b>. Read <b>From outside</b>.</li>
+    </ol>
+    <p><b>Through NetBird</b> then shows <b>A device connected to the box through NetBird</b>, with the date. In the
+      NetBird dashboard, <b>Peers</b> shows the box as <b>fieldmap-box</b>. Each device shows as <b>Fieldmap</b> and
+      the name of the device.</p>
+    <p>If no device uses the port on the router, close the port. In <b>Port forwarding</b>, untick <b>Let devices come
+      in through a port on the router</b>.</p>
+
+    <h3 id="netbird-stop">Stop NetBird, or remove a lost device</h3>
+    <p>To stop NetBird, press <b>Disconnect</b> in the part <b>NetBird</b>. The box then leaves the NetBird network,
+      and the devices stop their use of NetBird. The box keeps the setup key. Press <b>Connect</b> to use NetBird
+      again.</p>
+    <p>If a device is lost, do these steps:</p>
+    <ol>
+      <li>On the <b>Devices</b> page, press <b>Remove</b> beside the device. The device then gets nothing from the
+        box.</li>
+      <li>In the NetBird dashboard, press <b>Peers</b>. Delete the device there.</li>
+      <li>In <b>Settings</b>, <b>Setup Keys</b>, revoke the setup key. The lost device has a copy of it.</li>
+      <li>Make a new setup key.</li>
+      <li>On the <b>Remote access</b> page, press <b>Disconnect</b>. Type the new setup key. Press
+        <b>Connect</b>.</li>
+    </ol>
+    <p>The other devices continue to work. They do not need the new setup key.</p>
+    <p>The box is a member of the NetBird network already, so NetBird does not check the new setup key. The page tells
+      you this. In the NetBird dashboard, press <b>Settings</b>, <b>Setup Keys</b>. Make sure that the new key shows as
+      valid.</p>
+
+    <h3 id="netbird-own">Advanced: your own NetBird server</h3>
+    <p>You can run a NetBird server yourself. Then you do not use NetBird's service. This is work for a person who
+      knows servers. The NetBird documentation at docs.netbird.io tells you how.</p>
+    <ol>
+      <li>Make sure that the box and the devices can reach your server from the internet.</li>
+      <li>Make a setup key in the dashboard of your server, as in step 2.</li>
+      <li>On the <b>Remote access</b> page, type the address of your server in <b>Management server</b>, for example
+        <b>https://netbird.example.com</b>.</li>
+      <li>Type the setup key and press <b>Connect</b>.</li>
+    </ol>
 
     <h3 id="pair">Pair a device</h3>
     <p>A paired device can use the box from outside. Pair each device one time, on the box's network.</p>
@@ -420,6 +540,13 @@
       <tr><td>A paired device cannot connect from outside.</td><td>Make sure that remote access is on. Read <b>From
         outside</b> on the Remote access page. Connect the device to the box's network one time. The app then gets
         the new address of the box.</td></tr>
+      <tr><td>The router cannot open a port. <b>From outside</b> speaks of Starlink, or of two routers.</td><td>Use
+        NetBird. See <a href="#netbird">Come in through NetBird</a>.</td></tr>
+      <tr><td>The part <b>NetBird</b> shows <b>The box starts NetBird</b> for more than 10 minutes.</td><td>Make
+        sure that the box has an internet connection. Press <b>Disconnect</b>. Then press <b>Connect</b>.</td></tr>
+      <tr><td>The box is connected to the NetBird network, but a device cannot connect from outside.</td><td>Connect
+        the device to the box's network one time and open the app. The device then gets the setup key. If the setup
+        key expired, make a new setup key and type it on the box.</td></tr>
       <tr><td>Nobody sees my position.</td><td>Make sure that sharing is on, on the box and in the app. The others
         must also switch on sharing.</td></tr>
     </table>
@@ -488,6 +615,10 @@
       <tr><td>map style</td><td>The look of the map: its colours and what it shows.</td></tr>
       <tr><td>marker</td><td>A point that a person puts on the map.</td></tr>
       <tr><td>MGRS</td><td>A grid of letters and numbers that gives a position. Many maps for the field use it.</td></tr>
+      <tr><td>member</td><td>A computer or a device that joined a NetBird network.</td></tr>
+      <tr><td>NetBird</td><td>A service on the internet that connects computers and devices in a private network.
+        The box can use it for remote access.</td></tr>
+      <tr><td>NetBird dashboard</td><td>The pages of your NetBird account, in the browser.</td></tr>
       <tr><td>outside</td><td>Not on the box's network, for example on mobile data.</td></tr>
       <tr><td>pair</td><td>To give a device permission to use the box from outside.</td></tr>
       <tr><td>port</td><td>A number that the router uses to send a connection to the box.</td></tr>
@@ -495,6 +626,8 @@
       <tr><td>region</td><td>An area of the world that the Map builder builds, for example a state.</td></tr>
       <tr><td>remote access</td><td>The function that lets paired devices use the box from outside.</td></tr>
       <tr><td>router</td><td>The device between the box's network and the internet.</td></tr>
+      <tr><td>setup key</td><td>A secret text from the NetBird dashboard. It lets the box and the paired devices join
+        your NetBird network.</td></tr>
       <tr><td>sheet</td><td>One printed page of a map.</td></tr>
       <tr><td>tab</td><td>A link in the header at the top of each page.</td></tr>
     </table>

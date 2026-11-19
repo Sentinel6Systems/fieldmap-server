@@ -140,7 +140,7 @@ builds do.
 | Maps | Maps | `/` (`/maps/` behind Internet-in-a-Box) | The interactive map, with a menu of the styles and, under **Use in another app**, the tile addresses for TAK clients and other map apps |
 | Print a map | Print a map | `/mapprinter/` | The print tool |
 | User Guide | User Guide | `/guide/` | How to use the box, in plain words (ASD-STE100, about 80 %), for someone with no other help at hand: `guide/index.html` |
-| Admin | Remote access | `/phones/remote.html` | Remote access for the app on or off, whether devices can reach the box from outside, port forwarding (see "Remote access for the Android app") |
+| Admin | Remote access | `/phones/remote.html` | Remote access for the app on or off, whether devices can reach the box from outside, port forwarding, NetBird (see "Remote access for the Android app") |
 | Admin | Devices | `/phones/` | The Fieldmap Android app: get it from the box, pair a device, the paired devices, and the switch for sharing positions and markers between them (see "Sharing positions and markers between phones") |
 | Admin | Map builder | `/mapadmin/` | Choose and build the maps (not on a Raspberry Pi) |
 
@@ -205,7 +205,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
 | `pi/` | Raspberry Pi + Internet-in-a-Box deployment: compose file, nginx snippets, notes |
 | `systemd/` | Start the compose stack, and optionally the map builder page, at boot |
-| `phones/`, `scripts/remote.sh`, `scripts/firewall.sh`, `tools/remote-server.py`, `tools/portmap.py` | Remote access for the Android app: the Devices page, pairing, the router's port, the gateway, the box's firewall |
+| `phones/`, `scripts/remote.sh`, `scripts/firewall.sh`, `tools/remote-server.py`, `tools/portmap.py`, `tools/netbird-run.sh` | Remote access for the Android app: the Devices page, pairing, the router's port, NetBird, the gateway, the box's firewall |
 | `tools/share-server.py` | Sharing positions and markers between phones with the Android app |
 | `scripts/app.sh`, `tools/app-file.py` | The Android app kept on the box, for devices to install from the Devices page |
 | `data/` | Your mbtiles files (not in git) |
@@ -843,7 +843,11 @@ at all. It does not rely on the router, over IPv4 and IPv6: some routers let IPv
   (Tailscale, WireGuard, ZeroTier, OpenVPN), and answers to what the box asked for itself.
 - **The one exception:** the remote gateway's port, while remote access is switched on (Admin, Remote access; see
   below). Phones away from home connect to it from anywhere, so it does answer: with a demand for a certificate
-  this box issued, and nothing more to anyone without one.
+  this box issued, and nothing more to anyone without one. When the port on the router is switched off as a way in
+  (NetBird only), the gateway's port is closed to the world too.
+- **NetBird is not one of those VPNs.** On NetBird's interface (`nb-fieldmap`), while NetBird is connected, the
+  gateway's port gets in and nothing else: not the pages, not SSH, not a ping. A device that was removed from the box
+  can still be a member of the NetBird network. This rule stays also with `REMOTE_FIREWALL=off`.
 - **Closed from outside, SSH included.** To log in from outside without a VPN, set `REMOTE_FIREWALL_ALLOW=22` in
   `.env` and run `sudo ./scripts/firewall.sh apply`. `REMOTE_FIREWALL=off` leaves the firewall out (for a machine
   that serves other things to the internet).
@@ -906,7 +910,71 @@ Two pages, both on the box's own network only, manage it:
 (while remote access is on), the **paired devices**, each with when it last came in from outside, and **Remove**;
 and sharing positions and markers (below).
 
-No account, no outside service, nothing of anyone else's in between: the box talks only to your own router.
+No account, no outside service, nothing of anyone else's in between: the box talks only to your own router. Where
+the router cannot open a port, NetBird is a second way in (below); it is off until the owner sets it up.
+
+### NetBird: when the router cannot open a port
+
+NetBird (netbird.io) is an open-source service that connects computers and devices in a private network over the
+internet. Each member connects out to a management server, so no router has to open a port. Use it with Starlink,
+with mobile internet, or with a router that you cannot change.
+
+What you need: a NetBird network. That is a free account on NetBird's cloud, or a NetBird server of your own. The
+people with the devices need no account and type nothing.
+
+1. Open **app.netbird.io** in a browser and make an account. If the dashboard offers to add a machine, close that.
+2. In the NetBird dashboard: **Settings**, **Setup Keys**, **Create Key** (or **Create Setup Key**).
+   - **Name:** Fieldmap.
+   - Switch on **Make this key reusable**. Leave **Usage limit** empty.
+   - Empty **Expires in** (it then shows **Unlimited**). The dashboard fills in 7 days.
+   - Leave **Ephemeral Peers** off.
+   - Press **Create Setup Key** and copy the key. NetBird shows it once.
+3. On the box's network: **Admin**, **Remote access**. Remote access must be on. In the part **NetBird**, type the
+   key in **Setup key**, leave **Management server** as it is, and press **Connect**. The first time, the box
+   downloads NetBird (some minutes).
+4. Wait for **The box is connected to the NetBird network**. The page does not show the key again.
+5. Devices that you pair from now on get what they need when you pair them. Devices that you paired before get it
+   the next time they are on the box's network, or through the gateway. The app uses NetBird only when home and the
+   router's port do not answer.
+6. To check: take a paired device off the box's network (mobile data), open the app, and read **From outside**,
+   **Through NetBird** on the Remote access page: *A device connected to the box through NetBird on ...*.
+7. With NetBird as the only way in, untick **Let devices come in through a port on the router** (Port forwarding).
+   The box then asks the router for nothing, and its firewall closes the gateway's port to everything but NetBird
+   and the box's network.
+
+To stop: **Disconnect** (the box keeps the key for the next **Connect**). To take it off the box for good:
+`./scripts/remote.sh netbird-forget`, then delete *fieldmap-box* in the dashboard under **Peers**.
+
+**Your own NetBird server (advanced).** Run a self-hosted NetBird server (see docs.netbird.io), reachable from the
+internet by the box and the devices. Make the setup key on its dashboard, then type its address in **Management
+server** (`https://netbird.example.com`, or with a port: `https://netbird.example.com:33073`) before you press
+**Connect**. A change of server gives the box a new place in the new network.
+
+How it fits together:
+
+- **NetBird is only the road; the lock stays the same.** Devices reach the same gateway, with the same certificate,
+  at the box's address in the NetBird network. A member of the NetBird network without a certificate of this box
+  gets nothing. NetBird carries only TLS that it cannot read.
+- **The setup key is a secret, and only paired devices get it:** in the answer to pairing (`POST /mapremote/enrol`,
+  on the box's network) and through the gateway with a paired certificate (`GET /mapremote/netbird`). Not in
+  `/mapremote/info`, not in a log, not on the page after it was saved. It is kept in `data/remote/netbird/setup-key`
+  (only the owner of this folder can read it).
+- **The client is NetBird's own container** (`netbirdio/netbird`, the `netbird` service in the compose files, profile
+  `netbird`; x86 and ARM). It is not downloaded until the owner presses **Connect**; `fieldmap-netbird.path` then runs
+  `./scripts/remote.sh netbird-apply` as root, which starts or removes it. It runs on the machine's own network with
+  only the right to change network settings, on its own interface `nb-fieldmap`, with NetBird's DNS, routes, firewall
+  changes, IPv6, SSH server and remote jobs off (`tools/netbird-run.sh`). Its identity is kept in
+  `data/remote/netbird/state/`, so it comes back after a restart with the same address. It is updated every week with
+  the gateway. A container (not NetBird's package) keeps everything of NetBird inside this folder and out of the
+  machine's package list, and it updates with the rest.
+- **Use a NetBird network made only for the box.** A new NetBird account lets all its members reach each other. Each
+  paired device becomes a member. In a network shared with other machines, a device can then reach whatever that
+  network's rules permit.
+- **A lost device:** press **Remove** on the Devices page (the box then refuses it at once), delete it under
+  **Peers** in the NetBird dashboard, revoke the setup key there, and give the box a new one (**Disconnect**, type the
+  new key, **Connect**). Devices that joined before keep working with the identity they have. NetBird does not check
+  a new key for a box that is a member already; the page then asks you to see that the key shows as valid in the
+  dashboard.
 
 ### How it works
 
@@ -950,6 +1018,7 @@ REMOTE_DIRECT=off                      # do not ask the router for anything
 REMOTE_FIREWALL=off                    # no firewall on the box (for a box that serves other things from outside)
 REMOTE_FIREWALL_ALLOW=22               # ports open from outside besides the gateway (none by default); 22 is SSH
 REMOTE_RELAY=tailscale                 # also reach the gateway through Tailscale Funnel (sign the box in first)
+NETBIRD_IMAGE=netbirdio/netbird:latest # NetBird's client image (set up on the Remote access page, not here)
 ```
 
 Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port by hand, use the Remote access page (above).
@@ -959,6 +1028,7 @@ Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port 
 ./scripts/remote.sh pair            # open pairing for ten minutes
 ./scripts/remote.sh devices         # the paired phones
 ./scripts/remote.sh remove <id>     # lock one out, at once
+./scripts/remote.sh netbird-forget  # take NetBird off the box: the container, the setup key, the box's NetBird identity
 ./scripts/remote.sh off             # remove it (the services, the gateway, the Devices page); the phones and the firewall are kept
 ./scripts/install.sh --no-remote    # install without it (on a Pi: sudo REMOTE=no ./scripts/install-pi.sh); the firewall is still put up
 ```
@@ -975,6 +1045,9 @@ Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port 
 - Back up `data/remote/` with the box. If it is lost, every phone has to be paired again.
 - The service is `tools/remote-server.py` with `tools/portmap.py` (Python's standard library, `openssl` and `ip`),
   run by `fieldmap-remote.service`. Tests: `python3 -m unittest tools/test_remote_server.py tools/test_portmap.py`.
+- NetBird: tested against a self-hosted NetBird server (v0.83.1) in containers, with the whole box (systemd, Docker,
+  the installers) in a container and a second NetBird member as the device, direct and through NetBird's relay; not
+  yet against NetBird's cloud or over a real Starlink line.
 - Tested against a pretend router (UPnP and NAT-PMP) and in containers (the firewall), not yet on many real
   routers. If yours behaves differently, `./scripts/remote.sh status` and `journalctl -u fieldmap-remote` say what
   it answered.
@@ -1077,6 +1150,14 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- NetBird as a second way in from outside, for a box whose router cannot open a port (Starlink, mobile internet, a
+  router you cannot change): a **NetBird** card on Admin, Remote access, where the owner types one setup key of a
+  NetBird network (NetBird's free cloud, or an own server). Paired devices get what they need from the box and reach
+  the same gateway, with the same certificate, over NetBird. Off until set up; nothing of NetBird is downloaded
+  before. The port on the router can now be switched off as a way in. "From outside" and
+  `./scripts/remote.sh status` say for each way whether a device came in through it. The box's firewall lets in only
+  the gateway's port on NetBird's interface, and now runs before Docker when the machine starts. After `git pull`,
+  run the installer again as under "Updating".
 - The header reads **Maps**, **Print a map**, **Devices**, **Admin**. Admin holds what not everyone needs: the map
   builder (where it is installed) and a new **Remote access** page with the remote access switch, "From outside" and
   port forwarding, moved there from the Devices page; a second row on those pages goes between them. Devices keeps

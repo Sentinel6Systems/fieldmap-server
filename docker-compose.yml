@@ -59,6 +59,39 @@ services:
       - ./data/remote/run:/run/fieldmap-remote
       - ./data/share/run:/run/fieldmap-share
 
+  # NetBird (netbird.io), a second way in for paired devices, for a box whose router cannot
+  # open a port. Not started by `docker compose up`, and not downloaded, until the owner types
+  # a setup key on the Remote access page: then scripts/remote.sh netbird-apply starts it.
+  # It joins the owner's NetBird network (tools/netbird-run.sh) on this machine's own network,
+  # which is why it may change network settings (NET_ADMIN) and nothing else. On its interface
+  # the box's firewall lets in the gateway's port only (scripts/firewall.sh). Updated every
+  # week with the gateway.
+  netbird:
+    image: ${NETBIRD_IMAGE:-netbirdio/netbird:latest}
+    container_name: fieldmap-netbird
+    profiles: ["netbird"]
+    restart: unless-stopped
+    network_mode: host
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      # To read the setup key and write its status in data/remote/netbird, which belong to
+      # the owner of this folder. It sees no other file of this machine.
+      - DAC_OVERRIDE
+    devices:
+      - /dev/net/tun
+    entrypoint: ["/bin/bash", "/fieldmap-tools/netbird-run.sh"]
+    volumes:
+      - ./tools:/fieldmap-tools:ro
+      - ./data/remote/netbird:/fieldmap
+      - ./data/remote/netbird/state:/var/lib/netbird
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+
   # Downloads a newer World Magnetic Model when the print tool's "Update magnetic model"
   # button asks for one (tools/wmm-update.py). Reached only through the web container.
   wmm:

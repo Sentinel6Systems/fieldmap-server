@@ -1,0 +1,12 @@
+# Starts or removes NetBird on the box when the Remote access page asks for it (Connect,
+# Disconnect, the main switch): the service touches data/remote/netbird/apply-request, and this
+# runs scripts/remote.sh netbird-apply. Installed by scripts/remote.sh setup.
+[Unit]
+Description=fieldmap-server follows the NetBird set-up of the Remote access page
+
+[Path]
+PathChanged=/opt/fieldmap-server/data/remote/netbird/apply-request
+Unit=fieldmap-netbird.service
+
+[Install]
+WantedBy=paths.target
