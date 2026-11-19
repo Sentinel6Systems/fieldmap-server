@@ -108,7 +108,8 @@ install -m 644 pi/nginx/maps-nginx.conf /etc/nginx/conf.d/maps-nginx.conf
 nginx -t && systemctl reload nginx
 
 echo "== Remote access for the Fieldmap app"
-# Phones paired on this network can then use the maps from anywhere (scripts/remote.sh).
+# Phones paired on this network can then use the maps from anywhere, and phones can share
+# positions and markers through the box (scripts/remote.sh). Both are off until switched on.
 # REMOTE=no in the environment leaves it out.
 if [ "${REMOTE:-yes}" != no ]; then
   ./scripts/remote.sh setup || echo "WARNING: remote access for the app is not set up (see above). Everything else works." >&2

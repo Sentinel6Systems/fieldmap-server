@@ -287,6 +287,25 @@ class RemoteServerTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.rs.gateway_conf(*bad)
 
+    def test_the_gateway_lets_live_sharing_through_and_nothing_else_of_it(self):
+        for prefix in ("/maps/", "/"):
+            conf = self.rs.gateway_conf(prefix, "http://127.0.0.1:8080/", "8443", True)
+            blocks = re.findall(r"    location ([^\n]*mapshare[^\n]*) \{\n(.*?)\n    \}\n", conf, re.S)
+            self.assertEqual(["= /mapshare/info", "= /mapshare/state", "= /mapshare/position", "= /mapshare/leave",
+                              '~ "^/mapshare/markers/[A-Za-z0-9-]{8,64}$"'], [match for match, _ in blocks])
+            methods = {}
+            for match, block in blocks:
+                methods[match] = re.search(r"if \(\$request_method !~ \^\((.*)\)\$\) \{ return 405; \}", block).group(1)
+                self.assertIn("auth_request /_device;", block, "only paired phones")
+                self.assertIn('proxy_set_header X-Real-IP "";', block, "a phone outside cannot pass for one at home")
+                self.assertIn("proxy_set_header X-Fieldmap-Fingerprint $ssl_client_fingerprint;", block)
+                self.assertIn("limit_req zone=fieldmap_share", block)
+                self.assertRegex(block, r"client_max_body_size [128]k;")
+            self.assertEqual(["GET", "GET", "POST", "POST", "PUT|DELETE"], list(methods.values()))
+            self.assertIn("location /mapshare/ { return 404; }", conf, "the Phones page's switch is not among them")
+            self.assertNotIn("admin", conf)
+            self.assertEqual(1, conf.count("location / {"), "one catch-all only, or nginx refuses to start")
+
     def test_off_by_default_and_nothing_opens_by_itself(self):
         os.remove(self.rs.SETTINGS)
         self.assertFalse(self.rs.enabled())

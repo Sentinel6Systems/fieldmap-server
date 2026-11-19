@@ -18,6 +18,8 @@ How it works:
   * From outside, the app connects to the gateway (an nginx that demands such a
     certificate, see gateway_conf()), which asks this service for every request whether the
     certificate is still on the list (`GET /check`). Removing a phone locks it out at once.
+    Behind that check the gateway serves the maps, and passes the few addresses of live
+    sharing on to its own service (tools/share-server.py, see share_locations()).
   * Reaching the gateway: every few minutes this service asks the home router to forward an
     outside port to it (UPnP or NAT-PMP, tools/portmap.py) and notes the box's IPv6
     addresses. The app learns these addresses whenever it is home, from `GET /info`.
@@ -210,6 +212,38 @@ APP_PATHS = (r"(styles\.json|styles/[A-Za-z0-9_.-]+/style\.json|styles/[A-Za-z0-
              r"|data/[A-Za-z0-9_.-]+/[0-9]+/[0-9]+/[0-9]+\.(pbf|png|jpg|jpeg|webp))")
 
 
+# Live sharing between the apps (tools/share-server.py), at /mapshare/ as on the box's own web
+# server: these addresses and methods and nothing else, each with the most it may be sent.
+SHARE_PATHS = (("= /mapshare/info", "GET", "1k"), ("= /mapshare/state", "GET", "1k"),
+               ("= /mapshare/position", "POST", "2k"), ("= /mapshare/leave", "POST", "2k"),
+               ('~ "^/mapshare/markers/[A-Za-z0-9-]{8,64}$"', "PUT|DELETE", "8k"))
+
+
+def share_locations():
+    """The gateway's part for live sharing. The sharing service is told which certificate asks
+    (after the device check), and never an address: only the box's own web server gives it one."""
+    out = ""
+    for match, methods, most in SHARE_PATHS:
+        out += f"""    location {match} {{
+        if ($request_method !~ ^({methods})$) {{ return 405; }}
+        auth_request /_device;
+        limit_req zone=fieldmap_req burst=400 nodelay;
+        limit_req zone=fieldmap_share burst=40 nodelay;
+        limit_req_status 429;
+        client_max_body_size {most};
+        rewrite ^/mapshare(/.*)$ $1 break;
+        proxy_pass http://unix:/run/fieldmap-share/share.sock;
+        proxy_set_header X-Real-IP "";
+        proxy_set_header X-Fieldmap-Fingerprint $ssl_client_fingerprint;
+        proxy_read_timeout 15;
+        error_page 502 504 = @no_share;
+    }}
+"""
+    return out + """    location /mapshare/ { return 404; }
+    location @no_share { return 404; }
+"""
+
+
 def gateway_conf(prefix, upstream, listen, ipv6=False):
     """nginx for the remote gateway: TLS with a certificate demanded from the visitor, every
     request checked against the device list, and only what the app needs behind it."""
@@ -242,6 +276,8 @@ map $http_x_fieldmap_proto $fieldmap_proto {{
 # hundreds of tiles a phone asks for at once when the map moves.
 limit_conn_zone $binary_remote_addr zone=fieldmap_conn:2m;
 limit_req_zone  $binary_remote_addr zone=fieldmap_req:4m rate=30r/s;
+# Per paired phone, for live sharing: a position and a look at the others every few seconds.
+limit_req_zone  $ssl_client_fingerprint zone=fieldmap_share:1m rate=5r/s;
 
 server {{
     listen {listen} ssl;
@@ -278,6 +314,7 @@ server {{
         proxy_read_timeout 120;
     }}
 
+{share_locations()}
 {nothing_else}}}
 """
 
@@ -717,7 +754,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(data)
+        if data:                        # an answer without one is complete, and the gateway may be gone
+            self.wfile.write(data)
 
     def body(self):
         length = int(self.headers.get("Content-Length") or 0)

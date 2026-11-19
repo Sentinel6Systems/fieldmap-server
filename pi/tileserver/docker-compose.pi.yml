@@ -28,3 +28,4 @@ services:
       - ./data/remote/gateway:/etc/fieldmap-remote:ro
       - ./data/remote/gateway/nginx:/etc/nginx/conf.d:ro
       - ./data/remote/run:/run/fieldmap-remote
+      - ./data/share/run:/run/fieldmap-share

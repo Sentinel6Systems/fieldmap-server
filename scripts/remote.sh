@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Remote access for the Fieldmap Android app: a phone paired on this box's own network can use
-# the maps from anywhere afterwards, and nobody else can. install.sh and install-pi.sh run
-# "setup" for you; nothing here needs an account or an outside service.
+# the maps from anywhere afterwards, and nobody else can. And live sharing between the apps:
+# positions and shared markers, for the phones at home and the paired ones outside. install.sh
+# and install-pi.sh run "setup" for you; nothing here needs an account or an outside service.
 #
 # Usage:
 #   ./scripts/remote.sh setup          set it up, or bring it up to date (run by the installers)
@@ -9,8 +10,8 @@
 #   ./scripts/remote.sh pair           open pairing for ten minutes (same as the Phones page button)
 #   ./scripts/remote.sh devices        the paired phones
 #   ./scripts/remote.sh remove <id>    lock one out
-#   ./scripts/remote.sh off            remove it: the gateway, the service, the firewall, the Phones tab
-#                                      (to switch it off and on, use the switch on the Phones page)
+#   ./scripts/remote.sh off            remove it: the gateway, the services, the firewall, the Phones tab
+#                                      (to switch remote access or sharing off and on, use the Phones page)
 #
 # On a Raspberry Pi behind Internet-in-a-Box, run it with sudo, like install-pi.sh.
 # Elsewhere run it as the owner of this folder; it asks for sudo where it needs it.
@@ -20,9 +21,11 @@
 #      (tools/remote-server.py init; data/remote/ stays on this box);
 #   2. starts the service that pairs phones and keeps the router's port open
 #      (fieldmap-remote, a systemd service): the Phones page at /phones/, and /mapremote/ for the app;
-#   3. starts the gateway, an nginx container that demands a certificate this box issued and
+#   3. starts the service for live sharing (fieldmap-share, tools/share-server.py; /mapshare/
+#      for the app), which takes and gives nothing until it is switched on on the Phones page;
+#   4. starts the gateway, an nginx container that demands a certificate this box issued and
 #      serves only what the app needs, and updates it every week (fieldmap-remote-update);
-#   4. puts a firewall on the box itself that lets nothing in from outside the local network
+#   5. puts a firewall on the box itself that lets nothing in from outside the local network
 #      but the gateway and SSH (scripts/firewall.sh, fieldmap-firewall).
 #
 # Settings, in .env (see .env.example), all optional:
@@ -56,6 +59,7 @@ as_owner() { if [ "$(id -un)" = "$OWNER" ]; then "$@"; else sudo -u "$OWNER" "$@
 # (an uncommon port: nothing else on the box takes it, and it is not one scanners try first).
 REMOTE_PORT="$(setting REMOTE_PORT "")"
 SERVICE_PORT="$(setting REMOTE_SERVICE_PORT 8092)"
+SHARE_PORT="$(setting SHARE_SERVICE_PORT 8093)"
 RELAY="$(setting REMOTE_RELAY "")"
 # A Raspberry Pi behind Internet-in-a-Box (install-pi.sh copied this file here): the tile
 # server is on this machine's port 8080, the web server shows it at /maps/, and the gateway
@@ -64,10 +68,12 @@ if [ -f docker-compose.pi.yml ]; then
     PI=yes; COMPOSE=(docker compose -f docker-compose.pi.yml)
     INIT=(--prefix /maps/ --upstream http://127.0.0.1:8080/ --listen "$REMOTE_PORT" --ipv6)
     LOCAL="http://127.0.0.1/mapremote/info"
+    LOCAL_SHARE="http://127.0.0.1/mapshare/info"
 else
     PI=no; COMPOSE=(docker compose)
     INIT=(--prefix / --upstream http://tileserver:8080/ --listen 8443)
     LOCAL="http://127.0.0.1:$(setting WEB_PORT 80)/mapremote/info"
+    LOCAL_SHARE="http://127.0.0.1:$(setting WEB_PORT 80)/mapshare/info"
 fi
 # Published on every address of this machine, IPv4 and IPv6; with only a relay, on this machine alone.
 export REMOTE_PUBLISH="$REMOTE_PORT"
@@ -100,6 +106,13 @@ serve)
         REMOTE_PORT REMOTE_DIRECT="$(setting REMOTE_DIRECT on)"
     if [ "$PI" = yes ]; then exec python3 tools/remote-server.py serve --port "$SERVICE_PORT"; fi
     exec python3 tools/remote-server.py serve
+    ;;
+
+share-serve)
+    # What the systemd service for live sharing runs. It gets the box's code and nothing else.
+    export REMOTE_PIN="$(setting REMOTE_PIN "")"
+    if [ "$PI" = yes ]; then exec python3 tools/share-server.py serve --port "$SHARE_PORT"; fi
+    exec python3 tools/share-server.py serve
     ;;
 
 setup)
@@ -144,12 +157,23 @@ for _ in range(200):
     $SUDO systemctl enable -q fieldmap-remote
     $SUDO systemctl restart fieldmap-remote
 
+    echo "== The service for live sharing between the apps"
+    # Its folder belongs to the owner of this one (Docker makes a mounted folder that is
+    # missing, as root: give that back).
+    if [ -n "$(find data/share -maxdepth 1 ! -user "$OWNER" 2>/dev/null)" ]; then $SUDO chown -R "$OWNER" data/share; fi
+    as_owner mkdir -p data/share/run
+    install_unit fieldmap-share.service
+    $SUDO systemctl daemon-reload
+    $SUDO systemctl enable -q fieldmap-share
+    # Remote access does not depend on it: if it does not start, the rest is still set up.
+    $SUDO systemctl restart fieldmap-share || echo "WARNING: the sharing service did not start. See: journalctl -u fieldmap-share" >&2
+
     echo "== The gateway"
     "${COMPOSE[@]}" --profile remote pull -q remote >/dev/null 2>&1 || true
     "${COMPOSE[@]}" --profile remote up -d --quiet-pull remote
     docker restart fieldmap-remote >/dev/null      # read the current certificates and configuration
     if [ "$PI" = yes ]; then
-        sed "s#127.0.0.1:8092#127.0.0.1:$SERVICE_PORT#" pi/nginx/mapremote-nginx.conf | $SUDO tee /etc/nginx/conf.d/mapremote-nginx.conf >/dev/null
+        sed -e "s#127.0.0.1:8092#127.0.0.1:$SERVICE_PORT#" -e "s#127.0.0.1:8093#127.0.0.1:$SHARE_PORT#" pi/nginx/mapremote-nginx.conf | $SUDO tee /etc/nginx/conf.d/mapremote-nginx.conf >/dev/null
         $SUDO nginx -t -q && $SUDO systemctl reload nginx
     fi
     install_unit fieldmap-remote-update.service
@@ -178,6 +202,10 @@ for _ in range(200):
     if ! curl -fs -m 5 "$LOCAL" | grep -q fieldmap-remote; then
         echo "WARNING: $LOCAL does not answer, so phones cannot pair yet." >&2
         [ "$PI" = yes ] || echo "         Run ./scripts/install.sh (it rebuilds the web front), then this again." >&2
+    fi
+    if ! curl -fs -m 5 "$LOCAL_SHARE" | grep -q '"enabled"'; then
+        echo "WARNING: $LOCAL_SHARE does not answer, so phones cannot share positions and markers yet." >&2
+        echo "         See: journalctl -u fieldmap-share" >&2
     fi
     code="$(curl -sk -m 5 -o /dev/null -w '%{http_code}' "https://127.0.0.1:$REMOTE_PORT/" || true)"
     if [ "$code" = 400 ]; then echo "The gateway is up and turns away a visitor without a certificate."
@@ -208,11 +236,15 @@ for _ in range(200):
         echo "(in the header of the Maps page) and press Switch on. That also opens pairing for ten minutes:"
         echo "then, in the Fieldmap app on the phone, Menu, Server, Pair this phone."
     fi
+    echo "Sharing positions and markers between the phones has its own switch on the same page; it is off"
+    echo "until someone switches it on."
     ;;
 
 status)
     server status
+    as_owner python3 tools/share-server.py status
     echo "Service:        $(systemctl is-active fieldmap-remote 2>/dev/null || true)"
+    echo "Share service:  $(systemctl is-active fieldmap-share 2>/dev/null || true)"
     echo "Gateway:        $(docker inspect -f '{{.State.Status}}' fieldmap-remote 2>/dev/null || echo 'not started')"
     echo "Firewall:       $(systemctl is-active fieldmap-firewall.timer 2>/dev/null | sed 's/^active$/on/;s/^inactive$/off/' || true)"
     ;;
@@ -246,16 +278,17 @@ off)
     fi
     as_owner rm -f data/remote/address
     "${COMPOSE[@]}" --profile remote stop remote >/dev/null 2>&1 || true
-    $SUDO systemctl disable -q --now fieldmap-remote fieldmap-remote-update.timer fieldmap-remote-apply.path fieldmap-firewall.timer fieldmap-firewall.path 2>/dev/null || true
+    $SUDO systemctl disable -q --now fieldmap-remote fieldmap-share fieldmap-remote-update.timer fieldmap-remote-apply.path fieldmap-firewall.timer fieldmap-firewall.path 2>/dev/null || true
     as_owner mkdir -p data/remote/run && as_owner touch data/remote/run/no-remote   # no Phones tab
     $SUDO ./scripts/firewall.sh off
-    echo "Remote access is off: the gateway, the service and the box's firewall are stopped."
+    echo "Remote access is off: the gateway, the services (sharing between the phones too) and the box's"
+    echo "firewall are stopped."
     echo "The router lets go of its port within two hours. The paired phones stay on the list:"
     echo "'./scripts/remote.sh setup' lets them in again."
     ;;
 
 *)
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

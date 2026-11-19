@@ -34,8 +34,10 @@ services:
       - ./data/wmm:/usr/share/nginx/wmm:ro
       # The map builder's socket (scripts/admin.sh), served as /mapadmin/.
       - ./data/admin:/run/fieldmap-admin
-      # The remote access service's socket (scripts/remote.sh), served as /mapremote/.
+      # The remote access service's socket (scripts/remote.sh), served as /mapremote/ and /phones/.
       - ./data/remote/run:/run/fieldmap-remote
+      # The sharing service's socket (scripts/remote.sh), served as /mapshare/.
+      - ./data/share/run:/run/fieldmap-share
 
   # The gateway for the Fieldmap Android app away from this network: it demands a
   # certificate this box issued and serves only what the app needs. Not started by
@@ -55,6 +57,7 @@ services:
       - ./data/remote/gateway:/etc/fieldmap-remote:ro
       - ./data/remote/gateway/nginx:/etc/nginx/conf.d:ro
       - ./data/remote/run:/run/fieldmap-remote
+      - ./data/share/run:/run/fieldmap-share
 
   # Downloads a newer World Magnetic Model when the print tool's "Update magnetic model"
   # button asks for one (tools/wmm-update.py). Reached only through the web container.

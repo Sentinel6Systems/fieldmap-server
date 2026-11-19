@@ -2,8 +2,10 @@
 <html lang="en">
 <!-- The Phones page: remote access for the Fieldmap Android app. Served by tools/remote-server.py
      at /phones/, on the box's own network only. The switch, whether phones can reach the box from
-     outside, pairing, and the paired phones. The look and the header are ui/fieldmap.css and
-     ui/nav.js, which the service serves beside this page. -->
+     outside, pairing, and the paired phones. And the switch for sharing positions and markers
+     between the phones, with who is sharing right now: that is another service
+     (tools/share-server.py), asked beside this page at /mapshare/admin. The look and the header
+     are ui/fieldmap.css and ui/nav.js, which the service serves beside this page. -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,6 +14,7 @@
 <style>
   h1 { font-size: clamp(26px, 3.6vw, 36px); line-height: 1.1; letter-spacing: -.01em; margin: 0 0 6px; }
   h2 { font-size: 20px; line-height: 1.25; margin: 0 0 8px; }
+  h3 { font: 12.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 16px 0 0; }
   p { margin: 6px 0; }
   .lead, .quiet { color: var(--muted); }
   .lead { font-size: 17px; max-width: 62ch; margin: 0; }
@@ -54,7 +57,8 @@
 <header class="top">
   <h1>Phones</h1>
   <p class="lead">Phones with the Fieldmap app that are paired here can use this box's maps from anywhere, also away
-    from this network. Only paired phones get in, and only the maps.</p>
+    from this network. Only paired phones get in, and only to the maps and, when sharing is switched on below, to
+    each other's positions and markers.</p>
 </header>
 
 <main>
@@ -119,6 +123,20 @@
     <h2>Paired phones</h2>
     <div id="phones"></div>
   </section>
+
+  <section class="card" id="share-card" hidden>
+    <div class="switch">
+      <h2>Sharing positions and markers</h2>
+      <span class="state" id="share-state"></span>
+      <button id="share-toggle" type="button"></button>
+    </div>
+    <p class="quiet" id="share-text"></p>
+    <div id="share-now" hidden>
+      <h3>Sharing right now</h3>
+      <div id="people"></div>
+      <p class="quiet" id="share-markers"></p>
+    </div>
+  </section>
 </main>
 
 <script>
@@ -133,6 +151,8 @@
       return data;
     });
   const when = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "not yet";
+  const ago = (seconds) => seconds < 60 ? `${seconds} s ago` : `${Math.floor(seconds / 60)} min ago`;
+  const SHARE = "../mapshare/admin";    // the sharing service, beside this page on the box's web server
   let busy = false;
   let addressEdited = false;
 
@@ -204,12 +224,48 @@
       };
       return row;
     }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No phone is paired yet." })]));
+    showSharing();
+  }
+
+  // Sharing between the phones: its own switch, and who is sharing right now (names, no places).
+  // A box whose sharing service is not there has no such card.
+  async function showSharing() {
+    let share;
+    try { share = await call(SHARE); } catch { share = null; }
+    if (busy) return;
+    $("share-card").hidden = !share || share.service !== "fieldmap-share";
+    if ($("share-card").hidden) return;
+    if (share.pin) $("code-card").hidden = false;
+    const on = share.enabled;
+    $("share-state").textContent = on ? "On" : "Off";
+    $("share-state").className = "state" + (on ? " on" : "");
+    $("share-toggle").textContent = on ? "Switch off" : "Switch on";
+    $("share-toggle").className = on ? "danger" : "primary";
+    $("share-text").textContent = on
+      ? "Phones whose owners switched sharing on in the Fieldmap app see each other on the map, and the markers they chose to share: every phone on this network, and every paired phone away from it. Positions are not stored, and a phone that stops is gone from the others within two minutes. Shared markers are kept on this box. Switch it off to stop it for everyone at once."
+      : "Off: this box takes no positions and no markers from phones, and gives none out. Switch it on to let phones with the Fieldmap app see each other on the map and share markers: every phone on this network, and every paired phone away from it, once its owner switches sharing on in the app.";
+    $("share-now").hidden = !on;
+    $("people").replaceChildren(...(share.people.length ? share.people.map((p) => {
+      const row = document.createElement("div");
+      row.className = "phone";
+      row.innerHTML = "<div><b></b><small></small></div>";
+      row.querySelector("b").textContent = p.name;
+      row.querySelector("small").textContent = `${ago(p.age)} · ${p.outside ? "from outside" : "on this network"}`;
+      return row;
+    }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No one is sharing right now." })]));
+    $("share-markers").textContent = share.markers === 1 ? "1 shared marker is kept on this box."
+      : `${share.markers} shared markers are kept on this box.`;
   }
 
   $("toggle").onclick = () => {
     const on = $("state").textContent === "On";
     if (on && !confirm("Switch remote access off? Paired phones can then use these maps only on this network.")) return;
     act("enabled", { on: !on });
+  };
+  $("share-toggle").onclick = () => {
+    const on = $("share-state").textContent === "On";
+    if (on && !confirm("Switch sharing off? The phones no longer see each other. The shared markers stay on this box.")) return;
+    act(SHARE, { on: !on });
   };
   $("auto-off").onchange = () => act("auto-off", { on: $("auto-off").checked });
   $("manual").onchange = () => act("forwarding", { manual: $("manual").checked });

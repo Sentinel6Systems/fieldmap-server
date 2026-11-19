@@ -16,7 +16,9 @@
 #      needs sudo. The page is then at /mapadmin/ beside the print tool. --no-builder
 #      leaves this step out, and removes the service if an earlier run installed it;
 #   5. sets up remote access for the Fieldmap Android app (scripts/remote.sh setup): phones
-#      paired on this network can then use the maps from anywhere. --no-remote leaves it out.
+#      paired on this network can then use the maps from anywhere, and the phones can share
+#      positions and markers with each other. Both are off until switched on on the Phones
+#      page. --no-remote leaves it out.
 # Then build your maps: on the map builder page, or with build-region.sh.
 #
 # A Raspberry Pi behind Internet-in-a-Box uses scripts/install-pi.sh instead.
@@ -70,9 +72,10 @@ if [ -n "$(find data/admin -maxdepth 0 ! -user "$OWNER" 2>/dev/null)" ]; then
     $SUDO chown -R "$OWNER" data/admin
 fi
 
-# The web front mounts the remote access service's folder (scripts/remote.sh); made here so
-# that it belongs to $OWNER and not to root, as Docker would make it.
-mkdir -p data/remote/run
+# The web front mounts the folders of the remote access service and of the sharing service
+# (scripts/remote.sh); made here so that they belong to $OWNER and not to root, as Docker
+# would make them.
+mkdir -p data/remote/run data/share/run
 
 echo "== Tile server and print tool"
 ./scripts/mem-limit.sh

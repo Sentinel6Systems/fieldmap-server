@@ -1,0 +1,36 @@
+# Systemd unit for live sharing between the Fieldmap Android apps (scripts/remote.sh
+# share-serve): the service that takes the phones' positions and shared markers and gives them
+# to the others, at home through the web server and from outside through the remote gateway.
+#
+# scripts/remote.sh setup installs this file with the path of your clone and its owner
+# filled in. The service takes what phones send, so it is shut in: it may write only
+# data/share/, cannot read data/remote/ (the box's certificate authority and its list of
+# phones), talks to nothing but this machine itself, and has a ceiling on its memory.
+
+[Unit]
+Description=fieldmap-server live sharing for the Android app
+After=network.target
+
+[Service]
+User=fieldmap
+WorkingDirectory=/opt/fieldmap-server
+ExecStart=/opt/fieldmap-server/scripts/remote.sh share-serve
+Restart=on-failure
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+ReadWritePaths=/opt/fieldmap-server/data/share
+InaccessiblePaths=-/opt/fieldmap-server/data/remote
+IPAddressDeny=any
+IPAddressAllow=localhost
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

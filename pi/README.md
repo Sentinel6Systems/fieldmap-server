@@ -56,6 +56,10 @@ container beside the tile server, and a firewall table of its own (`fieldmap_gua
 `sudo REMOTE=no ./scripts/install-pi.sh` leaves it out. Internet-in-a-Box's hotspot is often open: set `REMOTE_PIN`
 in `.env` if strangers could join it while pairing is open.
 
+The same step installs the `fieldmap-share` service, for sharing positions and markers between phones (see "Sharing
+positions and markers between phones" in the main README; `/mapshare/` in the same nginx file). It is off until
+switched on on the Phones page. On an open hotspot, everyone who joins can see the shared positions while it is on.
+
 ## Notes
 
 - The Pi runs the same full TileServer GL image and `config.json` as an x86 machine (the image is built for arm64),

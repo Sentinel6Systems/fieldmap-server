@@ -140,7 +140,7 @@ builds do.
 | Maps | `/` (`/maps/` behind Internet-in-a-Box) | The interactive map, with a menu of the styles and, under **Use in another app**, the tile addresses for TAK clients and other map apps |
 | Print a map | `/mapprinter/` | The print tool |
 | Map builder | `/mapadmin/` | Choose and build the maps (not on a Raspberry Pi) |
-| Phones | `/phones/` | Remote access for the Fieldmap Android app: on or off, pairing, the paired phones (see "Remote access for the Android app") |
+| Phones | `/phones/` | Remote access for the Fieldmap Android app: on or off, pairing, the paired phones (see "Remote access for the Android app"). And the switch for sharing positions and markers between phones (see "Sharing positions and markers between phones") |
 
 Every page has the same header: the name, a link to each of the other pages with the current one marked, and
 nothing else to learn. The header finds the other pages by itself on the address it was opened at (`ui/nav.js`): a
@@ -202,6 +202,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `pi/` | Raspberry Pi + Internet-in-a-Box deployment: compose file, nginx snippets, notes |
 | `systemd/` | Start the compose stack, and optionally the map builder page, at boot |
 | `phones/`, `scripts/remote.sh`, `scripts/firewall.sh`, `tools/remote-server.py`, `tools/portmap.py` | Remote access for the Android app: the Phones page, pairing, the router's port, the gateway, the box's firewall |
+| `tools/share-server.py` | Sharing positions and markers between phones with the Android app |
 | `data/` | Your mbtiles files (not in git) |
 
 ## The styles
@@ -871,8 +872,8 @@ No account, no outside service, nothing of anyone else's in between: the box tal
   IPv6 firewall where the router lets it (UPnP IGD 2). The phone learns all these addresses whenever it is home.
 - **The gateway lets in only paired phones.** It is an nginx container that refuses everyone without a
   certificate this box issued, checks every request against the list of phones, and serves only what the app
-  needs: styles, fonts, symbols and data tiles. Not the pictures the tile server draws, not the print tool, not
-  the map builder, nothing else. It limits connections per visitor and takes nginx's security fixes every week.
+  needs: styles, fonts, symbols and data tiles, and the few addresses of sharing between phones (below). Not the
+  pictures the tile server draws, not the print tool, not the map builder, nothing else. It limits connections per visitor and takes nginx's security fixes every week.
 - **A firewall on the box itself** lets nothing in from outside the local network but the gateway and SSH, over
   IPv4 and IPv6, whatever the router does (`scripts/firewall.sh`). Devices at home, and the box's own connections
   out, are not affected. Where the machine has a firewall already (Internet-in-a-Box's drops everything from the
@@ -910,7 +911,7 @@ Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port 
 ./scripts/remote.sh pair            # open pairing for ten minutes
 ./scripts/remote.sh devices         # the paired phones
 ./scripts/remote.sh remove <id>     # lock one out, at once
-./scripts/remote.sh off             # remove it (the service, the gateway, the firewall, the Phones tab); the phones are kept
+./scripts/remote.sh off             # remove it (the services, the gateway, the firewall, the Phones tab); the phones are kept
 ./scripts/install.sh --no-remote    # install without it (on a Pi: sudo REMOTE=no ./scripts/install-pi.sh)
 ```
 
@@ -926,6 +927,60 @@ Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port 
 - Tested against a pretend router (UPnP and NAT-PMP) and in containers (the firewall), not yet on many real
   routers. If yours behaves differently, `./scripts/remote.sh status` and `journalctl -u fieldmap-remote` say what
   it answered.
+
+## Sharing positions and markers between phones
+
+Phones with the Fieldmap app can see each other on the map, and share markers, through this box: a very small
+stand-in for a TAK server. There is one room: every phone that reaches the box sees every other phone that is
+sharing, and the shared markers. It is **off until you switch it on**, and every person switches it on in their
+own app as well.
+
+1. On the box's network, open the **Phones** page and press **Switch on** under **Sharing positions and markers**.
+2. In the Fieldmap app, switch sharing on and give the phone a name for the others to see.
+
+- **At home** every phone on the box's network can take part; it does not have to be paired.
+- **Away from home** the paired phones can, through the same gateway as the maps (remote access switched on).
+- **Positions are not stored.** The box holds a phone's last position in memory only; it is gone two minutes
+  after the phone stops sending, at once when its owner stops sharing, and for everyone when sharing is switched
+  off on the Phones page.
+- **Shared markers are kept on the box** (`data/share/`), so that they are still there after a restart, until a
+  phone removes them. A marker is shared only when its owner says so; the others stay on the phone.
+- The Phones page lists **who is sharing right now**: the name, how long ago, and whether from this network or
+  from outside. Not where.
+
+### How it works
+
+- **Its own small service**, `tools/share-server.py` (Python's standard library), run by `fieldmap-share.service`
+  apart from the one that pairs phones. It takes what phones send, so it is shut in: it may write only
+  `data/share/`, cannot read `data/remote/` (the box's certificate authority and its list of phones), talks to
+  nothing but this machine, and has a ceiling on its memory.
+- **No new port.** At home the app asks the box's web server, at `/mapshare/`. The service answers only callers
+  on the local network there, and refuses a request that came through any other proxy or tunnel. From outside,
+  the gateway passes on exactly the addresses below, for paired phones only, a few small requests a second each.
+- **Everything is checked and limited:** each field of a position and of a marker, 2 kB for a position and 8 kB
+  for a marker, at most 100 people and 2000 markers, and a limit on how often one phone may ask.
+- **Nothing about people goes into the log:** no names, no places, no addresses.
+
+| The app asks | For |
+|---|---|
+| `GET /mapshare/info` | whether sharing is on, and how often to ask |
+| `POST /mapshare/position`, `POST /mapshare/leave` | its own position; and to be gone from the others at once |
+| `GET /mapshare/state?since=<rev>` | everybody's position, and the shared markers that changed |
+| `PUT` and `DELETE /mapshare/markers/<id>` | a shared marker (a GeoJSON point, as the print tool's drawings file has them) |
+
+The messages are short JSON, with the same ideas as TAK's Cursor on Target (an id, a name, a time, a point,
+course and speed), not CoT itself: TAK clients cannot connect to it.
+
+### What to know
+
+- **There is no sign-in.** While sharing is on, any device on the box's network can read the positions and send
+  one, under any name. Leave it off on a network that strangers can join. From outside, only paired phones can.
+- Sharing is part of the Phones set-up (`./scripts/remote.sh setup`, run by the installers): a box installed with
+  `--no-remote` has neither. `./scripts/remote.sh status` says whether it is on.
+- With `REMOTE_PIN` set, the switch asks for the box's code like the rest of the Phones page.
+- Back up `data/share/` if the shared markers matter.
+- Tests: `python3 -m unittest tools/test_share_server.py`. Tested with curl against the web server and the gateway
+  in containers, not yet under systemd on a real box.
 
 ## Raspberry Pi behind Internet-in-a-Box
 
@@ -971,6 +1026,10 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- Sharing positions and markers between phones with the Fieldmap Android app, through the box and off until the
+  owner switches it on (Phones page): at home for every phone on the box's network, away from home for the paired
+  ones. Positions are held in memory only; shared markers are kept in `data/share/`. No new port, no sign-in, no
+  outside service. After `git pull`, run the installer again as under "Updating".
 - Remote access for the Fieldmap Android app, off until the owner switches it on: phones paired on the box's
   network can use the maps from anywhere. The box opens a port on its own router (UPnP, NAT-PMP, IPv6), lets in only paired phones through a
   gateway that serves only what the app needs, and puts a firewall on itself. No account or outside service. A new
