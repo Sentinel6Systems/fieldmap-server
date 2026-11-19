@@ -1,6 +1,6 @@
 # Raspberry Pi 4 behind Internet-in-a-Box
 
-The layout used on the emergency box: Raspberry Pi OS Lite 64-bit, Internet-in-a-Box (IIAB) running the Wi-Fi
+The layout used on an emergency kit: Raspberry Pi OS Lite 64-bit, Internet-in-a-Box (IIAB) running the Wi-Fi
 hotspot and nginx on port 80, TileServer GL in Docker on localhost, the print tool as static files.
 Nothing here contains credentials; put your own in IIAB's `local_vars.yml`.
 
@@ -19,12 +19,13 @@ sudo ./scripts/install-pi.sh
 
 That installs Docker if needed, starts TileServer GL on localhost, builds the print tool on the Pi with the
 Node.js that IIAB installs, and adds the nginx snippets. Open `http://<pi-host>/mapprinter/`; TAK clients use
-`http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.jpg` (see the main README). To update later, see "Updating" in
-the main README: `git pull && sudo ./scripts/install-pi.sh` in `<repo-dir>`.
+`http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.jpg` (see [Tile addresses](../docs/reference.md#tile-addresses-for-tak-and-other-apps)).
+To update later, see [Update the server](../docs/user-guide.md#update-the-server): `git pull && sudo ./scripts/install-pi.sh` in `<repo-dir>`.
 
-The Maps page is at `http://<pi-host>/maps/` and the print tool at `http://<pi-host>/mapprinter/`; each has a
-header with a link to the other. For a button back to the box's own start page, set `homeUrl` in
-`print/public/config.json` (see "The pages and their header" in the main README) and run the script again.
+The Maps page is at `http://<pi-host>/maps/`, the print tool at `http://<pi-host>/mapprinter/` and the User Guide at
+`http://<pi-host>/guide/`; every page has the same header. For a button back to the device's own start page, set
+`homeUrl` in `print/public/config.json` (see [Pages and addresses](../docs/reference.md#pages-and-addresses)) and run
+the script again.
 
 Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty of RAM and disk; do that with
 `scripts/build-region.sh <region-file>` elsewhere and copy the `.mbtiles` files over.
@@ -47,28 +48,25 @@ Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty
    result, handy while developing.) Open `http://<pi-host>/mapprinter/`. `/print/` is left free, for example for CUPS.
 5. **Magnetic model service.** `systemd/fieldmap-wmm.service` runs `tools/wmm-update.py serve` on `127.0.0.1:8091`
    as the repository's owner, allowed to write only `data/wmm/`; nginx passes `/mapprinter/wmm-api/` to it. It backs
-   the print tool's "Update magnetic model" button (see "Magnetic model updates" in the main README).
+   the print tool's **Update Magnetic Model** button (see [Magnetic model updates](../docs/how-it-works.md#magnetic-model-updates)).
 
 ## Remote access for the Android app
 
-`install-pi.sh` also sets up remote access for the Fieldmap app (see "Remote access for the Android app" in the main
-README): it adds `nginx/mapremote-nginx.conf` to `/etc/nginx/conf.d/`, the `fieldmap-remote` service, a second
+`install-pi.sh` also sets up remote access for the Fieldmap app (see [Remote access](../docs/user-guide.md#remote-access)): it adds `nginx/mapremote-nginx.conf` to `/etc/nginx/conf.d/`, the `fieldmap-remote` service, a second
 container beside the tile server, and a firewall table of its own (`fieldmap_guard`) beside Internet-in-a-Box's.
-`sudo REMOTE=no ./scripts/install-pi.sh` leaves remote access out, and still puts up the firewall (see "The box's
-firewall" in the main README). Internet-in-a-Box's hotspot is often open: set `REMOTE_PIN`
+`sudo REMOTE=no ./scripts/install-pi.sh` leaves remote access out, and still puts up the firewall (see [Firewall](../docs/reference.md#firewall)). Internet-in-a-Box's hotspot is often open: set `REMOTE_PIN`
 in `.env` if strangers could join it while pairing is open.
 
-The same step installs the `fieldmap-share` service, for sharing positions and markers between phones (see "Sharing
-positions and markers between phones" in the main README; `/mapshare/` in the same nginx file). It is off until
-switched on on the Devices page. On an open hotspot, everyone who joins can see the shared positions while it is on.
+The same step installs the `fieldmap-share` service, for sharing positions and markers between devices (see
+[Location sharing](../docs/user-guide.md#location-sharing); `/mapshare/` in the same nginx file). It is off until
+enabled on the Devices page. On an open hotspot, everyone who joins can see the shared positions while it is on.
 
 ## Notes
 
 - The Pi runs the same full TileServer GL image and `config.json` as an x86 machine (the image is built for arm64),
   so browsers get vector tiles and TAK clients get raster tiles. Raster tiles are drawn on the Pi the first time
   they are asked for, which is slower than on a desktop; TAK clients cache them. Use 64-bit Raspberry Pi OS.
-  The configs start no raster renderers and cap them at two per style (see "Use with TAK clients" in the main
-  README). Memory grows with the number of styles TAK clients actually use, up to a few hundred MB if they use
+  The configs start no raster renderers and cap them at two per style (see [Tile addresses](../docs/reference.md#tile-addresses-for-tak-and-other-apps)). Memory grows with the number of styles TAK clients actually use, up to a few hundred MB if they use
   all six.
 - The tile server container has a hard memory cap with no swap. `install-pi.sh` runs `scripts/mem-limit.sh`, which
   writes `TILESERVER_MEM_LIMIT` to `.env` in the repository root: `1g` on a Pi with under 8 GB, no cap on an 8 GB Pi.

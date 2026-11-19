@@ -30,7 +30,7 @@ sudo journalctl -u tileserver -f
 docker logs -f tileserver
 ```
 
-## The map builder page
+## The Map Builder page
 
 `./scripts/install.sh` installs `fieldmap-admin.service` for you, with this folder and its owner
 filled in, and starts it; `./scripts/install.sh --no-builder` removes it again. By hand: copy the
@@ -47,10 +47,10 @@ To make the page ask for a code, set `ADMIN_PIN=<code>` in `.env` and restart th
 ## Remote access for the Android app
 
 `./scripts/remote.sh setup` (run by the installers) installs these with this folder and its owner filled in:
-`fieldmap-remote.service` (pairing, the list of phones, the router's port), `fieldmap-share.service` (positions and
-markers shared between phones; it may write only `data/share/`), `fieldmap-firewall.timer` (the box's
+`fieldmap-remote.service` (pairing, the list of paired devices, the router's port), `fieldmap-share.service` (positions and
+markers shared between devices; it may write only `data/share/`), `fieldmap-firewall.timer` (the server's
 own firewall, refreshed every five minutes; installed by every install, also without remote access, through
 `scripts/firewall.sh install`; `fieldmap-firewall.service` also runs once before Docker at every start),
 `fieldmap-remote-update.timer` (the weekly update of the gateway, and of NetBird's client where it runs) and
-`fieldmap-netbird.path` (starts or removes NetBird's container when the Remote access page asks for it). The
+`fieldmap-netbird.path` (starts or removes NetBird's container when the Remote Access page asks for it). The
 service reads `REMOTE_*` from `.env`; run `./scripts/remote.sh setup` again after changing them.
