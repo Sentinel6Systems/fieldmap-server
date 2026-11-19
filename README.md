@@ -135,17 +135,19 @@ builds do.
 
 ### The pages and their header
 
-| Page | Address | What it is |
-|---|---|---|
-| Maps | `/` (`/maps/` behind Internet-in-a-Box) | The interactive map, with a menu of the styles and, under **Use in another app**, the tile addresses for TAK clients and other map apps |
-| Print a map | `/mapprinter/` | The print tool |
-| Map builder | `/mapadmin/` | Choose and build the maps (not on a Raspberry Pi) |
-| Devices | `/phones/` | Remote access for the Fieldmap Android app: on or off, pairing, the paired phones (see "Remote access for the Android app"). And the switch for sharing positions and markers between phones (see "Sharing positions and markers between phones") |
+| Tab | Page | Address | What it is |
+|---|---|---|---|
+| Maps | Maps | `/` (`/maps/` behind Internet-in-a-Box) | The interactive map, with a menu of the styles and, under **Use in another app**, the tile addresses for TAK clients and other map apps |
+| Print a map | Print a map | `/mapprinter/` | The print tool |
+| Admin | Map builder | `/mapadmin/` | Choose and build the maps (not on a Raspberry Pi) |
+| Admin | Devices | `/phones/` | Remote access for the Fieldmap Android app: on or off, pairing, the paired phones (see "Remote access for the Android app"). And the switch for sharing positions and markers between phones (see "Sharing positions and markers between phones") |
 
-Every page has the same header: the name, a link to each of the other pages with the current one marked, and
-nothing else to learn. The header finds the other pages by itself on the address it was opened at (`ui/nav.js`): a
-page that is not installed gets no link, and the map builder is shown as "not running" when its service is
-stopped. The look (colours, type, buttons, form controls) is one file, `ui/fieldmap.css`, used by all three. It
+Every page has the same header: the name, **Maps**, **Print a map** and **Admin**, with the current one marked, and
+nothing else to learn. The pages that run the box are under **Admin**: the map builder and the Devices page, and
+whatever comes later. The Admin tab opens the first of them that is running; on those pages a second row names
+each of them (when the box has more than one). The header finds the pages by itself on the address it was opened
+at (`ui/nav.js`): a page that is not installed gets no link, and the map builder is shown as "not running" when its
+service is stopped. The look (colours, type, buttons, form controls) is one file, `ui/fieldmap.css`, used by all three. It
 uses the fonts of the device and follows its light or dark setting; nothing is loaded from anywhere else.
 
 **A Home button.** If these pages sit behind a landing page of your own (a start page for the whole device, for
@@ -882,7 +884,7 @@ switched on cannot be reached from outside at all.
 A device here is anything that runs the Fieldmap app: an Android phone or a tablet. Where this guide says
 "phone", it means any of them.
 
-The **Devices** page (`/phones/`, a tab in every page's header, on the box's own network only) is where all of this
+The **Devices** page (`/phones/`, under **Admin** in every page's header, on the box's own network only) is where all of this
 is managed:
 
 - **Remote access on or off** (off by default). Off keeps the box completely to its own network: the router is
@@ -895,7 +897,7 @@ is managed:
 - **Switch off by itself after 90 days with no phone coming in from outside** (ticked by default), so that a
   forgotten box closes itself. The page shows the date it would happen; each phone that comes in moves it on.
 
-Every page's header shows the state at a glance, beside the Devices tab: **on** (amber: the box can be reached from
+Every page's header shows the state at a glance, beside the Admin tab (and beside Devices on the Admin pages): **on** (amber: the box can be reached from
 outside, by paired phones) or **off**; hovering over it gives the box's own words about it.
 - **From outside:** whether phones can reach the box, and if not, why, in plain words; the addresses phones are
   told to try; **Ask the router again**.
@@ -954,7 +956,7 @@ Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port 
 ./scripts/remote.sh pair            # open pairing for ten minutes
 ./scripts/remote.sh devices         # the paired phones
 ./scripts/remote.sh remove <id>     # lock one out, at once
-./scripts/remote.sh off             # remove it (the services, the gateway, the Devices tab); the phones and the firewall are kept
+./scripts/remote.sh off             # remove it (the services, the gateway, the Devices page); the phones and the firewall are kept
 ./scripts/install.sh --no-remote    # install without it (on a Pi: sudo REMOTE=no ./scripts/install-pi.sh); the firewall is still put up
 ```
 
@@ -1072,6 +1074,8 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
+- One **Admin** tab in the header for the pages that run the box: the map builder (where it is installed) and the
+  Devices page, with a second row on those pages to go between them. Maps and Print a map stay as they are.
 - The Fieldmap Android app can be installed straight from the box: a **Get the Fieldmap app** card on the Devices
   page, for devices on the box's network. The installers put the newest published release on the box
   (`scripts/app.sh`); a file of your own can be added instead.

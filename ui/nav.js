@@ -3,6 +3,10 @@
 // and loads this file right after it. The header shows the name, a link to each page that
 // is there (the current one marked), and a Home button when the site sets one.
 //
+// Maps and Print a map are for everyone. The pages that run the box are under one Admin tab:
+// the map builder and the Devices page now, more later. On those pages a second row under the
+// header names them (when there is more than one).
+//
 // Where the other pages are is found out, not configured, on this page's own host:
 //   the print tool    /mapprinter/   (its config.json answers)
 //   the Maps page     /maps/ behind Internet-in-a-Box, else /   (styles.json answers)
@@ -16,7 +20,10 @@
   if (!bar) return;
   const here = bar.dataset.page;
   const own = new URL(bar.dataset.root || "./", location.href).pathname;
-  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print a map", "Print"], ["builder", "Map builder", "Builder"], ["phones", "Devices", "Devices"]];
+  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print a map", "Print"], ["admin", "Admin", "Admin"]];
+  // Under Admin, in this order. The Admin tab opens the first one that is running.
+  const ADMIN = [["builder", "Map builder"], ["phones", "Devices"]];
+  const inAdmin = ADMIN.some(([key]) => key === here);
   const CACHE = "fieldmap.nav";
 
   const el = (tag, props = {}, ...kids) => {
@@ -27,26 +34,55 @@
   const MARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">' +
     '<rect x="3" y="3" width="18" height="18"/><path d="M3 10h18M10 3v18"/><circle cx="15.5" cy="15.5" r="1.6" fill="currentColor" stroke="none"/></svg>';
 
+  // Where each page is: its address, "off" (installed, not running) or nothing (not there).
+  const place = (found, key) => (key === here ? own : found[key]);
+  // Remote access's state at a glance, on Admin and on Devices: ON means reachable from outside.
+  const remoteTag = (found) => (found.remote
+    ? [el("small", { className: "fm-remote " + (found.remote.on ? "on" : "off"), textContent: found.remote.on ? "on" : "off" })] : []);
+
   function draw(found) {
     const mark = el("div", { className: "fm-mark" });
     mark.innerHTML = MARK + "<span>FIELDMAP</span>";
     const nav = el("nav", { className: "fm-nav", ariaLabel: "Pages" });
     for (const [key, long, short] of PAGES) {
       const text = [el("span", { className: "fm-long", textContent: long }), el("span", { className: "fm-short", textContent: short })];
-      if (key !== here && found[key] === "off") nav.append(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} is not running on this device.` }, ...text, el("small", { textContent: "not running" })));
-      else if (key === here || found[key]) {
-        // Devices carries remote access's state at a glance: ON means reachable from outside.
-        const remote = key === "phones" && found.remote;
-        const tag = remote ? [el("small", { className: "fm-remote " + (remote.on ? "on" : "off"), textContent: remote.on ? "on" : "off" })] : [];
-        const label = remote ? `${long}: remote access ${remote.on ? "on" : "off"}` : long;
-        const a = el("a", { href: key === here ? own : found[key], ariaLabel: label, title: remote ? remote.text : "" }, ...text, ...tag);
+      let href = place(found, key), current = key === here, tag = [], label = long, title = "";
+      if (key === "admin") {
+        const running = ADMIN.map(([k]) => place(found, k)).filter((p) => p && p !== "off");
+        current = inAdmin;
+        href = inAdmin ? own : running[0] || (ADMIN.some(([k]) => found[k] === "off") ? "off" : null);
+        tag = remoteTag(found);
+        if (found.remote) { label = `Admin: remote access ${found.remote.on ? "on" : "off"}`; title = found.remote.text; }
+      }
+      if (!current && href === "off") nav.append(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} pages are not running on this device.` }, ...text, el("small", { textContent: "not running" })));
+      else if (current || href) {
+        const a = el("a", { href, ariaLabel: label, title }, ...text, ...tag);
         a.dataset.page = key;
-        if (key === here) a.ariaCurrent = "page";
+        if (current) a.ariaCurrent = "page";
         nav.append(a);
       }
     }
     bar.replaceChildren(mark, nav);
     if (found.home) bar.append(el("a", { className: "fm-home", href: found.home.url, ariaLabel: found.home.name }, "‹", el("span", { textContent: found.home.name })));
+    drawAdmin(found);
+  }
+
+  // The second row on the Admin pages: each of them, the current one marked.
+  function drawAdmin(found) {
+    const old = bar.nextElementSibling;
+    if (old && old.classList.contains("fm-sub")) old.remove();
+    if (!inAdmin) return;
+    const items = [];
+    for (const [key, long] of ADMIN) {
+      const href = place(found, key);
+      if (key !== here && href === "off") items.push(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} is not running on this device.` }, long, el("small", { textContent: "not running" })));
+      else if (href) {
+        const a = el("a", { href, title: key === "phones" && found.remote ? found.remote.text : "" }, long, ...(key === "phones" ? remoteTag(found) : []));
+        if (key === here) a.ariaCurrent = "page";
+        items.push(a);
+      }
+    }
+    if (items.length > 1) bar.after(el("nav", { className: "fm-sub", ariaLabel: "Admin pages" }, ...items));
   }
 
   // The Maps page and the print tool both keep the place in the address (#zoom/lat/lon):
