@@ -4,6 +4,8 @@ Runs inside the tools container (GDAL, Tippecanoe); scripts/build-usdata.sh star
 
     python3 tools/us-data.py [step ...] --bbox W S E N --states NJ PA ...
 
+A bbox with W larger than E crosses the 180 degree line (the far west of Alaska).
+
 Steps, each written to data/cache/usdata/<step>.mbtiles and then joined:
   obstacles  FAA Digital Obstacle File (daily, whole US): towers, stacks, tanks, wind
              turbines and other obstacles with height above ground          layer obstacle
@@ -22,6 +24,7 @@ that failed before.
 """
 import argparse
 import csv
+import http.client
 import io
 import json
 import os
@@ -95,8 +98,15 @@ class Writer:
         return self.n
 
 
+def boxes(bbox):
+    """The bbox as one or two boxes: a bbox whose west is larger than its east crosses the
+    180 degree line and is cut there."""
+    w, s, e, n = bbox
+    return [(w, s, e, n)] if w <= e else [(w, s, 180.0, n), (-180.0, s, e, n)]
+
+
 def inside(bbox, lon, lat):
-    return bbox[0] <= lon <= bbox[2] and bbox[1] <= lat <= bbox[3]
+    return any(b[0] <= lon <= b[2] and b[1] <= lat <= b[3] for b in boxes(bbox))
 
 
 def num(s):
@@ -165,27 +175,95 @@ def marks(a):
 
 # Steps that could only fetch part of their pieces; reported at the end, and a rerun fetches the rest.
 PARTIAL = {}
+# What a failed query raises: timeouts and HTTP errors (OSError), a cut-off answer
+# (HTTPException), a broken JSON answer (ValueError), an error message from the service.
+QUERY_ERRORS = (OSError, http.client.HTTPException, ValueError, RuntimeError)
 
 
-def rest_piece(url, fields, where, bbox, dest, page, extra):
-    """One ArcGIS REST query (where + bbox), paged by GDAL, into line-delimited GeoJSON."""
-    q = {"where": where, "outFields": fields, "returnGeometry": "true", "f": "json", "outSR": "4326",
-         "geometry": ",".join(map(str, bbox)), "geometryType": "esriGeometryEnvelope", "inSR": "4326",
-         "spatialRel": "esriSpatialRelIntersects", "orderByFields": "OBJECTID", "resultRecordCount": str(page), **extra}
-    tmp = dest + ".part"
-    if os.path.exists(tmp):
-        os.remove(tmp)
-    subprocess.run(["ogr2ogr", "-q", "-f", "GeoJSONSeq", tmp, "ESRIJSON:" + url + "?" + urllib.parse.urlencode(q),
-                    "-oo", "FEATURE_SERVER_PAGING=YES", "-makevalid", "-skipfailures", "-nlt", "PROMOTE_TO_MULTI",
-                    "-lco", "RS=NO"], check=True, stderr=subprocess.DEVNULL)
+def arcgis(url, params):
+    """One ArcGIS REST query (sent as a form, so long ID lists fit); returns the raw JSON text.
+    The services stop a query after about 100 s; an error comes back as JSON or as HTTP 5xx."""
+    data = urllib.parse.urlencode({**params, "f": "json"}).encode()
+    with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=UA), timeout=180) as r:
+        raw = r.read()
+    js = json.loads(raw)
+    if "error" in js:
+        raise RuntimeError(js["error"].get("message") or "service error")
+    return raw, js
+
+
+def done_ids(path):
+    """The OBJECTIDs already in a half-written piece (kept by a run that stopped); a last line
+    cut off by the stop is dropped."""
+    if not os.path.exists(path):
+        return set()
+    lines, ids = [], set()
+    with open(path) as f:
+        for line in f:
+            try:
+                ids.add(json.loads(line)["properties"]["OBJECTID"])
+                lines.append(line)
+            except (ValueError, KeyError):
+                break
+    with open(path, "w") as f:
+        f.writelines(lines)
+    return ids
+
+
+def rest_piece(url, fields, where, bbox, rel, dest, page, extra):
+    """One ArcGIS REST query (where + bbox) into line-delimited GeoJSON. First the IDs of the
+    matching features, then the features in batches. Some areas are drawn in so much detail
+    that the service needs over a minute for one of them (the Alaska Maritime refuge, with its
+    thousands of islands), and the services stop a query after about 100 s. So a piece starts
+    with small batches, sizes each next batch from the time the last one took (up to `page`),
+    and splits a batch that fails. What was fetched is kept in <dest>.part, so a rerun carries
+    on inside the piece."""
+    found = arcgis(url, {"where": where, "geometry": ",".join(map(str, bbox)), "geometryType": "esriGeometryEnvelope",
+                         "inSR": "4326", "spatialRel": rel, "returnIdsOnly": "true"})[1]
+    tmp, batch_json, batch_out = dest + ".part", dest + ".batch.json", dest + ".batch.geojsonl"
+    have = done_ids(tmp)
+    ids = sorted(set(found.get("objectIds") or []) - have)
+    total, size, tries, shown = len(ids) + len(have), min(page, 10), 0, time.time()
+    with open(tmp, "a") as out:
+        while ids:
+            batch, start = ids[:size], time.time()
+            try:
+                raw = arcgis(url, {"objectIds": ",".join(map(str, batch)), "outFields": fields,
+                                   "returnGeometry": "true", "outSR": "4326", **extra})[0]
+            except QUERY_ERRORS:
+                if len(batch) > 1:
+                    size = len(batch) // 2
+                    continue
+                tries += 1
+                if tries == 3:
+                    raise
+                time.sleep(5)
+                continue
+            took = time.time() - start
+            with open(batch_json, "wb") as f:
+                f.write(raw)
+            subprocess.run(["ogr2ogr", "-q", "-f", "GeoJSONSeq", batch_out, "ESRIJSON:" + batch_json, "-makevalid",
+                            "-skipfailures", "-nlt", "PROMOTE_TO_MULTI", "-lco", "RS=NO"], check=True, stderr=subprocess.DEVNULL)
+            with open(batch_out) as f:
+                out.write(f.read())
+            out.flush()
+            ids, tries = ids[len(batch):], 0
+            # Aim at about 20 s per batch; at most double from one batch to the next.
+            size = max(1, min(page, size * 2, int(len(batch) * 20 / max(took, 0.1))))
+            if time.time() - shown > 60:
+                log(f"    {total - len(ids)} / {total} areas")
+                shown = time.time()
+    for p in (batch_json, batch_out):
+        if os.path.exists(p):
+            os.remove(p)
     os.replace(tmp, dest)
 
 
-def rest_pieces(step, url, fields, pieces, pages, extra):
+def rest_pieces(step, url, fields, pieces, page, extra, rel="esriSpatialRelIntersects"):
     """Fetch an ArcGIS REST layer in pieces [(key, where, bbox)]: one state or one map cell at a time,
-    because the services refuse large queries. Each piece is retried with smaller pages and cached
-    in data/cache/usdata/<step>/, so a rerun fetches only what is missing (delete that folder to
-    fetch everything again). Features found in two pieces are kept once (by OBJECTID)."""
+    because the services refuse large queries. Each piece is cached in data/cache/usdata/<step>/,
+    so a rerun fetches only what is missing (delete that folder to fetch everything again).
+    Features found in two pieces are kept once (by OBJECTID)."""
     d = os.path.join(WORK, step)
     os.makedirs(d, exist_ok=True)
     missing = []
@@ -193,13 +271,10 @@ def rest_pieces(step, url, fields, pieces, pages, extra):
         dest = os.path.join(d, f"{key}.geojsonl")
         if os.path.exists(dest):
             continue
-        for page in pages:
-            try:
-                rest_piece(url, fields, where, bbox, dest, page, extra)
-                break
-            except subprocess.CalledProcessError:
-                time.sleep(5)
-        else:
+        try:
+            rest_piece(url, fields, where, bbox, rel, dest, page, extra)
+        except (*QUERY_ERRORS, subprocess.CalledProcessError) as e:
+            log(f"  {key}: {e}")
             missing.append(key)
         if i % 25 == 0 or i == len(pieces):
             log(f"  {i} / {len(pieces)} pieces")
@@ -242,18 +317,20 @@ def cells(bbox, size):
 
 def protected(a):
     # One state at a time (PAD-US has a State_Nm field), simplified to about 2 m on the server.
-    tag = "_".join(f"{v:g}" for v in a.bbox)
-    pieces = [(f"{st}_{tag}", f"State_Nm='{st}'", a.bbox) for st in a.states]
+    # The box is tested against each area's outer box: the exact test takes the service minutes
+    # for the very large areas (Alaska). A few areas just outside the box come along; no harm.
+    pieces = [(f"{st}_" + "_".join(f"{v:g}" for v in b), f"State_Nm='{st}'", b) for b in boxes(a.bbox) for st in a.states]
     return rest_pieces("protected", PADUS_URL, "OBJECTID,Pub_Access,Unit_Nm,Mang_Type,Des_Tp,GIS_Acres", pieces,
-                       (500, 200, 100), {"maxAllowableOffset": "0.00002", "geometryPrecision": "6"})
+                       200, {"maxAllowableOffset": "0.00002", "geometryPrecision": "6"},
+                       rel="esriSpatialRelEnvelopeIntersects")
 
 
 def flood(a):
     # The zones are drawn in great detail: 1-degree cells, simplified to about 1 m on the server,
     # in pages of 200 or fewer, or the service gives up.
     where = "SFHA_TF='T' OR ZONE_SUBTY LIKE '%FLOODWAY%'"
-    pieces = [("_".join(f"{v:g}" for v in c), where, c) for c in cells(a.bbox, 1.0)]
-    return rest_pieces("flood", NFHL_URL, "OBJECTID,FLD_ZONE,ZONE_SUBTY,SFHA_TF", pieces, (200, 100, 50),
+    pieces = [("_".join(f"{v:g}" for v in c), where, c) for b in boxes(a.bbox) for c in cells(b, 1.0)]
+    return rest_pieces("flood", NFHL_URL, "OBJECTID,FLD_ZONE,ZONE_SUBTY,SFHA_TF", pieces, 200,
                        {"maxAllowableOffset": "0.00001", "geometryPrecision": "6"})
 
 

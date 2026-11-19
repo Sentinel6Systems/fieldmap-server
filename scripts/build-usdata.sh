@@ -52,16 +52,16 @@ if [ -z "$US_STATES" ]; then
     echo "Error: no US states found. Set US_STATES=\"NJ PA ...\" in $REGION_FILE." >&2
     exit 1
 fi
-# A box whose min-lon is larger than its max-lon crosses the 180° line: take its wider
-# side, as the base map does.
+# A box whose min-lon is larger than its max-lon crosses the 180° line; us-data.py
+# covers both sides.
 # shellcheck disable=SC2086
 read -r W S E N <<<"$(python3 -c "
 import sys
-w, s, e, n = map(float, sys.argv[1:])
-if w > e:
-    w, e = (w, 180.0) if 180 - w > e + 180 else (-180.0, e)
-print(f'{w:g} {s:g} {e:g} {n:g}')" $BBOX)"
+print(' '.join(f'{float(v):g}' for v in sys.argv[1:]))" $BBOX)"
 echo "US data for $REGION_FILE: states $US_STATES, box $W $S $E $N"
 # shellcheck disable=SC2086
 python3 "$REPO_DIR/tools/us-data.py" "$@" --bbox "$W" "$S" "$E" "$N" --states $US_STATES
-echo "Restart the tile server to load it: docker restart tileserver"
+# A staged build (the map builder) loads its files itself at the end.
+if [ -z "${FIELDMAP_STAGE:-}" ]; then
+    echo "Restart the tile server to load it: docker restart tileserver"
+fi
