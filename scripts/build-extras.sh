@@ -61,4 +61,7 @@ docker run --rm "${BUILD_DOCKER_ARGS[@]}" \
 mv "$REPO_DIR/data/extras.tmp.mbtiles" "$OUT_DIR/extras.mbtiles"
 rm -f "$REPO_DIR/data/extras.tmp.mbtiles.layerstats.tsv.gz"
 echo "Done. Output: $OUT_DIR/extras.mbtiles ($(du -h "$OUT_DIR/extras.mbtiles" | cut -f1))"
-echo "Restart the tile server to load it: docker restart tileserver"
+# A staged build (the map builder) loads its files itself at the end.
+if [ -z "${FIELDMAP_STAGE:-}" ]; then
+    echo "Restart the tile server to load it: docker restart tileserver"
+fi
