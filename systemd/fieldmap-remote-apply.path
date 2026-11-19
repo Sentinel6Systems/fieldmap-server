@@ -1,4 +1,4 @@
-# Applies a new gateway port chosen on the Phones page ("New random port"): the service writes
+# Applies a new gateway port chosen on the Devices page ("New random port"): the service writes
 # it to .env and touches data/remote/apply-request, and this runs scripts/remote.sh setup, which
 # moves the gateway, the firewall and the service to it. Installed by scripts/remote.sh setup.
 [Unit]

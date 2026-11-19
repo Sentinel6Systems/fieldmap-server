@@ -7,7 +7,7 @@ own short JSON messages instead of CoT. Nobody signs in: at home the app comes t
 box's web server, on the local network; away from home through the remote gateway, which lets
 in only phones that were paired here (tools/remote-server.py).
 
-Off until the owner switches it on, on the Phones page. While off, the box takes nothing in
+Off until the owner switches it on, on the Devices page. While off, the box takes nothing in
 and gives nothing out.
 
 What it answers (the web server and the gateway put /mapshare/ in front):
@@ -17,7 +17,7 @@ What it answers (the web server and the gateway put /mapshare/ in front):
   GET    /state[?since=n]  every position, and the shared markers (all, or those changed since)
   PUT    /markers/<id>     a shared marker (a GeoJSON Feature with a Point); kept on disk
   DELETE /markers/<id>
-  GET    /admin            for the Phones page: the switch, who is sharing right now
+  GET    /admin            for the Devices page: the switch, who is sharing right now
   POST   /admin            {"on": true|false}: the switch
 
 Who may ask:
@@ -37,7 +37,7 @@ Python's standard library and the `ip` command only.
   share-server.py status
 
 Settings in the environment (scripts/remote.sh reads them from .env):
-  REMOTE_PIN         the box's code: the Phones page's switch then asks for it
+  REMOTE_PIN         the box's code: the Devices page's switch then asks for it
 """
 import argparse
 import contextlib
@@ -65,7 +65,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHARE = os.path.abspath(os.environ.get("SHARE_DIR") or os.path.join(ROOT, "data", "share"))
 RUN = os.path.join(SHARE, "run")
 SOCKET = os.path.join(RUN, "share.sock")
-SETTINGS = os.path.join(SHARE, "settings.json")     # the Phones page's switch
+SETTINGS = os.path.join(SHARE, "settings.json")     # the Devices page's switch
 MARKERS = os.path.join(SHARE, "markers.json")       # the shared markers; positions are never written
 
 VERSION = 1
@@ -272,7 +272,7 @@ def post_position(position, caller, outside):
                 raise Refused(507, "The box has as many people sharing as it takes.")
             mine = sum(1 for p in positions.values() if p["caller"] == caller)
             if mine >= (MAX_PER_PHONE if outside else MAX_PER_ADDRESS):
-                raise Refused(507, "Too many positions from this phone.")
+                raise Refused(507, "Too many positions from this device.")
         positions[uid] = {"position": position, "at": clock(), "outside": outside, "caller": caller}
 
 
@@ -282,7 +282,7 @@ def leave(uid):
 
 
 def people():
-    """For the Phones page: who is sharing right now. Names and ages, no places."""
+    """For the Devices page: who is sharing right now. Names and ages, no places."""
     with lock:
         drop_stale()
         now = clock()
@@ -378,7 +378,7 @@ def delete_marker(marker_id):
 
 
 def state(since=None):
-    """What a phone asks for every few seconds: every position, and the shared markers. With
+    """What a device asks for every few seconds: every position, and the shared markers. With
     `since`, a rev this box gave out and still knows what came after, only what changed."""
     with lock:
         drop_stale()
@@ -405,7 +405,7 @@ own_networks = [0.0, []]        # when asked last, and the answer
 
 
 def own_prefixes():
-    """The IPv6 networks this machine is on: phones at home have global addresses in them.
+    """The IPv6 networks this machine is on: devices at home have global addresses in them.
     Asked again at most once a minute."""
     if clock() - own_networks[0] > 60 or not own_networks[0]:
         found = []
@@ -547,7 +547,7 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         who = caller(self.headers)
         if who is None:
-            raise Refused(403, "Only on the box's own network, or from a paired phone.")
+            raise Refused(403, "Only on the box's own network, or from a paired device.")
         if not allow("all", who, RATE_ALL):
             raise Refused(429, "Too fast. Try again in a few seconds.")
         marker = MARKER_PATH.fullmatch(url.path)
@@ -584,7 +584,7 @@ class Handler(BaseHTTPRequestHandler):
         return 200, {"rev": put_marker(clean_marker(marker.group(1), self.body(MARKER_BYTES)))}
 
     def admin(self, who):
-        """The Phones page: the switch, and who is sharing right now. Never from outside."""
+        """The Devices page: the switch, and who is sharing right now. Never from outside."""
         if who[0] == "outside":
             raise Refused(403, "Only on the box's own network.")
         if self.command == "POST":
@@ -655,7 +655,7 @@ def serve(host, port):
         threading.Thread(target=by_port.serve_forever, daemon=True).start()
         print(f"...and on http://{host}:{port}/", flush=True)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    print("Sharing is " + ("on." if on else "off: switch it on on the Phones page.") + f" Shared markers: {len(markers)}.", flush=True)
+    print("Sharing is " + ("on." if on else "off: switch it on on the Devices page.") + f" Shared markers: {len(markers)}.", flush=True)
     try:
         by_socket.serve_forever()
     except KeyboardInterrupt:
@@ -670,7 +670,7 @@ def serve(host, port):
 def main():
     parser = argparse.ArgumentParser(description="Live sharing for the Fieldmap Android app.")
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("serve", help="answer the app and the Phones page")
+    p = sub.add_parser("serve", help="answer the app and the Devices page")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=0, help="also listen on this port (the socket is always there)")
     sub.add_parser("status", help="say whether sharing is on, and how many markers are shared")
@@ -684,7 +684,7 @@ def main():
                 count = len(json.load(f)["markers"])
         except (OSError, ValueError, KeyError, TypeError):
             count = 0
-        print("Sharing:        " + ("on" if load_settings() else "off (the switch is on the Phones page)") + f"; shared markers: {count}")
+        print("Sharing:        " + ("on" if load_settings() else "off (the switch is on the Devices page)") + f"; shared markers: {count}")
 
 
 if __name__ == "__main__":

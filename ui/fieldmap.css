@@ -61,7 +61,7 @@ body.fm-plate {
 .fm-nav span.fm-off { opacity: .6; cursor: default; }
 .fm-nav span.fm-off small { font-size: 10.5px; letter-spacing: .06em; border: 1px solid var(--line); padding: 0 5px; }
 .fm-short { display: none; }
-/* Remote access at a glance, beside the Phones tab: on = reachable from outside. */
+/* Remote access at a glance, beside the Devices tab: on = reachable from outside. */
 .fm-remote { font: 10.5px var(--mono); letter-spacing: .06em; padding: 0 5px; border: 1px solid var(--line); color: var(--muted); }
 .fm-remote.on { color: var(--amber); border-color: var(--amber); }
 .fm-home {

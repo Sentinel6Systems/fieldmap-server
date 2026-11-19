@@ -402,7 +402,7 @@ def lan_ipv4():
     return local_ipv4(gw) if gw else None
 
 
-# Public STUN servers, asked only when someone presses "Find it" on the Phones page.
+# Public STUN servers, asked only when someone presses "Find it" on the Devices page.
 STUN = (("stun.cloudflare.com", 3478), ("stun.l.google.com", 19302))
 
 

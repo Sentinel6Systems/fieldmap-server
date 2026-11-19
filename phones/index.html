@@ -1,15 +1,15 @@
 <!doctype html>
 <html lang="en">
-<!-- The Phones page: remote access for the Fieldmap Android app. Served by tools/remote-server.py
-     at /phones/, on the box's own network only. The switch, whether phones can reach the box from
-     outside, pairing, and the paired phones. And the switch for sharing positions and markers
-     between the phones, with who is sharing right now: that is another service
+<!-- The Devices page: remote access for the Fieldmap Android app. Served by tools/remote-server.py
+     at /phones/, on the box's own network only. The switch, whether devices can reach the box from
+     outside, pairing, and the paired devices. And the switch for sharing positions and markers
+     between the devices, with who is sharing right now: that is another service
      (tools/share-server.py), asked beside this page at /mapshare/admin. The look and the header
      are ui/fieldmap.css and ui/nav.js, which the service serves beside this page. -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Phones</title>
+<title>Devices</title>
 <link rel="stylesheet" href="fieldmap.css">
 <style>
   h1 { font-size: clamp(26px, 3.6vw, 36px); line-height: 1.1; letter-spacing: -.01em; margin: 0 0 6px; }
@@ -55,9 +55,9 @@
 <script src="nav.js"></script>
 
 <header class="top">
-  <h1>Phones</h1>
-  <p class="lead">Phones with the Fieldmap app that are paired here can use this box's maps from anywhere, also away
-    from this network. Only paired phones get in, and only to the maps and, when sharing is switched on below, to
+  <h1>Devices</h1>
+  <p class="lead">Android phones and tablets with the Fieldmap app that are paired here can use this box's maps from anywhere, also away
+    from this network. Only paired devices get in, and only to the maps and, when sharing is switched on below, to
     each other's positions and markers.</p>
 </header>
 
@@ -95,7 +95,7 @@
       <p class="forward" id="forward-line"></p>
       <div class="row"><button id="new-port" type="button">New random port</button><span class="quiet" id="port-note"></span></div>
       <p class="quiet">Then give this box's internet address, as the router's status page shows it (or a name of
-        your own that points to it). Phones learn it when they are paired, and again whenever they are home.</p>
+        your own that points to it). Devices learn it when they are paired, and again whenever they are home.</p>
       <div class="row">
         <input id="address" type="text" autocomplete="off" spellcheck="false" placeholder="For example 203.0.113.30" aria-label="This box's internet address">
         <button id="find" type="button" title="Asks one public server on the internet which address this network has">Find it</button>
@@ -106,21 +106,21 @@
   </section>
 
   <section class="card" id="pair-card">
-    <h2>Pair a phone</h2>
+    <h2>Pair a device</h2>
     <ol>
-      <li>Connect the phone to this network and open the Fieldmap app.</li>
-      <li>Press <b>Pair a phone</b> here.</li>
-      <li>In the app: <b>Menu, Server, Pair this phone</b>, within ten minutes.</li>
+      <li>Connect the device to this network and open the Fieldmap app.</li>
+      <li>Press <b>Pair a device</b> here.</li>
+      <li>In the app: <b>Menu, Server, Pair this device</b>, within ten minutes.</li>
     </ol>
     <div class="row">
-      <button id="pair" type="button" class="primary">Pair a phone</button>
+      <button id="pair" type="button" class="primary">Pair a device</button>
       <button id="pair-stop" type="button" hidden>Stop</button>
       <span class="left" id="pair-left"></span>
     </div>
   </section>
 
   <section class="card">
-    <h2>Paired phones</h2>
+    <h2>Paired devices</h2>
     <div id="phones"></div>
   </section>
 
@@ -185,8 +185,8 @@
     $("toggle").textContent = on ? "Switch off" : "Switch on";
     $("toggle").className = on ? "danger" : "primary";
     $("switch-text").textContent = on
-      ? "Switch it off to keep this box completely to its own network: the router's port is closed, the box's firewall shuts the gateway, pairing stops. The paired phones stay on the list for when it is switched on again."
-      : "Off: nothing outside can reach this box, and no phone can pair. Switch it on to let paired phones use the maps from anywhere; that also opens pairing for ten minutes.";
+      ? "Switch it off to keep this box completely to its own network: the router's port is closed, the box's firewall shuts the gateway, pairing stops. The paired devices stay on the list for when it is switched on again."
+      : "Off: nothing outside can reach this box, and no device can pair. Switch it on to let paired devices use the maps from anywhere; that also opens pairing for ten minutes.";
     for (const id of ["outside-card", "pair-card", "forward-card"]) $(id).setAttribute("aria-disabled", String(!on));
     const fw = info.forwarding;
     $("manual").checked = fw.manual;
@@ -200,12 +200,12 @@
     $("auto-text").textContent = fw.manual ? "" :
       `The router is asked to open a port by itself. If it does not, tick the box above and forward port ${fw.port} by hand.`;
     $("auto-off").checked = info.autoOff.on;
-    $("auto-off-text").textContent = `Switch off by itself after ${info.autoOff.days} days with no phone coming in from outside` +
-      (info.autoOff.at ? ` (on ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })}, unless a phone comes in before)` : "");
+    $("auto-off-text").textContent = `Switch off by itself after ${info.autoOff.days} days with no device coming in from outside` +
+      (info.autoOff.at ? ` (on ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })}, unless a device comes in before)` : "");
     $("reach").textContent = info.reach.text;
     $("reach").className = "reach " + info.reach.status;
     $("addresses").textContent = on && info.endpoints.length
-      ? "Phones are told to try: " + info.endpoints.map((e) => e.host + ":" + e.port).join(", ") : "";
+      ? "Devices are told to try: " + info.endpoints.map((e) => e.host + ":" + e.port).join(", ") : "";
     $("checked").textContent = info.reach.checked ? "Last asked " + when(info.reach.checked) : "";
     $("recheck").disabled = !on;
     const left = info.pairing.seconds;
@@ -223,11 +223,11 @@
         if (confirm(`Remove ${d.name}? It can no longer use these maps from outside until it is paired again.`)) act("remove", { id: d.id });
       };
       return row;
-    }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No phone is paired yet." })]));
+    }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No device is paired yet." })]));
     showSharing();
   }
 
-  // Sharing between the phones: its own switch, and who is sharing right now (names, no places).
+  // Sharing between the devices: its own switch, and who is sharing right now (names, no places).
   // A box whose sharing service is not there has no such card.
   async function showSharing() {
     let share;
@@ -242,8 +242,8 @@
     $("share-toggle").textContent = on ? "Switch off" : "Switch on";
     $("share-toggle").className = on ? "danger" : "primary";
     $("share-text").textContent = on
-      ? "Phones whose owners switched sharing on in the Fieldmap app see each other on the map, and the markers they chose to share: every phone on this network, and every paired phone away from it. Positions are not stored, and a phone that stops is gone from the others within two minutes. Shared markers are kept on this box. Switch it off to stop it for everyone at once."
-      : "Off: this box takes no positions and no markers from phones, and gives none out. Switch it on to let phones with the Fieldmap app see each other on the map and share markers: every phone on this network, and every paired phone away from it, once its owner switches sharing on in the app.";
+      ? "Devices whose owners switched sharing on in the Fieldmap app see each other on the map, and the markers they chose to share: every device on this network, and every paired device away from it. Positions are not stored, and a device that stops is gone from the others within two minutes. Shared markers are kept on this box. Switch it off to stop it for everyone at once."
+      : "Off: this box takes no positions and no markers from devices, and gives none out. Switch it on to let devices with the Fieldmap app see each other on the map and share markers: every device on this network, and every paired device away from it, once its owner switches sharing on in the app.";
     $("share-now").hidden = !on;
     $("people").replaceChildren(...(share.people.length ? share.people.map((p) => {
       const row = document.createElement("div");
@@ -259,12 +259,12 @@
 
   $("toggle").onclick = () => {
     const on = $("state").textContent === "On";
-    if (on && !confirm("Switch remote access off? Paired phones can then use these maps only on this network.")) return;
+    if (on && !confirm("Switch remote access off? Paired devices can then use these maps only on this network.")) return;
     act("enabled", { on: !on });
   };
   $("share-toggle").onclick = () => {
     const on = $("share-state").textContent === "On";
-    if (on && !confirm("Switch sharing off? The phones no longer see each other. The shared markers stay on this box.")) return;
+    if (on && !confirm("Switch sharing off? The devices no longer see each other. The shared markers stay on this box.")) return;
     act(SHARE, { on: !on });
   };
   $("auto-off").onchange = () => act("auto-off", { on: $("auto-off").checked });
@@ -277,7 +277,7 @@
     $("find").disabled = false;
   };
   $("new-port").onclick = () => {
-    if (confirm("Give the box a new port? Forward the new one on the router afterwards. Paired phones away from home find it once they have been home again.")) act("new-port", {});
+    if (confirm("Give the box a new port? Forward the new one on the router afterwards. Paired devices away from home find it once they have been home again.")) act("new-port", {});
   };
   $("recheck").onclick = () => { $("checked").textContent = "Asking the router…"; act("recheck", {}); };
   $("pair").onclick = () => act("pairing", { open: true });

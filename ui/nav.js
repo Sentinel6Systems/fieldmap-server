@@ -7,7 +7,7 @@
 //   the print tool    /mapprinter/   (its config.json answers)
 //   the Maps page     /maps/ behind Internet-in-a-Box, else /   (styles.json answers)
 //   the map builder   /mapadmin/     (answers; "not running" when only its place is there)
-//   the Phones page   /phones/       (remote access for the Fieldmap app; the same, and only on the
+//   the Devices page   /phones/       (remote access for the Fieldmap app; the same, and only on the
 //                                    box's own network, where the page itself answers)
 // A page that is not found gets no link. Home is homeUrl (and homeName) in the print
 // tool's config.json: the address of a landing page in front of these pages, if any.
@@ -16,7 +16,7 @@
   if (!bar) return;
   const here = bar.dataset.page;
   const own = new URL(bar.dataset.root || "./", location.href).pathname;
-  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print a map", "Print"], ["builder", "Map builder", "Builder"], ["phones", "Phones", "Phones"]];
+  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print a map", "Print"], ["builder", "Map builder", "Builder"], ["phones", "Devices", "Devices"]];
   const CACHE = "fieldmap.nav";
 
   const el = (tag, props = {}, ...kids) => {
@@ -35,7 +35,7 @@
       const text = [el("span", { className: "fm-long", textContent: long }), el("span", { className: "fm-short", textContent: short })];
       if (key !== here && found[key] === "off") nav.append(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} is not running on this device.` }, ...text, el("small", { textContent: "not running" })));
       else if (key === here || found[key]) {
-        // Phones carries remote access's state at a glance: ON means reachable from outside.
+        // Devices carries remote access's state at a glance: ON means reachable from outside.
         const remote = key === "phones" && found.remote;
         const tag = remote ? [el("small", { className: "fm-remote " + (remote.on ? "on" : "off"), textContent: remote.on ? "on" : "off" })] : [];
         const label = remote ? `${long}: remote access ${remote.on ? "on" : "off"}` : long;
@@ -113,6 +113,6 @@
     try { sessionStorage.setItem(CACHE, text); } catch { /* private window: found again on the next page */ }
   });
   refresh();
-  // A page that changes what the header shows (the Phones page's switch) asks for it again.
+  // A page that changes what the header shows (the Devices page's switch) asks for it again.
   window.fieldmapNavRefresh = refresh;
 })();

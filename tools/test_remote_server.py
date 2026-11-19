@@ -302,7 +302,7 @@ class RemoteServerTest(unittest.TestCase):
                 self.assertIn("limit_req zone=fieldmap_share", block)
                 self.assertRegex(block, r"client_max_body_size [128]k;")
             self.assertEqual(["GET", "GET", "POST", "POST", "PUT|DELETE"], list(methods.values()))
-            self.assertIn("location /mapshare/ { return 404; }", conf, "the Phones page's switch is not among them")
+            self.assertIn("location /mapshare/ { return 404; }", conf, "the Devices page's switch is not among them")
             self.assertNotIn("admin", conf)
             self.assertEqual(1, conf.count("location / {"), "one catch-all only, or nginx refuses to start")
 

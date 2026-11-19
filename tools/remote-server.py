@@ -11,8 +11,8 @@ How it works:
     whose private half never leaves the phone) and gets a certificate for that key. Only
     requests from the local network are answered (see lan()), and only while pairing is
     open: for ten minutes after someone switches remote access on, or presses "Pair a
-    phone", on the box's Phones page (phones/, at /phones/).
-  * Off by default: until someone switches it on on the Phones page, nothing outside can
+    device", on the box's Devices page (phones/, at /phones/).
+  * Off by default: until someone switches it on on the Devices page, nothing outside can
     reach the box, the router is not asked for anything, and no phone can pair
     (set_enabled). Switched off again, it is all closed, and the paired phones are kept.
   * From outside, the app connects to the gateway (an nginx that demands such a
@@ -74,8 +74,8 @@ DEVICES = os.path.join(REMOTE, "devices.json")
 ADDRESS = os.path.join(REMOTE, "address")           # a relay's address (scripts/remote.sh, Tailscale)
 REACH = os.path.join(REMOTE, "reach.json")          # what the router said last
 NAME = os.path.join(GATEWAY, "name")                # the gateway's name in its certificate
-SETTINGS = os.path.join(REMOTE, "settings.json")    # the Phones page's switch; scripts/firewall.sh reads it too
-PAGE = os.path.join(ROOT, "phones")                 # the Phones page
+SETTINGS = os.path.join(REMOTE, "settings.json")    # the Devices page's switch; scripts/firewall.sh reads it too
+PAGE = os.path.join(ROOT, "phones")                 # the Devices page
 SHARED = os.path.join(ROOT, "ui")                   # the look and the header every page shares
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
          ".svg": "image/svg+xml"}
@@ -86,7 +86,7 @@ ENROLS_PER_HOUR = 30
 DEVICE_DAYS = 1825
 SERVER_DAYS = 3650
 CA_DAYS = 7300
-PAIRING_SECONDS = 600           # how long "Pair a phone" keeps pairing open
+PAIRING_SECONDS = 600           # how long "Pair a device" keeps pairing open
 IDLE_DAYS = 90                  # switched on, with no phone from outside this long: off by itself
 REACH_EVERY = 900               # how often the router is asked again
 SEEN_EVERY = 600                # how often "last used from outside" is written down
@@ -335,7 +335,7 @@ def save_devices(devices):
 
 def clean_name(name):
     name = re.sub(r"[\x00-\x1f\x7f]", "", str(name or "")).strip()
-    return name[:MAX_NAME] or "Phone"
+    return name[:MAX_NAME] or "Device"
 
 
 def enrol(name, public_key_pem):
@@ -355,11 +355,11 @@ def enrol(name, public_key_pem):
             if d.get("key") == key_id:
                 return d
         if len(devices) >= MAX_DEVICES:
-            raise PermissionError("The box has as many phones as it takes. Remove one on its Phones page first.")
+            raise PermissionError("The box has as many devices as it takes. Remove one on its Devices page first.")
         now = time.time()
         recent_enrols[:] = [t for t in recent_enrols if now - t < 3600]
         if len(recent_enrols) >= ENROLS_PER_HOUR:
-            raise PermissionError("Too many new phones in the last hour. Try again later.")
+            raise PermissionError("Too many new devices in the last hour. Try again later.")
         recent_enrols.append(now)
         device_id = secrets.token_hex(4)
         # The certificate is for the phone's key; the signing request is only a carrier.
@@ -389,7 +389,7 @@ def remove(device_id):
 
 
 def allowed(fingerprint):
-    """True when the certificate is on the list; notes when that phone came in from outside."""
+    """True when the certificate is on the list; notes when that device came in from outside."""
     fingerprint = (fingerprint or "").strip().lower().replace(":", "")
     if not fingerprint:
         return False
@@ -401,7 +401,7 @@ def allowed(fingerprint):
 
 
 def write_seen():
-    """Writes down when each phone last came in from outside (kept in memory in between)."""
+    """Writes down when each device last came in from outside (kept in memory in between)."""
     if not last_seen:
         return
     with lock:
@@ -416,7 +416,7 @@ def write_seen():
 # ---------- the switch ----------
 
 def load_settings():
-    """The Phones page's settings: "enabled" (off by default), "autoOff" (switch off by itself
+    """The Devices page's settings: "enabled" (off by default), "autoOff" (switch off by itself
     after IDLE_DAYS with no phone from outside; on by default), "since" (when it was switched
     on) and "offReason" ("idle" when it switched itself off)."""
     try:
@@ -435,7 +435,7 @@ def save_settings(**changes):
 
 
 def enabled():
-    """Remote access on or off (the default), as the Phones page's switch says."""
+    """Remote access on or off (the default), as the Devices page's switch says."""
     return load_settings().get("enabled") is True
 
 
@@ -444,7 +444,7 @@ def auto_off():
 
 
 def idle_since():
-    """When remote access was last used: the newest of a phone coming in from outside and
+    """When remote access was last used: the newest of a device coming in from outside and
     the moment it was switched on."""
     seen = [d.get("seen", 0) for d in load_devices()] + list(last_seen.values())
     return max(seen + [load_settings().get("since", 0)])
@@ -461,13 +461,13 @@ def switch_off_if_idle(now=None):
     at = auto_off_at()
     if at and (now or time.time()) >= at:
         set_enabled(False, reason="idle")
-        print(f"Remote access switched itself off: no phone came in from outside for {IDLE_DAYS} days.", flush=True)
+        print(f"Remote access switched itself off: no device came in from outside for {IDLE_DAYS} days.", flush=True)
         return True
     return False
 
 
 def set_enabled(on, reason=""):
-    """Off is complete isolation: no pairing, no phone let in, the router's port closed, and the
+    """Off is complete isolation: no pairing, no device let in, the router's port closed, and the
     box's own firewall shuts the gateway's port (scripts/firewall.sh reads this file, and
     fieldmap-firewall.path applies it as soon as it changes). The paired phones are kept for
     when it is switched on again. Switching on also opens pairing: one press, then the phone."""
@@ -520,7 +520,7 @@ def load_reach():
 
 
 def forwarding():
-    """Forwarding by hand (the Phones page): {"manual": bool, "address": the box's internet address}."""
+    """Forwarding by hand (the Devices page): {"manual": bool, "address": the box's internet address}."""
     f = load_settings().get("forwarding") or {}
     return {"manual": f.get("manual") is True, "address": str(f.get("address") or "")}
 
@@ -654,14 +654,14 @@ PROBLEMS = {
                       "cellular home internet do), so nothing outside can reach the box over IPv4.",
     "off": "Opening a port on the router is switched off (REMOTE_DIRECT=off).",
     "manual": "",
-    "switched-off": "Remote access is switched off: nothing outside can reach the box, and no phone can pair.",
-    "switched-off-idle": "Remote access switched itself off: no phone had come in from outside for %d days. Nothing "
+    "switched-off": "Remote access is switched off: nothing outside can reach the box, and no device can pair.",
+    "switched-off-idle": "Remote access switched itself off: no device had come in from outside for %d days. Nothing "
                          "outside can reach the box until someone switches it on again." % IDLE_DAYS,
 }
 
 
 def report():
-    """For the Phones page and the app: can phones reach the box from outside, and if not, why."""
+    """For the Devices page and the app: can devices reach the box from outside, and if not, why."""
     state = load_reach()
     devices = load_devices()
     newest_seen = max([d.get("seen", 0) for d in devices] + list(last_seen.values()), default=0)
@@ -671,17 +671,17 @@ def report():
         idle = load_settings().get("offReason") == "idle"
         return {"status": "off", "text": PROBLEMS["switched-off-idle" if idle else "switched-off"], "checked": state.get("checked", 0)}
     if newest_seen and time.time() - newest_seen < 7 * 86400:
-        status, text = "confirmed", "A phone reached the box from outside on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
+        status, text = "confirmed", "A device reached the box from outside on %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
     elif forwarding()["manual"] and not forwarding()["address"]:
         status, text = "blocked", "Forwarding by hand: forward the port on the router, then give the box's internet address."
     elif forwarding()["manual"]:
-        status, text = "expected", "Forwarded by hand. Not confirmed yet: no phone has come in from outside lately."
+        status, text = "expected", "Forwarded by hand. Not confirmed yet: no device has come in from outside lately."
     elif manual or state.get("ipv4", {}).get("ok"):
-        status, text = "expected", "The router lets phones in. Not confirmed yet: no phone has come in from outside lately."
+        status, text = "expected", "The router lets devices in. Not confirmed yet: no device has come in from outside lately."
     elif v6:
-        status, text = "maybe", PROBLEMS.get(state.get("problem"), "") + " The box also has an IPv6 address, which may let phones in that have IPv6 too."
+        status, text = "maybe", PROBLEMS.get(state.get("problem"), "") + " The box also has an IPv6 address, which may let devices in that have IPv6 too."
     elif state:
-        status, text = "blocked", PROBLEMS.get(state.get("problem"), "Phones cannot reach the box from outside.")
+        status, text = "blocked", PROBLEMS.get(state.get("problem"), "Devices cannot reach the box from outside.")
         said = state.get("ipv4", {}).get("error")
         if said and state.get("problem") == "router-refused":
             text += " (The router said: %s.)" % said
@@ -702,7 +702,7 @@ FORWARDED = ("X-Forwarded-For", "Forwarded", "X-Forwarded-Host", "CF-Connecting-
 
 
 def own_prefixes():
-    """The IPv6 networks this machine is on: phones at home have global addresses in them."""
+    """The IPv6 networks this machine is on: devices at home have global addresses in them."""
     out = []
     for address in portmap.global_ipv6():
         try:
@@ -772,7 +772,7 @@ class Handler(BaseHTTPRequestHandler):
         return not pin or secrets.compare_digest(str(body.get("pin", "")).strip().encode(), pin.encode())
 
     def page(self, path):
-        """The Phones page, and the shared look and header beside it."""
+        """The Devices page, and the shared look and header beside it."""
         name = "index.html" if path in ("/", "") else path.lstrip("/")
         file = os.path.join(PAGE, name)
         if not os.path.isfile(file):
@@ -864,9 +864,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200 if remove(str(body.get("id", ""))) else 404, {"devices": len(load_devices())})
         # /enrol
         if not enabled():
-            return self.send(403, {"error": "Remote access is switched off on the box (on its Phones page).", "closed": True})
+            return self.send(403, {"error": "Remote access is switched off on the box (on its Devices page).", "closed": True})
         if pairing_left() <= 0:
-            return self.send(403, {"error": "Pairing is closed. On the box's Phones page press Pair a phone, "
+            return self.send(403, {"error": "Pairing is closed. On the box's Devices page press Pair a device, "
                                             "then try again within ten minutes.", "closed": True})
         try:
             device = enrol(body.get("name"), str(body.get("publicKey", "")))
@@ -928,7 +928,7 @@ def serve(host, port):
         print(f"...and on http://{host}:{port}/", flush=True)
     # systemd stops the service with SIGTERM: leave through `finally`, which writes down who came in.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    print("Remote access is " + ("on." if enabled() else "off: switch it on on the Phones page."), flush=True)
+    print("Remote access is " + ("on." if enabled() else "off: switch it on on the Devices page."), flush=True)
     threading.Thread(target=keep_up, daemon=True).start()
     try:
         by_socket.serve_forever()
@@ -953,8 +953,8 @@ def main():
     p = sub.add_parser("serve", help="answer the app and the gateway, and keep the router's port open")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=0, help="also listen on this port (the socket is always there)")
-    sub.add_parser("devices", help="list the phones that are paired")
-    p = sub.add_parser("remove", help="lock a phone out")
+    sub.add_parser("devices", help="list the devices that are paired")
+    p = sub.add_parser("remove", help="lock a device out")
     p.add_argument("id")
     sub.add_parser("status", help="say what is set up")
     sub.add_parser("router", help="ask the router now and say what it answered")
@@ -967,7 +967,7 @@ def main():
     elif args.command == "devices":
         devices = load_devices()
         if not devices:
-            print("No phone is paired yet.")
+            print("No device is paired yet.")
         for d in devices:
             seen = time.strftime("%Y-%m-%d", time.localtime(d["seen"])) if d.get("seen") else "never"
             print(f"{d['id']}  added {d['added']}  from outside: {seen}  {d['name']}")
@@ -975,7 +975,7 @@ def main():
         if remove(args.id):
             print(f"Removed {args.id}: it is locked out from now on.")
         else:
-            sys.exit(f"No phone with the id {args.id}. See: remote-server.py devices")
+            sys.exit(f"No device with the id {args.id}. See: remote-server.py devices")
     elif args.command == "router":
         state = check_router()
         print(json.dumps(state, indent=1))
@@ -985,7 +985,7 @@ def main():
         print("Certificates:   " + ("made" if ready() else "not made yet (run scripts/remote.sh setup)"))
         print("From outside:   " + r["text"])
         print("Addresses:      " + (", ".join("%s:%s" % (e["host"], e["port"]) for e in endpoints()) or "none yet"))
-        print(f"Phones paired:  {len(load_devices())}")
+        print(f"Devices paired: {len(load_devices())}")
         print("Code:           " + ("asked for (REMOTE_PIN)" if setting("REMOTE_PIN") else "none"))
 
 
