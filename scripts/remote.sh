@@ -12,7 +12,7 @@
 #   ./scripts/remote.sh remove <id>    lock one out
 #   ./scripts/remote.sh off            remove it: the gateway, the services, the Devices tab (the box's
 #                                      firewall stays, closed to everything from outside)
-#                                      (to switch remote access or sharing off and on, use the Devices page)
+#                                      (to switch remote access off and on: Admin, Remote access; sharing: Devices)
 #
 # On a Raspberry Pi behind Internet-in-a-Box, run it with sudo, like install-pi.sh.
 # Elsewhere run it as the owner of this folder; it asks for sudo where it needs it.
@@ -219,14 +219,14 @@ for _ in range(200):
     echo
     if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("enabled") is True else 1)' \
         data/remote/settings.json 2>/dev/null; then
-        echo "Remote access is on. To pair another phone, or to switch it off, open the Devices page on this"
-        echo "box's network (Admin, in the header of the Maps page)."
+        echo "Remote access is on. To pair another device, open the Devices page on this box's network (in the"
+        echo "header of the Maps page); to switch it off, Admin, Remote access."
     else
-        echo "Remote access is off until someone switches it on: on this box's network open the Devices page"
-        echo "(Admin, in the header of the Maps page) and press Switch on. That also opens pairing for ten minutes:"
+        echo "Remote access is off until someone switches it on: on this box's network open Admin, Remote access"
+        echo "(in the header of the Maps page) and press Switch on. That also opens pairing for ten minutes:"
         echo "then, in the Fieldmap app on the phone, Menu, Server, Pair this device."
     fi
-    echo "Sharing positions and markers between the phones has its own switch on the same page; it is off"
+    echo "Sharing positions and markers between the devices has its own switch, on the Devices page; it is off"
     echo "until someone switches it on."
     ;;
 

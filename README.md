@@ -139,11 +139,12 @@ builds do.
 |---|---|---|---|
 | Maps | Maps | `/` (`/maps/` behind Internet-in-a-Box) | The interactive map, with a menu of the styles and, under **Use in another app**, the tile addresses for TAK clients and other map apps |
 | Print a map | Print a map | `/mapprinter/` | The print tool |
+| Devices | Devices | `/phones/` | The Fieldmap Android app: get it from the box, pair a device, the paired devices, and the switch for sharing positions and markers between them (see "Sharing positions and markers between phones") |
 | Admin | Map builder | `/mapadmin/` | Choose and build the maps (not on a Raspberry Pi) |
-| Admin | Devices | `/phones/` | Remote access for the Fieldmap Android app: on or off, pairing, the paired phones (see "Remote access for the Android app"). And the switch for sharing positions and markers between phones (see "Sharing positions and markers between phones") |
+| Admin | Remote access | `/phones/remote.html` | Remote access for the app on or off, whether devices can reach the box from outside, port forwarding (see "Remote access for the Android app") |
 
-Every page has the same header: the name, **Maps**, **Print a map** and **Admin**, with the current one marked, and
-nothing else to learn. The pages that run the box are under **Admin**: the map builder and the Devices page, and
+Every page has the same header: the name, **Maps**, **Print a map**, **Devices** and **Admin**, with the current one
+marked, and nothing else to learn. **Admin** holds what not everyone needs: the map builder and remote access, and
 whatever comes later. The Admin tab opens the first of them that is running; on those pages a second row names
 each of them (when the box has more than one). The header finds the pages by itself on the address it was opened
 at (`ui/nav.js`): a page that is not installed gets no link, and the map builder is shown as "not running" when its
@@ -839,7 +840,7 @@ at all. It does not rely on the router, over IPv4 and IPv6: some routers let IPv
 
 - **Gets in:** the local network (home and office address ranges, and the IPv6 networks the box is on), VPNs
   (Tailscale, WireGuard, ZeroTier, OpenVPN), and answers to what the box asked for itself.
-- **The one exception:** the remote gateway's port, while remote access is switched on on the Devices page (see
+- **The one exception:** the remote gateway's port, while remote access is switched on (Admin, Remote access; see
   below). Phones away from home connect to it from anywhere, so it does answer: with a demand for a certificate
   this box issued, and nothing more to anyone without one.
 - **Closed from outside, SSH included.** To log in from outside without a VPN, set `REMOTE_FIREWALL_ALLOW=22` in
@@ -876,7 +877,7 @@ from home, while the box and the phone both have internet. It is **off until you
 switched on cannot be reached from outside at all.
 
 1. Plug the box into your home router and install as above.
-2. On the box's network, open the **Devices** page and press **Switch on**. That also opens pairing for ten minutes.
+2. On the box's network, open **Admin**, **Remote access** and press **Switch on**. That also opens pairing for ten minutes.
 3. On the phone, on the same network: open the Fieldmap app, connect to the box, then **Menu › Server › Pair this
    phone**. To pair another phone later, press **Pair a device** on the Devices page first.
 4. Away from home the app reaches the box by itself; its strip reads **Remote**.
@@ -884,24 +885,29 @@ switched on cannot be reached from outside at all.
 A device here is anything that runs the Fieldmap app: an Android phone or a tablet. Where this guide says
 "phone", it means any of them.
 
-The **Devices** page (`/phones/`, under **Admin** in every page's header, on the box's own network only) is where all of this
-is managed:
+Two pages, both on the box's own network only, manage it:
+
+**Remote access** (`/phones/remote.html`, under **Admin** in every page's header), for whoever runs the box:
 
 - **Remote access on or off** (off by default). Off keeps the box completely to its own network: the router is
   not asked for anything, the box's firewall shuts the gateway, nobody can pair. Switched off again, the router's
-  port is closed; the paired phones stay on the list, and the app keeps them paired, for when it is switched on.
+  port is closed; the paired devices stay on the list, and the app keeps them paired, for when it is switched on.
+- **Switch off by itself after 90 days with no device coming in from outside** (ticked by default), so that a
+  forgotten box closes itself. The page shows the date it would happen; each device that comes in moves it on.
+- **From outside:** whether devices can reach the box, and if not, why, in plain words; the addresses devices are
+  told to try; **Ask the router again**.
 - **Port forwarding**, for a router that does not open the port by itself: tick "Forward the port on the router
   myself" and the page shows one line, *On your router, forward TCP port 41234 to 192.168.1.10*, with this box's
   own port and home address. Give the box's internet address below it (**Find it** asks one public server on the
   internet, only when pressed), or a name of your own. **New random port** gives the box another port.
-- **Switch off by itself after 90 days with no phone coming in from outside** (ticked by default), so that a
-  forgotten box closes itself. The page shows the date it would happen; each phone that comes in moves it on.
 
-Every page's header shows the state at a glance, beside the Admin tab (and beside Devices on the Admin pages): **on** (amber: the box can be reached from
-outside, by paired phones) or **off**; hovering over it gives the box's own words about it.
-- **From outside:** whether phones can reach the box, and if not, why, in plain words; the addresses phones are
-  told to try; **Ask the router again**.
-- **Pair a device**, and the **paired phones**, each with when it last came in from outside, and **Remove**.
+**Devices** (`/phones/`, its own tab in the header), for everyone: **Get the Fieldmap app**, **Pair a device**
+(while remote access is on), the **paired devices**, each with when it last came in from outside, and **Remove**;
+and sharing positions and markers (below).
+
+Every page's header shows the state at a glance, beside the Admin tab (and beside Remote access on the Admin
+pages): **on** (amber: the box can be reached from outside, by paired devices) or **off**; hovering over it gives
+the box's own words about it.
 
 No account, no outside service, nothing of anyone else's in between: the box talks only to your own router.
 
@@ -927,10 +933,10 @@ No account, no outside service, nothing of anyone else's in between: the box tal
 
 ### When it cannot work
 
-The Devices page and `./scripts/remote.sh status` say which of these applies:
+The Remote access page and `./scripts/remote.sh status` say which of these applies:
 
 - **The router does not open ports by itself** (UPnP switched off): switch UPnP or NAT-PMP on in the router's
-  settings, or forward one port by hand (Port forwarding, on the Devices page).
+  settings, or forward one port by hand (Port forwarding, on the Remote access page).
 - **Two routers in a row** (the provider's and your own): put the provider's in bridge mode, or forward the port
   on both.
 - **The provider shares one address among customers** (Starlink, most cellular home internet, some fibre): no way
@@ -949,7 +955,7 @@ REMOTE_FIREWALL_ALLOW=22               # ports open from outside besides the gat
 REMOTE_RELAY=tailscale                 # also reach the gateway through Tailscale Funnel (sign the box in first)
 ```
 
-Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port by hand, use the Devices page (above).
+Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port by hand, use the Remote access page (above).
 
 ```bash
 ./scripts/remote.sh status          # can phones reach the box from outside, and how
@@ -1074,8 +1080,10 @@ See [systemd/README.md](systemd/README.md).
 
 ### Since v1.0.0
 
-- One **Admin** tab in the header for the pages that run the box: the map builder (where it is installed) and the
-  Devices page, with a second row on those pages to go between them. Maps and Print a map stay as they are.
+- The header reads **Maps**, **Print a map**, **Devices**, **Admin**. Admin holds what not everyone needs: the map
+  builder (where it is installed) and a new **Remote access** page with the remote access switch, "From outside" and
+  port forwarding, moved there from the Devices page; a second row on those pages goes between them. Devices keeps
+  the app, pairing, the paired devices and sharing.
 - The Fieldmap Android app can be installed straight from the box: a **Get the Fieldmap app** card on the Devices
   page, for devices on the box's network. The installers put the newest published release on the box
   (`scripts/app.sh`); a file of your own can be added instead.

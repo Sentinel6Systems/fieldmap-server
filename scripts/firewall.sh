@@ -3,7 +3,7 @@
 # From anywhere else nothing gets an answer: no reply to a ping, no "closed" for a port that is
 # closed, nothing. Packets from outside are dropped without a word, so that a scan finds no box
 # at all. The two exceptions: answers to what the box asked for itself, and the remote gateway
-# while remote access is switched on (the Devices page), which must take phones from anywhere.
+# while remote access is switched on (Admin, Remote access), which must take phones from anywhere.
 # It does not rely on the router: some routers let IPv6 in unfiltered, and a mistake in a port
 # mapping should expose nothing. SSH from outside is closed too, unless .env opens it.
 #
@@ -88,7 +88,7 @@ apply) ;;
 esac
 
 PORT="$(setting REMOTE_PORT "")"
-# The Devices page's switch (data/remote/settings.json, "enabled"): off, the default, closes the gateway's port as well.
+# The Remote access page's switch (data/remote/settings.json, "enabled"): off, the default, closes the gateway's port as well.
 ON="$(python3 -c 'import json,sys
 try: print("yes" if json.load(open(sys.argv[1])).get("enabled") is True else "no")
 except Exception: print("no")' "$REPO_DIR/data/remote/settings.json" 2>/dev/null || echo no)"

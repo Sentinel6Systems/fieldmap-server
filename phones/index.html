@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="en">
-<!-- The Devices page: remote access for the Fieldmap Android app. Served by tools/remote-server.py
-     at /phones/, on the box's own network only. The switch, whether devices can reach the box from
-     outside, pairing, and the paired devices. And the switch for sharing positions and markers
-     between the devices, with who is sharing right now: that is another service
-     (tools/share-server.py), asked beside this page at /mapshare/admin. The look and the header
-     are ui/fieldmap.css and ui/nav.js, which the service serves beside this page. -->
+<!-- Two pages in one file, served by tools/remote-server.py on the box's own network only:
+     /phones/             Devices: get the app, pair a device, the paired devices, and sharing
+                          positions and markers between them (another service, tools/share-server.py,
+                          asked beside this page at /mapshare/admin);
+     /phones/remote.html  Admin, Remote access: the switch, whether devices can reach the box from
+                          outside, and port forwarding. Not something everyone needs.
+     Each section says which of the two it belongs to (data-for). The look and the header are
+     ui/fieldmap.css and ui/nav.js, which the service serves beside this page. -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -23,6 +25,7 @@
   main { padding-bottom: 60px; }
   .card { background: var(--panel); border: 1px solid var(--line); padding: 18px 20px; margin-top: 16px; }
   .card[aria-disabled=true] { opacity: .5; }
+  body[data-mode=devices] [data-for=access], body[data-mode=access] [data-for=devices] { display: none; }
   .switch { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   .switch h2 { margin: 0; flex: 1; min-width: 12em; }
   .switch button { min-width: 7em; min-height: 44px; font-size: 16px; }
@@ -53,13 +56,26 @@
 <body class="fm-plate">
 
 <header class="fm-bar" id="fm-bar" data-page="phones"></header>
+<script>
+  // Which of the two pages this is (see the top of this file).
+  document.body.dataset.mode = location.pathname.endsWith("/remote.html") ? "access" : "devices";
+  if (document.body.dataset.mode === "access") {
+    document.getElementById("fm-bar").dataset.page = "access";
+    document.title = "Remote access";
+  }
+</script>
 <script src="nav.js"></script>
 
-<header class="top">
+<header class="top" data-for="devices">
   <h1>Devices</h1>
-  <p class="lead">Android phones and tablets with the Fieldmap app that are paired here can use this box's maps from anywhere, also away
-    from this network. Only paired devices get in, and only to the maps and, when sharing is switched on below, to
-    each other's positions and markers.</p>
+  <p class="lead">Android phones and tablets with the Fieldmap app: get the app from this box, pair a device, and let
+    the devices share their positions and markers with each other.</p>
+</header>
+<header class="top" data-for="access">
+  <h1>Remote access</h1>
+  <p class="lead">Lets the paired devices use this box's maps from anywhere, also away from this network. Only paired
+    devices get in, and only to the maps and, when sharing is switched on (on the Devices page), to each other's
+    positions and markers.</p>
 </header>
 
 <main>
@@ -71,9 +87,9 @@
     <div class="row"><input id="code" type="password" autocomplete="off" aria-label="The box's code"></div>
   </section>
 
-  <section class="card">
+  <section class="card" data-for="access">
     <div class="switch">
-      <h2>Remote access</h2>
+      <h2>On or off</h2>
       <span class="state" id="state"></span>
       <button id="toggle" type="button"></button>
     </div>
@@ -81,14 +97,14 @@
     <label class="check"><input type="checkbox" id="auto-off"> <span id="auto-off-text"></span></label>
   </section>
 
-  <section class="card" id="outside-card">
+  <section class="card" id="outside-card" data-for="access">
     <h2>From outside</h2>
     <p class="reach" id="reach"></p>
     <p class="mono" id="addresses"></p>
     <div class="row"><button id="recheck" type="button">Ask the router again</button><span class="quiet" id="checked"></span></div>
   </section>
 
-  <section class="card" id="forward-card">
+  <section class="card" id="forward-card" data-for="access">
     <h2>Port forwarding</h2>
     <label class="check"><input type="checkbox" id="manual"> <span>Forward the port on the router myself (for a router that does not
       open it by itself, with UPnP)</span></label>
@@ -106,7 +122,7 @@
     <p class="quiet" id="auto-text"></p>
   </section>
 
-  <section class="card" id="app-card">
+  <section class="card" id="app-card" data-for="devices">
     <h2>Get the Fieldmap app</h2>
     <div id="app-there" hidden>
       <p>Fieldmap <b id="app-version"></b> for Android phones and tablets, <span id="app-size"></span>, straight from
@@ -127,8 +143,9 @@
       <span class="mono">./scripts/app.sh add &lt;file.apk&gt;</span>.</p>
   </section>
 
-  <section class="card" id="pair-card">
+  <section class="card" id="pair-card" data-for="devices">
     <h2>Pair a device</h2>
+    <p class="quiet" id="pair-off" hidden>Pairing needs remote access switched on: <a href="remote.html">Admin, Remote access</a>.</p>
     <ol>
       <li>Connect the device to this network and open the Fieldmap app (Get the Fieldmap app, above).</li>
       <li>Press <b>Pair a device</b> here.</li>
@@ -141,12 +158,12 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-for="devices">
     <h2>Paired devices</h2>
     <div id="phones"></div>
   </section>
 
-  <section class="card" id="share-card" hidden>
+  <section class="card" id="share-card" data-for="devices" hidden>
     <div class="switch">
       <h2>Sharing positions and markers</h2>
       <span class="state" id="share-state"></span>
@@ -219,7 +236,8 @@
     $("switch-text").textContent = on
       ? "Switch it off to keep this box completely to its own network: the router's port is closed, the box's firewall shuts the gateway, pairing stops. The paired devices stay on the list for when it is switched on again."
       : "Off: nothing outside can reach this box, and no device can pair. Switch it on to let paired devices use the maps from anywhere; that also opens pairing for ten minutes.";
-    for (const id of ["outside-card", "pair-card", "forward-card"]) $(id).setAttribute("aria-disabled", String(!on));
+    for (const id of ["outside-card", "forward-card"]) $(id).setAttribute("aria-disabled", String(!on));
+    $("pair-off").hidden = on;
     const fw = info.forwarding;
     $("manual").checked = fw.manual;
     $("manual-box").hidden = !fw.manual;

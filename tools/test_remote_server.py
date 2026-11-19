@@ -239,8 +239,11 @@ class RemoteServerTest(unittest.TestCase):
     def test_the_phones_page_and_its_header_are_served_on_the_local_network_only(self):
         page = self.get("/")
         self.assertEqual(200, page.status, page.out)
-        for path in ("/fieldmap.css", "/nav.js", "/index.html"):
+        for path in ("/fieldmap.css", "/nav.js", "/index.html", "/remote.html"):
             self.assertEqual(200, self.get(path).status, path)
+        self.assertEqual(self.get("/").written.getvalue(), self.get("/remote.html").written.getvalue(),
+                         "Devices and Admin's Remote access page are one file")
+        self.assertEqual(403, self.get("/remote.html", {"X-Real-IP": "203.0.113.30"}).status)
         for path in ("/../tools/remote-server.py", "/devices.json", "/ca.key", "/x.py"):
             self.assertEqual(404, self.get(path).status, path)
         self.assertEqual(403, self.get("/", {"X-Real-IP": "203.0.113.30"}).status)

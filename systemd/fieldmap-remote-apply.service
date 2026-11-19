@@ -1,4 +1,4 @@
-# Runs scripts/remote.sh setup when the Devices page asks for a new gateway port
+# Runs scripts/remote.sh setup when the Remote access page asks for a new gateway port
 # (fieldmap-remote-apply.path). Installed by scripts/remote.sh setup.
 [Unit]
 Description=fieldmap-server remote access setup, after a port change

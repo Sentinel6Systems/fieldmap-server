@@ -12,7 +12,8 @@ How it works:
     requests from the local network are answered (see lan()), and only while pairing is
     open: for ten minutes after someone switches remote access on, or presses "Pair a
     device", on the box's Devices page (phones/, at /phones/).
-  * Off by default: until someone switches it on on the Devices page, nothing outside can
+  * Off by default: until someone switches it on on the Remote access page (Admin, at
+    /phones/remote.html: the same file as the Devices page), nothing outside can
     reach the box, the router is not asked for anything, and no phone can pair
     (set_enabled). Switched off again, it is all closed, and the paired phones are kept.
   * The app itself is kept on the box (scripts/app.sh, tools/app-file.py: data/app/), and devices
@@ -77,8 +78,8 @@ DEVICES = os.path.join(REMOTE, "devices.json")
 ADDRESS = os.path.join(REMOTE, "address")           # a relay's address (scripts/remote.sh, Tailscale)
 REACH = os.path.join(REMOTE, "reach.json")          # what the router said last
 NAME = os.path.join(GATEWAY, "name")                # the gateway's name in its certificate
-SETTINGS = os.path.join(REMOTE, "settings.json")    # the Devices page's switch; scripts/firewall.sh reads it too
-PAGE = os.path.join(ROOT, "phones")                 # the Devices page
+SETTINGS = os.path.join(REMOTE, "settings.json")    # the Remote access page's switch; scripts/firewall.sh reads it too
+PAGE = os.path.join(ROOT, "phones")                 # the Devices page, and Admin's Remote access page
 SHARED = os.path.join(ROOT, "ui")                   # the look and the header every page shares
 APP_DIR = os.environ.get("APP_DIR") or os.path.join(ROOT, "data", "app")     # the app (scripts/app.sh)
 APK = os.path.join(APP_DIR, "fieldmap.apk")
@@ -438,7 +439,7 @@ def app():
 # ---------- the switch ----------
 
 def load_settings():
-    """The Devices page's settings: "enabled" (off by default), "autoOff" (switch off by itself
+    """The Remote access page's settings: "enabled" (off by default), "autoOff" (switch off by itself
     after IDLE_DAYS with no phone from outside; on by default), "since" (when it was switched
     on) and "offReason" ("idle" when it switched itself off)."""
     try:
@@ -457,7 +458,7 @@ def save_settings(**changes):
 
 
 def enabled():
-    """Remote access on or off (the default), as the Devices page's switch says."""
+    """Remote access on or off (the default), as the Remote access page's switch says."""
     return load_settings().get("enabled") is True
 
 
@@ -542,7 +543,7 @@ def load_reach():
 
 
 def forwarding():
-    """Forwarding by hand (the Devices page): {"manual": bool, "address": the box's internet address}."""
+    """Forwarding by hand (the Remote access page): {"manual": bool, "address": the box's internet address}."""
     f = load_settings().get("forwarding") or {}
     return {"manual": f.get("manual") is True, "address": str(f.get("address") or "")}
 
@@ -683,7 +684,7 @@ PROBLEMS = {
 
 
 def report():
-    """For the Devices page and the app: can devices reach the box from outside, and if not, why."""
+    """For the Remote access page and the app: can devices reach the box from outside, and if not, why."""
     state = load_reach()
     devices = load_devices()
     newest_seen = max([d.get("seen", 0) for d in devices] + list(last_seen.values()), default=0)
@@ -795,7 +796,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def page(self, path):
         """The Devices page, and the shared look and header beside it."""
-        name = "index.html" if path in ("/", "") else path.lstrip("/")
+        # The Devices page and Admin's Remote access page are one file (it tells them apart).
+        name = "index.html" if path in ("/", "", "/remote.html") else path.lstrip("/")
         file = os.path.join(PAGE, name)
         if not os.path.isfile(file):
             file = os.path.join(SHARED, name)
@@ -845,7 +847,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(204 if allowed(self.headers.get("X-Fieldmap-Fingerprint")) else 403)
         if not lan(self.headers):
             return self.send(403, {"error": "Only on the box's own network."})
-        if self.path in ("/", "/index.html") or self.path.lstrip("/") in ("fieldmap.css", "nav.js"):
+        if self.path in ("/", "/index.html", "/remote.html") or self.path.lstrip("/") in ("fieldmap.css", "nav.js"):
             return self.page(self.path)
         if self.path == "/fieldmap.apk":
             return self.download()
@@ -903,7 +905,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200 if remove(str(body.get("id", ""))) else 404, {"devices": len(load_devices())})
         # /enrol
         if not enabled():
-            return self.send(403, {"error": "Remote access is switched off on the box (on its Devices page).", "closed": True})
+            return self.send(403, {"error": "Remote access is switched off on the box (Admin, Remote access, on its pages).", "closed": True})
         if pairing_left() <= 0:
             return self.send(403, {"error": "Pairing is closed. On the box's Devices page press Pair a device, "
                                             "then try again within ten minutes.", "closed": True})
@@ -967,7 +969,7 @@ def serve(host, port):
         print(f"...and on http://{host}:{port}/", flush=True)
     # systemd stops the service with SIGTERM: leave through `finally`, which writes down who came in.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    print("Remote access is " + ("on." if enabled() else "off: switch it on on the Devices page."), flush=True)
+    print("Remote access is " + ("on." if enabled() else "off: switch it on on the Remote access page (Admin)."), flush=True)
     threading.Thread(target=keep_up, daemon=True).start()
     try:
         by_socket.serve_forever()

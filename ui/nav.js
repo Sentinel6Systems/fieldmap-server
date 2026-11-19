@@ -1,18 +1,19 @@
 // fieldmap-server: the header every page shares. A page carries
-//   <header class="fm-bar" id="fm-bar" data-page="maps|print|builder|phones" data-root="<its own folder>"></header>
+//   <header class="fm-bar" id="fm-bar" data-page="maps|print|phones|builder|access" data-root="<its own folder>"></header>
 // and loads this file right after it. The header shows the name, a link to each page that
 // is there (the current one marked), and a Home button when the site sets one.
 //
-// Maps and Print a map are for everyone. The pages that run the box are under one Admin tab:
-// the map builder and the Devices page now, more later. On those pages a second row under the
+// Maps, Print a map and Devices are for everyone. What not everyone needs is under the Admin
+// tab: the map builder and remote access now, more later. On those pages a second row under the
 // header names them (when there is more than one).
 //
 // Where the other pages are is found out, not configured, on this page's own host:
 //   the print tool    /mapprinter/   (its config.json answers)
 //   the Maps page     /maps/ behind Internet-in-a-Box, else /   (styles.json answers)
 //   the map builder   /mapadmin/     (answers; "not running" when only its place is there)
-//   the Devices page   /phones/       (remote access for the Fieldmap app; the same, and only on the
-//                                    box's own network, where the page itself answers)
+//   the Devices page   /phones/       (the Fieldmap app; the same, and only on the box's own network,
+//                                    where the page itself answers), and Remote access beside it
+//                                    at /phones/remote.html
 // A page that is not found gets no link. Home is homeUrl (and homeName) in the print
 // tool's config.json: the address of a landing page in front of these pages, if any.
 (() => {
@@ -20,9 +21,9 @@
   if (!bar) return;
   const here = bar.dataset.page;
   const own = new URL(bar.dataset.root || "./", location.href).pathname;
-  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print a map", "Print"], ["admin", "Admin", "Admin"]];
+  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print a map", "Print"], ["phones", "Devices", "Devices"], ["admin", "Admin", "Admin"]];
   // Under Admin, in this order. The Admin tab opens the first one that is running.
-  const ADMIN = [["builder", "Map builder"], ["phones", "Devices"]];
+  const ADMIN = [["builder", "Map builder"], ["access", "Remote access"]];
   const inAdmin = ADMIN.some(([key]) => key === here);
   const CACHE = "fieldmap.nav";
 
@@ -35,8 +36,8 @@
     '<rect x="3" y="3" width="18" height="18"/><path d="M3 10h18M10 3v18"/><circle cx="15.5" cy="15.5" r="1.6" fill="currentColor" stroke="none"/></svg>';
 
   // Where each page is: its address, "off" (installed, not running) or nothing (not there).
-  const place = (found, key) => (key === here ? own : found[key]);
-  // Remote access's state at a glance, on Admin and on Devices: ON means reachable from outside.
+  const place = (found, key) => (key === here ? (key === "access" ? location.pathname : own) : found[key]);
+  // Remote access's state at a glance, on Admin and on Remote access: ON means reachable from outside.
   const remoteTag = (found) => (found.remote
     ? [el("small", { className: "fm-remote " + (found.remote.on ? "on" : "off"), textContent: found.remote.on ? "on" : "off" })] : []);
 
@@ -50,7 +51,7 @@
       if (key === "admin") {
         const running = ADMIN.map(([k]) => place(found, k)).filter((p) => p && p !== "off");
         current = inAdmin;
-        href = inAdmin ? own : running[0] || (ADMIN.some(([k]) => found[k] === "off") ? "off" : null);
+        href = inAdmin ? place(found, here) : running[0] || (ADMIN.some(([k]) => found[k] === "off") ? "off" : null);
         tag = remoteTag(found);
         if (found.remote) { label = `Admin: remote access ${found.remote.on ? "on" : "off"}`; title = found.remote.text; }
       }
@@ -77,7 +78,7 @@
       const href = place(found, key);
       if (key !== here && href === "off") items.push(el("span", { className: "fm-off", title: `The ${long.toLowerCase()} is not running on this device.` }, long, el("small", { textContent: "not running" })));
       else if (href) {
-        const a = el("a", { href, title: key === "phones" && found.remote ? found.remote.text : "" }, long, ...(key === "phones" ? remoteTag(found) : []));
+        const a = el("a", { href, title: key === "access" && found.remote ? found.remote.text : "" }, long, ...(key === "access" ? remoteTag(found) : []));
         if (key === here) a.ariaCurrent = "page";
         items.push(a);
       }
@@ -113,7 +114,7 @@
       })(),
       (async () => {
         // Asked on every page, its own included: the header shows whether remote access is on.
-        const root = here === "phones" ? own : "/phones/";
+        const root = here === "phones" || here === "access" ? own : "/phones/";
         const r = await get(root + "info");
         let info = null;
         try { info = r && r.ok ? await r.json() : null; } catch { /* not the service */ }
@@ -121,7 +122,7 @@
           found.remote = { on: info.enabled === true, text: (info.reach && info.reach.text) || "" };
           return root;
         }
-        return here === "phones" ? own : r && r.status === 503 ? "off" : null;
+        return here === "phones" || here === "access" ? own : r && r.status === 503 ? "off" : null;
       })(),
     ]);
     if (config && typeof config === "object") {
@@ -135,6 +136,8 @@
     if (mapsRoot) found.maps = mapsRoot;
     if (builder) found.builder = builder;
     if (phones) found.phones = phones;
+    // Remote access is a page of the same service, beside Devices.
+    if (phones) found.access = phones === "off" ? "off" : phones + "remote.html";
     return found;
   }
 
