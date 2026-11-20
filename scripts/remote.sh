@@ -328,7 +328,7 @@ netbird-forget)
     $SUDO rm -rf "$NETBIRD_DIR"
     server netbird-forget
     echo "NetBird is removed from this server, and its setup key is deleted."
-    echo "To remove the server from the NetBird network too, delete fieldmap-box in the NetBird dashboard (Peers)."
+    echo "To remove the server from the NetBird network too, delete its peer (fieldmap-server-<id>, or fieldmap-box on older installs) in the NetBird dashboard (Peers)."
     ;;
 
 update-gateway)

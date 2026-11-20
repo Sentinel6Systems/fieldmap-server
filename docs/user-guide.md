@@ -298,9 +298,11 @@ other servers, their devices, or other machines in the account. It needs NetBird
 The server makes, in the NetBird account: two groups (`fieldmap-server-<id>` for the server,
 `fieldmap-devices-<id>` for its devices), one access policy (`fieldmap-<id>`: devices to the server, TCP, the
 gateway port only), and a setup key for its devices that puts every new device in the device group. Devices then
-get this key instead of the one you typed. Nobody sets anything up on the devices.
+get this key instead of the one you typed. Nobody sets anything up on the devices. Each server joins NetBird as
+`fieldmap-server-<id>`, so several servers can be told apart under **Peers**; a server that joined as
+`fieldmap-box` before is renamed when you set up isolation (a name you chose yourself is kept).
 
-1. **Create an access token.** In the NetBird dashboard, open **Team** › **Service Users**, create a service user
+1. **Create an access token.** In the NetBird dashboard, open **Users** › **Service Users**, create a service user
    named `fieldmap-setup` with the role **Admin**, then create an access token for it that expires in **1** day.
    Copy the token (it starts with `nbp_`). An Admin token can change the whole NetBird account, so the server uses
    it once and never stores it.
@@ -329,7 +331,7 @@ names the groups, policy and key to delete in the dashboard.
 
 **Stop using NetBird:** choose **Port Forwarding** under **Remote Connectivity Method**. The server keeps the key
 for later. To remove NetBird from the server completely, run `./scripts/remote.sh netbird-forget` and delete
-`fieldmap-box` under **Peers** in the dashboard.
+the server's peer (`fieldmap-server-<id>`) under **Peers** in the dashboard.
 
 **A lost device:** press **Remove** beside it on the Devices page, delete it under **Peers** in the NetBird
 dashboard, revoke the setup key, create a new one, and enter it on the Remote Access page with **Change Setup Key**

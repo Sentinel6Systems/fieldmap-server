@@ -202,6 +202,22 @@ def add_peers(api, group, peer_ids):
     return new
 
 
+OLD_NAMES = ("fieldmap-box",)     # what servers were called in NetBird before each had its own name
+
+
+def rename(api, peer, name):
+    """Gives the server's peer its own name. NetBird names a peer when it joins and keeps that name,
+    so a server that joined as "fieldmap-box" keeps it until renamed here. A name the owner chose in
+    the dashboard is left alone."""
+    now = str(peer.get("name", ""))
+    if now == name or not any(now == old or now.startswith(old + "-") for old in OLD_NAMES):
+        return
+    api.put("/peers/" + peer["id"], {"name": name, "ssh_enabled": bool(peer.get("ssh_enabled")),
+                                     "login_expiration_enabled": bool(peer.get("login_expiration_enabled")),
+                                     "inactivity_expiration_enabled": bool(peer.get("inactivity_expiration_enabled"))})
+    peer["name"] = name
+
+
 def server_peer(peers, address):
     """The server's own peer, found by its NetBird address (unique in an account)."""
     if not address:
@@ -231,6 +247,7 @@ def setup(record, management, token, address, port, devices, keep_key, transport
         record["step"] = "server peer"
         peers = api.get("/peers") or []
         me = server_peer(peers, address)
+        rename(api, me, n["server"])
         record["serverPeer"] = me["id"]
         record["serverAddress"] = address
         record["step"] = "groups"

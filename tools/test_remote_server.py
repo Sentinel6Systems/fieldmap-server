@@ -492,7 +492,12 @@ class RemoteServerTest(unittest.TestCase):
         self.assertEqual(self.KEY, open(self.rs.NETBIRD_KEY).read().strip())
         self.assertEqual(0o600, os.stat(self.rs.NETBIRD_KEY).st_mode & 0o777)
         self.assertEqual(0o700, os.stat(self.rs.NETBIRD_DIR).st_mode & 0o777)
-        self.assertEqual("NB_MANAGEMENT_URL=https://api.netbird.io:443\nFIELDMAP_NETBIRD=on\n", open(self.rs.NETBIRD_CLIENT).read())
+        client = open(self.rs.NETBIRD_CLIENT).read()
+        self.assertRegex(client, r"^NB_MANAGEMENT_URL=https://api.netbird.io:443\nFIELDMAP_NETBIRD=on\nFIELDMAP_NETBIRD_NAME=fieldmap-server-[0-9a-f]{10}\n$")
+        name = client.split("FIELDMAP_NETBIRD_NAME=")[1].strip()
+        self.post("/netbird", {"on": False})
+        self.assertIn("FIELDMAP_NETBIRD_NAME=%s\n" % name, open(self.rs.NETBIRD_CLIENT).read(), "the name stays the same")
+        self.post("/netbird", {"on": True})
         self.assertTrue(os.path.isfile(self.rs.NETBIRD_APPLY), "scripts/remote.sh netbird-apply is asked to start it")
         self.assertTrue(json.load(open(self.rs.SETTINGS))["netbird"], "the firewall opens the gateway on NetBird's interface")
         nb = done.body["netbird"]

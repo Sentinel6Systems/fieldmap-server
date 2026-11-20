@@ -911,6 +911,19 @@ def netbird_wanted():
     return enabled() and netbird_on()
 
 
+def install_id():
+    """This installation's id in NetBird, made once: the server's peer is named fieldmap-server-<id>,
+    and network isolation names its groups and policy after it. An id that network isolation
+    recorded already is kept."""
+    nb = load_netbird()
+    found = (nb.get("isolation") or {}).get("id") or nb.get("installId")
+    if not (isinstance(found, str) and re.fullmatch(r"[0-9a-f]{6,20}", found)):
+        found = isolation.new_id()
+    if nb.get("installId") != found:
+        save_netbird(installId=found)
+    return found
+
+
 def netbird_follow():
     """Tells the rest of the box what is wanted now: the firewall (through the settings file),
     and the container (through scripts/remote.sh netbird-apply)."""
@@ -922,8 +935,8 @@ def netbird_follow():
         return                      # never set up on this box: nothing to start or stop
     os.makedirs(NETBIRD_DIR, exist_ok=True)
     os.chmod(NETBIRD_DIR, 0o700)
-    write_private(NETBIRD_CLIENT, ("NB_MANAGEMENT_URL=%s\nFIELDMAP_NETBIRD=%s\n" % (
-        nb.get("management") or NETBIRD_CLOUD, "on" if wanted else "off")).encode())
+    write_private(NETBIRD_CLIENT, ("NB_MANAGEMENT_URL=%s\nFIELDMAP_NETBIRD=%s\nFIELDMAP_NETBIRD_NAME=%s\n" % (
+        nb.get("management") or NETBIRD_CLOUD, "on" if wanted else "off", isolation.names(install_id())["server"])).encode())
     write_private(NETBIRD_APPLY, secrets.token_hex(8).encode())    # a new name for this request
     os.chmod(NETBIRD_APPLY, 0o644)
 
@@ -1131,6 +1144,7 @@ def run_isolation(action, token):
             if action == "check":
                 isolation.check(record, management, token, gateway_port(), device_addresses())
             else:
+                record.setdefault("id", install_id())
                 isolation.setup(record, management, token, address, gateway_port(), device_addresses(), keep_device_key,
                                 new_key=action == "replace-key" or not netbird_key())
         except isolation.IsolationError as e:
@@ -1553,7 +1567,7 @@ def main():
         else:
             sys.exit(f"No device with the id {args.id}. See: remote-server.py devices")
     elif args.command == "netbird-forget":
-        install_id = load_isolation().get("id", "")
+        managed = load_isolation().get("id", "")
         for path in (NETBIRD, NETBIRD_KEY, NETBIRD_CLIENT):
             try:
                 os.unlink(path)
@@ -1561,8 +1575,8 @@ def main():
                 pass
         # Without NetBird, the router's port is the way in again.
         save_settings(netbird=False, way="direct")
-        if install_id:
-            n = isolation.names(install_id)
+        if managed:
+            n = isolation.names(managed)
             print("NetBird is forgotten on this server. Network isolation was set up: delete the groups %s and %s, the "
                   "policy %s and the setup key %s in the NetBird dashboard." % (n["server"], n["devices"], n["policy"], n["key"]))
     elif args.command == "router":

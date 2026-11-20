@@ -12,7 +12,8 @@
 #   /fieldmap/key-check     "checked": the box joined with this setup key, so the key works;
 #                           "unchecked": the box was a member already and NetBird did not look at
 #                           the new key (a member that has its own identity does not need one)
-# It reads /fieldmap/client.env (the management server) and /fieldmap/setup-key.
+# It reads /fieldmap/client.env (the management server and the server's name in NetBird) and
+# /fieldmap/setup-key.
 #
 # The client is kept to the one thing the box needs, reaching and being reached at the gateway:
 #   --interface-name nb-fieldmap   its own interface name; scripts/firewall.sh lets in the
@@ -26,7 +27,10 @@
 # NetBird's SSH server and remote jobs are off unless asked for, and nothing here asks.
 set -u
 DIR=/fieldmap
-NAME="${FIELDMAP_NETBIRD_NAME:-fieldmap-box}"
+# The server's name in NetBird: fieldmap-server-<id>, unique for each installation, so that several
+# servers in one NetBird account can be told apart (tools/remote-server.py install_id()).
+NAME="$(grep -m1 '^FIELDMAP_NETBIRD_NAME=' "$DIR/client.env" 2>/dev/null | cut -d= -f2-)"
+[[ "$NAME" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || NAME="${FIELDMAP_NETBIRD_NAME:-fieldmap-box}"
 INTERFACE="${FIELDMAP_NETBIRD_INTERFACE:-nb-fieldmap}"
 EVERY=5
 

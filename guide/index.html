@@ -361,9 +361,10 @@
       segment of their own: devices reach only this server's gateway port, and nothing of other servers, their
       devices, or other computers in the account. The server makes two groups (<b>fieldmap-server-&lt;id&gt;</b>,
       <b>fieldmap-devices-&lt;id&gt;</b>), one access policy (<b>fieldmap-&lt;id&gt;</b>) and a setup key for its
-      devices. Nothing is set up on the devices.</p>
+      devices. Nothing is set up on the devices. Under <b>Peers</b>, each server is named
+      <b>fieldmap-server-&lt;id&gt;</b>; one that joined as <b>fieldmap-box</b> is renamed at setup.</p>
     <ol>
-      <li>In the NetBird dashboard, open <b>Team</b>, <b>Service Users</b>. Create a service user named
+      <li>In the NetBird dashboard, open <b>Users</b>, <b>Service Users</b>. Create a service user named
         <b>fieldmap-setup</b> with the role <b>Admin</b>, and an access token for it that expires in <b>1</b> day.
         Copy the token (it starts with <b>nbp_</b>).</li>
       <li>On the Remote Access page, in the NetBird VPN card, paste it into <b>NetBird Access Token</b> and press

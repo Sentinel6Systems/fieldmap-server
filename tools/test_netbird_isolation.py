@@ -116,6 +116,11 @@ class FakeNetBird:
             return 200, {"id": "u1", "role": self.role}
         if parts == ["accounts"]:
             return 200, [{"id": "acc", "settings": self.settings}]
+        if parts[0] == "peers" and method == "PUT":
+            if set(data) != {"name", "ssh_enabled", "login_expiration_enabled", "inactivity_expiration_enabled"}:
+                return 400, {"message": "bad request"}
+            self.peers[parts[1]]["name"] = data["name"]
+            return 200, self.peers[parts[1]]
         if parts == ["peers"]:
             return 200, [{**p, "groups": [{"id": g, "name": self.groups[g]["name"]} for g in self.groups_of(p["id"])]}
                          for p in self.peers.values()]
@@ -358,6 +363,7 @@ class IsolationTest(unittest.TestCase):
         for method, path in steps:
             with self.subTest(call=(method, path)):
                 self.nb.fail = (method, path)
+                self.nb.peers[self.a.peer["id"]]["name"] = "fieldmap-box"     # so that the rename is a step too
                 record = {}
                 with self.assertRaises(iso.IsolationError):
                     iso.setup(record, MANAGEMENT, TOKEN, self.a.peer["ip"], PORT, self.a.devices, lambda k: None,
@@ -402,6 +408,21 @@ class IsolationTest(unittest.TestCase):
                 s.setup()
         self.assertIn("not created by this server", str(e.exception))
         self.assertEqual([], nb.groups["g-x"]["peers"])
+
+    def test_each_server_gets_its_own_name_in_netbird(self):
+        # Both joined as "fieldmap-box" before (NetBird made the second one "fieldmap-box-100-44" or the like).
+        self.assertEqual("fieldmap-server-" + self.a.record["id"], self.nb.peers[self.a.peer["id"]]["name"])
+        self.assertEqual("fieldmap-server-" + self.b.record["id"], self.nb.peers[self.b.peer["id"]]["name"])
+        nb = FakeNetBird()
+        older = Server(nb, "fieldmap-box-100-44")
+        mine = Server(nb, "Barn server")                  # a name the owner chose in the dashboard
+        older.setup()
+        mine.setup()
+        self.assertEqual("fieldmap-server-" + older.record["id"], nb.peers[older.peer["id"]]["name"])
+        self.assertEqual("Barn server", nb.peers[mine.peer["id"]]["name"])
+        nb.calls.clear()
+        older.setup()
+        self.assertNotIn("PUT", [m for m, p in nb.calls if p.startswith("/peers")], "renamed once")
 
     def test_the_server_must_be_a_member_of_this_account(self):
         nb = FakeNetBird()
