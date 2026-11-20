@@ -130,6 +130,13 @@ last_nb_address = {}            # device id -> the NetBird address it last came 
 isolation_lock = threading.Lock()
 
 
+def stamp(seconds):
+    """A moment for a text a person reads: as the server's clock writes it ("atText", for the app and
+    the command line), and the moment itself ("at"), so that the page can show it in the browser's
+    own time zone in place of atText."""
+    return {"at": int(seconds), "atText": time.strftime("%Y-%m-%d %H:%M", time.localtime(seconds))}
+
+
 def openssl(*args, stdin=None):
     """Runs openssl and returns what it printed; raises ValueError with its complaint."""
     done = subprocess.run(["openssl", *args], input=stdin, capture_output=True)
@@ -418,7 +425,7 @@ def enrol(name, public_key_pem):
             request = openssl("req", "-new", "-key", key, "-subj", "/CN=" + random_name())
         cert = sign(request, DEVICE_DAYS, "extendedKeyUsage=clientAuth\nbasicConstraints=CA:FALSE\n", public_key=public_key)
         sha1, sha256 = fingerprints(cert)
-        device = {"id": device_id, "name": clean_name(name), "added": datetime.date.today().isoformat(),
+        device = {"id": device_id, "name": clean_name(name), "added": datetime.date.today().isoformat(), "addedAt": int(time.time()),
                   "key": key_id, "sha1": sha1, "sha256": sha256, "certificate": cert.decode()}
         devices.append(device)
         save_devices(devices)
@@ -816,7 +823,9 @@ def report():
         # The way changed back a moment ago: the router is being asked now.
         return {"status": "unknown", "text": "Retrying port mapping…", "checked": 0}
     if newest_seen and time.time() - newest_seen < 7 * 86400:
-        status, text = "confirmed", "Last remote connection via port forwarding: %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(newest_seen))
+        at = stamp(newest_seen)
+        return {"status": "confirmed", "text": "Last remote connection via port forwarding: %s." % at["atText"], **at,
+                "checked": state.get("checked", 0)}
     elif forwarding()["manual"] and not forwarding()["address"]:
         status, text = "blocked", "Forward the port on the router, then enter the public IP address below."
     elif forwarding()["manual"]:
@@ -1072,7 +1081,9 @@ def netbird_report():
             text += (" The new setup key was not verified because the server was already a NetBird peer."
                      " Make sure it shows as valid in the NetBird dashboard; newly paired devices need a valid key.")
         if out["seen"] and time.time() - out["seen"] < 7 * 86400:
-            text += " Last remote connection via NetBird: %s." % time.strftime("%Y-%m-%d %H:%M", time.localtime(out["seen"]))
+            at = stamp(out["seen"])
+            out.update(at)
+            text += " Last remote connection via NetBird: %s." % at["atText"]
         else:
             text += " No recent remote connection."
         return {**out, "status": "connected", "text": text}
@@ -1322,7 +1333,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, self.info())
         elif self.path == "/devices":
             pending = dict(last_seen)
-            self.send(200, {"devices": [{"id": d["id"], "name": d["name"], "added": d.get("added", ""),
+            self.send(200, {"devices": [{"id": d["id"], "name": d["name"], "added": d.get("added", ""), "addedAt": d.get("addedAt", 0),
                                          "seen": pending.get(d["id"], d.get("seen", 0))} for d in load_devices()]})
         else:
             self.send(404, {"error": "Not found."})

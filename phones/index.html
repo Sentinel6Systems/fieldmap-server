@@ -269,6 +269,8 @@
       return data;
     });
   const when = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "Never";
+  // A server text with a moment in it: the server's clock wrote it (atText); show it in this browser's time.
+  const local = (r) => r.at && r.atText ? r.text.replace(r.atText, when(r.at)) : r.text;
   const ago = (seconds) => seconds < 60 ? `${seconds} seconds ago` : `${Math.floor(seconds / 60)} minutes ago`;
   const SHARE = "../mapshare/admin";    // the sharing service, beside this page on the box's web server
   let busy = false;
@@ -351,7 +353,7 @@
     $("auto-off").checked = info.autoOff.on;
     $("auto-off-text").textContent = `Auto-disable after ${info.autoOff.days} days without a remote connection` +
       (info.autoOff.at ? ` (next: ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })})` : "");
-    $("reach").textContent = viaNetbird ? nb.text : info.reach.text;
+    $("reach").textContent = local(viaNetbird ? nb : info.reach);
     $("reach").className = "reach " + (viaNetbird ? nb.status : info.reach.status);
     $("addresses").textContent = on && info.endpoints.length
       ? "Public endpoints: " + info.endpoints.map((e) => e.host + ":" + e.port).join(", ") : "";
@@ -373,7 +375,7 @@
     $("iso-box").hidden = !viaNetbird || !(nb.status === "connected" || iso.managed);
     $("nb-key-field").hidden = iso.managed;
     if (iso.managed) $("nb-change-row").hidden = true;
-    $("iso-state").textContent = iso.text;
+    $("iso-state").textContent = local(iso);
     $("iso-state").className = "reach " + iso.status;
     $("iso-facts").hidden = !iso.managed;
     $("iso-id").textContent = iso.id;
@@ -399,7 +401,8 @@
       row.className = "phone";
       row.innerHTML = "<div><b></b><small></small></div><button type=\"button\" class=\"danger\">Remove</button>";
       row.querySelector("b").textContent = d.name;
-      row.querySelector("small").textContent = `Paired: ${d.added} · Last remote connection: ${when(d.seen)}`;
+      const paired = d.addedAt ? new Date(d.addedAt * 1000).toLocaleDateString([], { dateStyle: "medium" }) : d.added;
+      row.querySelector("small").textContent = `Paired: ${paired} · Last remote connection: ${when(d.seen)}`;
       row.querySelector("button").onclick = () => {
         if (confirm(`Remove ${d.name}? It can no longer connect remotely until it is paired again.`)) act("remove", { id: d.id });
       };

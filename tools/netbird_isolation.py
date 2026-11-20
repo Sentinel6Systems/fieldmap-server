@@ -434,8 +434,8 @@ def _check(api, record, port, devices, now):
                         "(Setup Keys, name %s), or run Set Up Network Isolation again." % n["key"])
     key = record.get("deviceKey") or {}
     if key.get("expires") and key["expires"] - now < KEY_WARN_DAYS * 86400:
-        warnings.append("The device setup key expires on %s. Devices that are paired already keep working; to pair new "
-                        "ones after that, click Replace Device Key." % time.strftime("%Y-%m-%d", time.localtime(key["expires"])))
+        warnings.append("The device setup key expires soon (see Device Key Expires). Devices that are paired already "
+                        "keep working; to pair new ones after that, click Replace Device Key.")
     record.update(lastCheck=now, checkOk=not problems, problems=problems, warnings=warnings,
                   deviceCount=len(device_members), checkPort=port, checkAddress=record.get("serverAddress"))
 
@@ -468,8 +468,9 @@ def status(record, port, address, now=None):
     if now - record["lastCheck"] > CHECK_DAYS * 86400:
         return {**out, "status": "stale", "text": "Not Recently Verified: the last check is more than %d days old. Click "
                 "Check Isolation." % CHECK_DAYS}
-    return {**out, "status": "verified", "text": "Verified by policy check on %s. This is a check of NetBird's access "
-            "policies, not a traffic test." % time.strftime("%Y-%m-%d %H:%M", time.localtime(record["lastCheck"]))}
+    at = {"at": record["lastCheck"], "atText": time.strftime("%Y-%m-%d %H:%M", time.localtime(record["lastCheck"]))}
+    return {**out, **at, "status": "verified", "text": "Verified by policy check on %s. This is a check of NetBird's "
+            "access policies, not a traffic test." % at["atText"]}
 
 
 def valid_address(text):

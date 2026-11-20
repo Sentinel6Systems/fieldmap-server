@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 from unittest import mock
@@ -343,6 +344,9 @@ class IsolationTest(unittest.TestCase):
         self.assertIn(removed["name"], text)
         self.assertIn("Peer approval", text)
         self.assertEqual("verified", iso.status(self.a.record, PORT, self.a.peer["ip"])["status"])
+        st = iso.status(self.a.record, PORT, self.a.peer["ip"])
+        self.assertEqual(self.a.record["lastCheck"], st["at"], "the moment, for the page to show in the browser's time")
+        self.assertIn(st["atText"], st["text"])
         late = iso.status(self.a.record, PORT, self.a.peer["ip"], now=self.a.record["lastCheck"] + (iso.CHECK_DAYS + 1) * 86400)
         self.assertEqual("stale", late["status"])
         self.a.record["deviceKey"]["expires"] = self.a.record["lastCheck"] + 86400
@@ -533,6 +537,10 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(("open", True), (iso_info["status"], iso_info["managed"]), "Default policy still on")
         # The token: in no file, no answer, no log line; the key: in its own file only.
         self.assertNotIn(TOKEN, self.every_file())
+        listed = self.get("/devices").body["devices"][0]
+        self.assertAlmostEqual(time.time(), listed["addedAt"], delta=60, msg="the pairing moment, for the browser's date")
+        nb = self.get("/info").body["netbird"]
+        self.assertIn(nb["atText"], nb["text"], "the NetBird line's moment can be shown in the browser's time")
         self.assertNotIn(TOKEN, json.dumps(done.body) + out.getvalue())
         self.assertNotIn(key, json.dumps(self.get("/info").body) + out.getvalue())
         self.assertEqual(0o600, os.stat(self.rs.NETBIRD_KEY).st_mode & 0o777)
