@@ -105,4 +105,40 @@ export function personImage(fill, ratio = 1) {
   diamond(c - 6 * ratio, fill);
   return g.getImageData(0, 0, size, size);
 }
-export const PERSON_COLORS = { "live-person": "#00b4d8", "live-person-old": "#8a8f8a" };
+// Live, gone quiet, and this browser's own location (placed by hand).
+export const PERSON_COLORS = { "live-person": "#00b4d8", "live-person-old": "#8a8f8a", "live-me": "#7a9a2e" };
+
+/* ---------- this map's markers and arrows <-> shared features ---------- */
+// A shared marker or arrow is kept in the map's own lists (main.js) with shared: true, so that
+// it is drawn, moved, renamed, colored and printed like any other; these turn one into the
+// other. The form is the app's (Drawings.feature with sharing): the server keeps "by" (the id
+// of whoever changed it last) and "updated".
+
+/** A shared feature as an item of the map's lists ({ id, lng, lat } or { id, a, b }), or null
+ *  for what the lists do not hold (routes, areas). */
+export function itemFromFeature(f) {
+  const d = describe(f);
+  if (!d || (d.kind !== "marker" && d.kind !== "arrow")) return null;
+  const p = f.properties || {};
+  const common = { id: String(f.id), label: d.label, color: d.color, shared: true, by: typeof p.by === "string" ? p.by : "", updated: typeof p.updated === "string" ? p.updated : "" };
+  const [first, second] = d.points;
+  return d.kind === "marker"
+    ? { kind: "marker", item: { ...common, lng: first[0], lat: first[1] } }
+    : { kind: "arrow", item: { ...common, a: { lng: first[0], lat: first[1] }, b: { lng: second[0], lat: second[1] } } };
+}
+
+/** An item of the map's lists as the feature PUT to /mapshare/markers/<id>. */
+export function featureFromItem(it, kind, by, now = new Date()) {
+  const label = String(it.label || "").slice(0, 30);
+  const geometry = kind === "marker"
+    ? { type: "Point", coordinates: [it.lng, it.lat] }
+    : { type: "LineString", coordinates: [[it.a.lng, it.a.lat], [it.b.lng, it.b.lat]] };
+  return { type: "Feature", id: it.id, geometry, properties: {
+    name: label, stroke: it.color, "marker-color": it.color,
+    fieldmap: { kind, label, color: it.color, id: it.id, shared: true },
+    by, updated: now.toISOString().replace(/\.\d+Z$/, "Z"),
+  } };
+}
+
+/** What of an item the server holds: a change to any of it is sent. */
+export const itemKey = (it) => JSON.stringify([it.lng, it.lat, it.a, it.b, it.label, it.color]);

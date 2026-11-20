@@ -3,9 +3,11 @@
 // map reads them the way the app does: it asks every few seconds (the server's "interval"),
 // only while the page is in view; a page out of view looks for new messages once a minute.
 //
-// The browser takes part like a device without a location: it has an id of its own (made once,
-// kept in this browser), reads the messages to it and to the group, and tells the server which
-// ones it got, so that their senders see them delivered. Nothing here needs a sign-in: the
+// The browser takes part like a device: it has an id of its own (made once, kept in this
+// browser), reads the messages to it and to the group, tells the server which ones it got (so
+// that their senders see them delivered), and sends its own under a Display Name. A computer
+// has no GPS: its person may place themselves on the map by hand, and that location is then
+// shared like a device's, at the same pace, until they stop or the page is closed. Nothing here needs a sign-in: the
 // sharing service answers callers on the server's own network, while Location Sharing is
 // enabled on the Devices page.
 
@@ -58,15 +60,40 @@ export function mergeMessages(store, answer, me) {
   return { list: list.slice(-KEEP_MESSAGES), seq: typeof answer.seq === "number" ? answer.seq : store.seq, received };
 }
 
+export const MAX_MESSAGE = 140;      // characters, as the server and the app take them
+export const MAX_NAME = 24;
+
+/** Typed text as it is sent: one line, no control characters, at most `max` characters. */
+export function cleanText(typed, max = MAX_MESSAGE) {
+  return String(typed || "").replace(/\s+/g, " ").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, "").trim().slice(0, max);
+}
+
+/** A message id as the app makes them: "m", the time and a random part, in base 36. */
+export function newMessageId(now = Date.now(), random = Math.random) {
+  return "m" + now.toString(36) + Math.floor(random() * 2 ** 40).toString(36).padStart(8, "0");
+}
+
+/** What a message shows: Received (Server); for its own, Waiting, Not Sent (the server refused it),
+ *  Sent (Server), Delivered, or Sent (Server) · Delivered to N for the group. */
+export function statusText(m) {
+  if (!m.mine) return "Received (Server)";
+  if (m.status === "waiting") return "Waiting";
+  if (m.status === "failed") return "Not Sent";
+  if (m.to !== "*") return m.status === "delivered" ? "Delivered" : "Sent (Server)";
+  const n = (m.deliveredTo || []).length;
+  return n ? `Sent (Server) · Delivered to ${n}` : "Sent (Server)";
+}
+
 /** Who a message is with: "*" for the group, else the other person's id. */
 export const partnerOf = (m, me) => (m.to === "*" ? "*" : m.from === me ? m.to : m.from);
 
-/** The conversations, newest first: the group always first, then each person. */
-export function conversations(list, me) {
+/** The conversations, newest first: the group always first, then each person. nameOf(uid):
+ *  a person's name for a conversation that has only this browser's messages so far. */
+export function conversations(list, me, nameOf = (uid) => uid) {
   const by = new Map([["*", { partner: "*", name: "Group (Private)", last: null, unread: 0 }]]);
   for (const m of list) {
     const p = partnerOf(m, me);
-    const c = by.get(p) || { partner: p, name: m.mine ? p : m.name, last: null, unread: 0 };
+    const c = by.get(p) || { partner: p, name: m.mine ? nameOf(p) : m.name, last: null, unread: 0 };
     if (!m.mine && p !== "*") c.name = m.name;
     c.last = m;
     if (!m.mine && !m.read) c.unread++;
@@ -124,7 +151,8 @@ export function startLive(onChange) {
     messages: stored(KEYS.messages, { list: [], seq: null }),
   };
   if (!Array.isArray(live.messages.list)) live.messages = { list: [], seq: null };
-  let timer = null, infoAt = 0, messagesAt = 0, busy = false;
+  let timer = null, infoAt = 0, messagesAt = 0, busy = false, placedAt = 0;
+  live.location = null;               // { lat, lon, name } placed by hand, or null
 
   const visible = () => document.visibilityState !== "hidden";
   const get = async (path) => {
@@ -170,6 +198,10 @@ export function startLive(onChange) {
       changed = set("on") || changed;
     }
     const interval = Math.max(2, Math.min(600, +live.info.interval || 5));
+    // The location placed by hand, every interval in view; out of view often enough that the
+    // server does not drop it (browsers run a hidden page's timers about once a minute).
+    const stale = Math.max(2 * interval, +live.info.stale || 120);
+    if (live.location && (visible() || now - placedAt >= Math.min(HIDDEN_EVERY, stale / 2) - 1)) await place();
     if (!visible()) {
       if (now - messagesAt >= HIDDEN_EVERY) changed = (await messages()) || changed;
       if (changed) onChange(live);
@@ -182,8 +214,30 @@ export function startLive(onChange) {
     else if (r.code === 429) { if (changed) onChange(live); return Math.max(10, 2 * interval); }
     else changed = set("offline", "The sharing service is not responding.") || changed;
     if (live.info.messages) changed = (await messages()) || changed;
+    changed = (await sendWaiting()) || changed;
     if (changed) onChange(live);
     return interval;
+  }
+
+  /** Posts the location placed by hand. */
+  async function place() {
+    const l = live.location;
+    if (!l) return;
+    placedAt = Date.now() / 1000;
+    await post("position", { uid: live.uid, name: l.name, lat: l.lat, lon: l.lon, time: new Date().toISOString().replace(/\.\d+Z$/, "Z") });
+  }
+
+  /** Sends what waits (the server keeps a message once, by its id). True when one went out. */
+  async function sendWaiting() {
+    let sent = false;
+    for (const m of live.messages.list.filter((x) => x.mine && x.status === "waiting")) {
+      const code = await post("messages", { id: m.id, from: m.from, name: m.name, to: m.to, text: m.text, time: m.time });
+      if (code === 200) { m.status = "sent"; sent = true; }
+      else if (code === 400 || code === 413) { m.status = "failed"; sent = true; }
+      else break;                     // not now: tried again on the next round
+    }
+    if (sent) keep(KEYS.messages, live.messages);
+    return sent;
   }
 
   /** New messages; the server is told which ones arrived. True when something changed. */
@@ -217,8 +271,32 @@ export function startLive(onChange) {
     for (const m of live.messages.list) if (!m.mine && !m.read && partnerOf(m, live.uid) === partner) { m.read = true; changed = true; }
     if (changed) { keep(KEYS.messages, live.messages); onChange(live); }
   };
+  /** A message from this browser to a person (their uid) or to the group ("*"). */
+  live.send = (to, typed, name) => {
+    const text = cleanText(typed);
+    if (!text) return null;
+    const m = { id: newMessageId(), from: live.uid, name: cleanText(name, MAX_NAME), to, text,
+      time: new Date().toISOString().replace(/\.\d+Z$/, "Z"), mine: true, read: true, status: "waiting" };
+    live.messages.list.push(m);
+    keep(KEYS.messages, live.messages);
+    onChange(live);
+    if (live.status === "on" && !busy) sendWaiting().then((sent) => sent && onChange(live));
+    return m;
+  };
+  /** Shares a location placed by hand under a name (both checked by the caller), or stops (null). */
+  live.setLocation = (ll, name) => {
+    const was = live.location;
+    live.location = ll ? { lat: ll.lat, lon: ll.lon, name: cleanText(name, MAX_NAME) } : null;
+    if (live.status !== "on") return;
+    if (live.location) place();
+    else if (was) post("leave", { uid: live.uid });
+  };
   live.refresh = loop;
   document.addEventListener("visibilitychange", () => { if (visible()) loop(); });
+  // The page closes: the location goes at once, not after the server's stale time.
+  addEventListener("pagehide", () => {
+    if (live.location && live.status === "on") navigator.sendBeacon(BASE + "leave", new Blob([JSON.stringify({ uid: live.uid })], { type: "application/json" }));
+  });
   loop();
   return live;
 }

@@ -70,16 +70,11 @@
   </section>
 
   <section id="tab-markers" class="tab features" role="tabpanel" hidden>
-    <div id="shared-section" hidden>
-      <div class="section-head"><h2>Shared Markers</h2><span id="shared-count" class="hint"></span></div>
-      <div id="shared-list"></div>
-    </div>
-
     <div class="section-head">
       <h2>Markers &amp; Drawings</h2>
       <button id="clear-all" class="secondary danger compact" title="Clear all markers, arrows and shapes in this browser">Clear All</button>
     </div>
-    <div class="hint">Add them with the tool bar on the map. They are kept in this browser.</div>
+    <div class="hint">Add them with the tool bar on the map. Shared ones are kept on the server for all devices; the others in this browser.</div>
     <label class="inline">Units
       <select id="units">
         <option value="imperial">Imperial (ft, mi, acres)</option>
@@ -92,6 +87,8 @@
     <div id="marker-list"></div>
     <h3>Arrows</h3>
     <div id="arrow-list"></div>
+    <h3 id="routes-head" hidden>Routes</h3>
+    <div id="route-list"></div>
     <h3>Shapes</h3>
     <div id="shape-list"></div>
     <div class="row2 file-buttons">
@@ -99,7 +96,7 @@
       <button id="load-drawings" class="secondary" title="Add the markers, arrows and shapes from a saved file to the map.">Import Drawings</button>
     </div>
     <input id="load-file" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
-    <div id="file-hint" class="hint">Drawings are saved in this browser only. Export them to keep a copy or to use them in another browser.</div>
+    <div id="file-hint" class="hint">Export makes a file of them to keep a copy or to use in another browser. Imported items are not shared until you share them.</div>
     <label class="check">
       <input id="shape-measure" type="checkbox">
       <span>Show Measurements</span>
@@ -108,13 +105,35 @@
 
   <section id="tab-messages" class="tab" role="tabpanel" hidden>
     <div id="messages-status" class="hint"></div>
-    <div id="conversations"></div>
+    <label>Display Name
+      <input id="display-name" type="text" maxlength="24" placeholder="Your name on the map and in messages">
+    </label>
+    <div id="name-hint" class="hint error"></div>
+    <div id="my-location" class="my-location" hidden>
+      <span id="my-location-text"></span>
+      <button id="my-location-stop" class="secondary compact" hidden>Stop Sharing</button>
+    </div>
+    <div id="conversations-view">
+      <div id="conversations"></div>
+      <button id="new-message" class="secondary">New Message</button>
+    </div>
+    <div id="pick-view" hidden>
+      <div class="section-head">
+        <button id="pick-back" class="icon" title="Back to Messages">‹</button>
+        <h2>New Message</h2>
+      </div>
+      <div id="pick-list"></div>
+    </div>
     <div id="conversation" hidden>
       <div class="section-head">
         <button id="conversation-back" class="icon" title="Back to Messages">‹</button>
         <h2 id="conversation-title"></h2>
       </div>
       <div id="conversation-list" class="conversation"></div>
+      <div class="composer">
+        <input id="message-text" type="text" maxlength="140" placeholder="Message" aria-label="Message" autocomplete="off">
+        <button id="message-send" class="primary">Send</button>
+      </div>
     </div>
   </section>
 

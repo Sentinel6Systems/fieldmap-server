@@ -1,8 +1,8 @@
 // Unit tests for reading what the devices share (src/live.js, src/shared.js). Run: npm test.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeState, mergeMessages, conversations, partnerOf, ageLook, ageText, newUid } from "../src/live.js";
-import { describe, sharedFC, peopleFC, kindText } from "../src/shared.js";
+import { mergeState, mergeMessages, conversations, partnerOf, ageLook, ageText, newUid, cleanText, newMessageId, statusText } from "../src/live.js";
+import { describe, sharedFC, peopleFC, kindText, itemFromFeature, featureFromItem, itemKey } from "../src/shared.js";
 
 const ME = "web-0011223344556677";
 const point = (id, lon, lat, extra = {}) => ({ type: "Feature", id, geometry: { type: "Point", coordinates: [lon, lat] },
@@ -99,4 +99,41 @@ test("device locations: live, then gray, then gone", () => {
     { uid: "test-phone-0003", name: "Charlie", lat: 45, lon: 10.2, age: 118 },
   ], 5, 120, 5);
   assert.deepEqual(fc.features.map((f) => [f.properties.name, f.properties.icon]), [["Alpha", "live-person"], ["Bravo", "live-person-old"]]);
+});
+
+test("sending: text cleaned as the server takes it, ids as the app makes them, the status words", () => {
+  assert.equal(cleanText("  two\nlines\t here  "), "two lines here");
+  assert.equal(cleanText("x".repeat(200)).length, 140);
+  assert.equal(cleanText("abc\u202edef"), "abcdef", "no marks that turn the text around");
+  assert.equal(cleanText("a very long display name here", 24), "a very long display name");
+  const id = newMessageId(1700000000000, () => 0.5);
+  assert.match(id, /^[A-Za-z0-9-]{8,64}$/);
+  assert.equal(statusText({ mine: false }), "Received (Server)");
+  assert.equal(statusText({ mine: true, to: "*", status: "waiting" }), "Waiting");
+  assert.equal(statusText({ mine: true, to: "test-phone-0001", status: "sent" }), "Sent (Server)");
+  assert.equal(statusText({ mine: true, to: "test-phone-0001", status: "delivered" }), "Delivered");
+  assert.equal(statusText({ mine: true, to: "*", status: "sent", deliveredTo: ["test-phone-0001", "test-phone-0002"] }), "Sent (Server) · Delivered to 2");
+  assert.equal(statusText({ mine: true, to: "*", status: "failed" }), "Not Sent");
+});
+
+test("a conversation started here is named after the person", () => {
+  const list = [{ id: "e", from: ME, name: "Desk", to: "test-phone-0002", text: "hi", time: "2026-01-31T12:00:00Z", mine: true }];
+  assert.equal(conversations(list, ME, (uid) => (uid === "test-phone-0002" ? "Bravo" : uid))[1].name, "Bravo");
+});
+
+test("a marker and an arrow go to the server and come back the same", () => {
+  const marker = { id: "lq3k2x9abc", lng: 10.5, lat: 45.25, label: "P1", color: "#d7263d", shared: true };
+  const arrow = { id: "lq3k2y0def", a: { lng: 10, lat: 45 }, b: { lng: 10.01, lat: 45.01 }, label: "A1", color: "#1f5fa8", shared: true };
+  const fm = featureFromItem(marker, "marker", ME, new Date("2026-01-31T12:00:00.123Z"));
+  assert.equal(fm.properties.updated, "2026-01-31T12:00:00Z");
+  assert.equal(fm.properties.by, ME);
+  assert.deepEqual(fm.properties.fieldmap, { kind: "marker", label: "P1", color: "#d7263d", id: "lq3k2x9abc", shared: true });
+  const back = itemFromFeature(fm);
+  assert.equal(back.kind, "marker");
+  assert.equal(itemKey(back.item), itemKey(marker));
+  const fa = featureFromItem(arrow, "arrow", ME);
+  assert.deepEqual(fa.geometry, { type: "LineString", coordinates: [[10, 45], [10.01, 45.01]] });
+  assert.equal(itemKey(itemFromFeature(fa).item), itemKey(arrow));
+  const route = { type: "Feature", id: "route-0001", geometry: { type: "LineString", coordinates: [[10, 45], [10.1, 45], [10.2, 45]] }, properties: { fieldmap: { kind: "route" } } };
+  assert.equal(itemFromFeature(route), null, "routes stay with the live layer");
 });
