@@ -74,6 +74,7 @@ class ShareServerTest(unittest.TestCase):
         self.ss = load(self.tmp.name)
         self.ss.load_settings()
         self.ss.load_markers()
+        self.ss.load_messages()
         self.time = 1000.0
         self.clock = mock.patch.object(self.ss, "clock", side_effect=lambda: self.time)
         self.clock.start()
@@ -215,6 +216,65 @@ class ShareServerTest(unittest.TestCase):
             f.write('{"name": "FM-000000", "psk": "c2hvcnQ=", "rev": "x", "made": 1}')
         self.ss.mesh = {}
         self.assertEqual(32, len(base64.b64decode(self.ask("GET", "/mesh").body["psk"])))
+
+    # ---------- messages ----------
+
+    def message(self, **changes):
+        return {"id": "test-msg-0001", "from": UID, "name": "Blue", "to": "test-phone-0002", "text": "Meet at the gate", "time": "2026-01-31T12:00:00Z", **changes}
+
+    def test_a_message_waits_for_its_device_and_its_sender_learns_it_was_delivered(self):
+        r = self.ask("POST", "/messages", self.message())
+        self.assertEqual(200, r.status)
+        seq = r.body["seq"]
+        mine = self.ask("GET", "/messages?for=" + UID).body
+        self.assertEqual([], mine["messages"], "not to the sender itself")
+        self.assertEqual([], mine["delivered"])
+        theirs = self.ask("GET", "/messages?for=test-phone-0002", headers=OUTSIDE).body
+        self.assertEqual(["test-msg-0001"], [m["id"] for m in theirs["messages"]])
+        self.assertEqual({"seq", "id", "from", "name", "to", "text", "time"}, set(theirs["messages"][0]))
+        self.assertEqual([], self.ask("GET", "/messages?for=test-phone-0002&since=%d" % seq).body["messages"], "nothing new after it")
+        self.assertEqual([], self.ask("GET", "/messages?for=test-phone-0003").body["messages"], "not to anybody else")
+        self.assertEqual(204, self.ask("POST", "/messages/delivered", {"ids": ["test-msg-0001"], "by": "test-phone-0002"}).status)
+        self.assertEqual([], self.ask("GET", "/messages?for=test-phone-0002").body["messages"], "done with")
+        self.assertEqual(["test-msg-0001"], self.ask("GET", "/messages?for=" + UID).body["delivered"])
+
+    def test_a_message_to_everybody_reaches_all_but_its_sender_and_the_same_one_twice_is_kept_once(self):
+        first = self.ask("POST", "/messages", self.message(to="*")).body["seq"]
+        self.assertEqual(first, self.ask("POST", "/messages", self.message(to="*")).body["seq"])
+        for uid in ("test-phone-0002", "test-phone-0003"):
+            self.assertEqual(1, len(self.ask("GET", "/messages?for=" + uid).body["messages"]))
+        self.assertEqual(0, len(self.ask("GET", "/messages?for=" + UID).body["messages"]))
+        # A delivery receipt is only for a message to that one device.
+        self.ask("POST", "/messages/delivered", {"ids": ["test-msg-0001"], "by": "test-phone-0002"})
+        self.assertEqual(1, len(self.ask("GET", "/messages?for=test-phone-0003").body["messages"]))
+
+    def test_a_relay_asks_for_several_devices(self):
+        self.ask("POST", "/messages", self.message(id="test-msg-0001", to="test-phone-0002"))
+        self.ask("POST", "/messages", self.message(id="test-msg-0002", to="test-phone-0003"))
+        both = self.ask("GET", "/messages?for=test-phone-0002,test-phone-0003").body["messages"]
+        self.assertEqual(["test-msg-0001", "test-msg-0002"], [m["id"] for m in both])
+        self.assertEqual(400, self.ask("GET", "/messages?for=" + ",".join("test-phone-%04d" % i for i in range(9))).status)
+
+    def test_messages_are_kept_on_the_disk_for_a_week_and_never_in_the_log(self):
+        self.ask("POST", "/messages", self.message())
+        self.assertEqual(0o600, os.stat(self.ss.MESSAGES).st_mode & 0o777)
+        self.ss.messages = {"seq": 0, "list": [], "delivered": {}}
+        self.assertEqual(1, len(self.ask("GET", "/messages?for=test-phone-0002").body["messages"]), "read again after a restart")
+        with mock.patch.object(self.ss.time, "time", return_value=self.ss.time.time() + 8 * 86400):
+            self.assertEqual([], self.ask("GET", "/messages?for=test-phone-0002").body["messages"])
+
+    def test_messages_are_checked_and_only_while_sharing_is_on(self):
+        for bad in (self.message(text=""), self.message(text="x" * 141), self.message(text="two\nlines"), self.message(to="nobody!"),
+                    self.message(id="x"), self.message(name=""), self.message(time="yesterday"), ["not", "an", "object"]):
+            self.assertEqual(400, self.ask("POST", "/messages", bad).status, bad)
+        self.assertEqual(200, self.ask("POST", "/messages", self.message(text="x" * 140)).status)
+        self.assertEqual(400, self.ask("GET", "/messages").status)
+        self.assertEqual(400, self.ask("GET", "/messages?for=x").status)
+        self.assertTrue(self.ask("GET", "/info").body["messages"])
+        self.ss.set_enabled(False)
+        self.assertEqual(503, self.ask("POST", "/messages", self.message(id="test-msg-0002")).status)
+        self.assertEqual(503, self.ask("GET", "/messages?for=test-phone-0002").status)
+        self.assertEqual(403, self.ask("GET", "/messages?for=test-phone-0002", headers={"X-Real-IP": "203.0.113.9"}).status)
 
     # ---------- who may ask ----------
 

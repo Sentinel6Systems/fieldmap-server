@@ -18,6 +18,11 @@ What it answers (the web server and the gateway put /mapshare/ in front):
   PUT    /markers/<id>     a shared marker (a GeoJSON Feature with a Point); kept on disk
   DELETE /markers/<id>
   GET    /mesh             the server's mesh radio channel (a secret, see "The mesh radio channel")
+  POST   /messages         a short text message, to one device (its uid) or to everybody ("*")
+  GET    /messages?for=<uid>[,<uid>...][&since=<seq>]
+                           the messages for those devices (and to everybody) after seq, and
+                           which of the messages they sent were delivered
+  POST   /messages/delivered {"ids": [...], "by": "<uid>"}: these messages reached that device
   GET    /admin            for the Devices page: the switch, who is sharing right now
   POST   /admin            {"on": true|false}: the switch; {"newMeshKey": true}: a new channel key
 
@@ -70,6 +75,7 @@ SOCKET = os.path.join(RUN, "share.sock")
 SETTINGS = os.path.join(SHARE, "settings.json")     # the Devices page's switch
 MARKERS = os.path.join(SHARE, "markers.json")       # the shared markers; positions are never written
 MESH = os.path.join(SHARE, "mesh.json")             # the mesh radio channel: its key is a secret
+MESSAGES = os.path.join(SHARE, "messages.json")     # messages waiting, and the receipts of delivered ones
 
 VERSION = 1
 INTERVAL = 5                    # seconds between a phone's posts and polls
@@ -86,7 +92,12 @@ MESH_MOVING = 60                # seconds between positions over the mesh on the
 MESH_STILL = 600                # ...and while staying in one place: the mesh is slow and shared
 MESH_MOVE = 15                  # meters: a device counts as moving only when it went farther than
                                 # this in MESH_MOVING seconds (GPS positions wander a little)
+MAX_MESSAGE = 140               # characters of a message: with who sent it, one fits a mesh radio packet (233 bytes)
+MESSAGE_DAYS = 7                # a message (and a receipt) is kept this long at most
+MAX_MESSAGES = 5000
+MAX_FOR = 8                     # devices one GET /messages may ask for (a relay asks for those it carries)
 POSITION_BYTES = 2048           # body limits
+MESSAGE_BYTES = 2048
 MARKER_BYTES = 8192
 ADMIN_BYTES = 1024
 MAX_PROPERTIES = 32             # entries in a marker's properties, and in an object inside them
@@ -99,6 +110,7 @@ RATE_ALL = (10, 60)
 RATE_MARKERS = (1, 60)
 RATE_MARKERS_BOX = (4, 240)     # all callers together
 RATE_SWITCH = (1 / 6, 10)
+RATE_MESSAGES = (1, 30)         # messages sent (each is written to disk)
 
 ID = re.compile(r"[A-Za-z0-9-]{8,64}")
 TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:?\d{2})")
@@ -110,6 +122,7 @@ TURNING = set("‪‫‬‭‮⁦⁧⁨⁩")
 lock = threading.RLock()
 on = False                      # the switch; read from SETTINGS when the service starts
 mesh = {}                       # the mesh radio channel, read from MESH (made when there is none)
+messages = {"seq": 0, "list": [], "delivered": {}}  # read from MESSAGES; see "Messages"
 positions = {}                  # uid -> {"position": {...}, "at": clock(), "outside": bool, "caller": key}
 markers = {}                    # id -> {"rev": n, "feature": {...}, "bytes": n}
 removed = []                    # [id, rev], oldest first
@@ -534,10 +547,120 @@ def allow(what, who, rate):
         return True
 
 
+# ---------- messages: on the disk, for a week at most ----------
+
+# Short text messages between the devices: to one device (by its uid) or to everybody ("*").
+# The server keeps a message until it is delivered (to one device), or for a week (to
+# everybody, or never picked up), so that a device that is away gets it when it is back. A
+# device asks for its own messages by its uid; a device that also has a mesh radio may ask for
+# the devices it carries messages to over the mesh (a relay), and says when one reached them.
+# Like positions, messages are for the people of this server: anybody who may share locations
+# here may read them. The text is never written to the log.
+
+def clean_message(body):
+    if not isinstance(body, dict):
+        raise ValueError("A message must be a JSON object.")
+    text, name, to = body.get("text"), body.get("name"), body.get("to")
+    if not isinstance(text, str) or bad_text(text) or not 1 <= len(text.strip()) <= MAX_MESSAGE:
+        raise ValueError(f"A message has 1 to {MAX_MESSAGE} characters, on one line.")
+    if not isinstance(name, str) or bad_text(name) or not 1 <= len(name.strip()) <= 24:
+        raise ValueError("The name must have 1 to 24 characters.")
+    if to != "*":
+        clean_id(to, "recipient")
+    return {"id": clean_id(body.get("id"), "message id"), "from": clean_id(body.get("from")), "name": name.strip(), "to": to,
+            "text": text.strip(), "time": clean_time(body.get("time"))}
+
+
+def load_messages():
+    """Reads the messages kept on the disk. With no file (or one that cannot be read, which is
+    put aside), there are none, and seq starts from the clock: a device that knew this server
+    before then never holds a seq that it will come to again."""
+    global messages
+    with lock:
+        try:
+            with open(MESSAGES) as f:
+                data = json.load(f)
+            kept = [{**clean_message(m), "seq": int(m["seq"]), "at": float(m["at"])} for m in data["list"]]
+            receipts = {clean_id(i, "id"): {"from": clean_id(r["from"]), "at": float(r["at"])} for i, r in data["delivered"].items()}
+            messages = {"seq": int(data["seq"]), "list": kept, "delivered": receipts}
+        except FileNotFoundError:
+            messages = {"seq": int(time.time()), "list": [], "delivered": {}}
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+            print("The messages on the disk cannot be read (%s): put aside as messages.json.bad, starting empty." % e, flush=True)
+            try:
+                os.replace(MESSAGES, MESSAGES + ".bad")
+            except OSError:
+                pass
+            messages = {"seq": int(time.time()), "list": [], "delivered": {}}
+        return messages
+
+
+def save_messages():
+    try:
+        write_private(MESSAGES, json.dumps(messages).encode())
+    except OSError as e:
+        print("The messages could not be written: %s" % e, flush=True)
+        raise Refused(507, "The server could not save the message. Its disk may be full.")
+
+
+def fresh_messages():
+    """The messages as they are now: read the first time, and without what is older than a week
+    (messages nobody picked up, and receipts)."""
+    if not messages["seq"]:
+        load_messages()
+    limit = time.time() - MESSAGE_DAYS * 86400
+    messages["list"] = [m for m in messages["list"] if m["at"] >= limit]
+    messages["delivered"] = {i: r for i, r in messages["delivered"].items() if r["at"] >= limit}
+    return messages
+
+
+def post_message(message):
+    """Keeps a message and returns its seq. The same message twice (it came over the mesh too, or
+    was sent again after a lost answer) is kept once."""
+    with lock:
+        box = fresh_messages()
+        for m in box["list"]:
+            if m["id"] == message["id"]:
+                return m["seq"]
+        if message["id"] in box["delivered"]:
+            return box["seq"]
+        if len(box["list"]) >= MAX_MESSAGES:
+            raise Refused(507, "The server holds too many messages. Try again later.")
+        box["seq"] += 1
+        box["list"].append({**message, "seq": box["seq"], "at": time.time()})
+        save_messages()
+        return box["seq"]
+
+
+def messages_for(uids, since=None):
+    """The messages for these devices and to everybody after `since` (not their own), and the
+    ids of the messages they sent that were delivered."""
+    with lock:
+        box = fresh_messages()
+        wanted = set(uids)
+        found = [{k: m[k] for k in ("seq", "id", "from", "name", "to", "text", "time")} for m in box["list"]
+                 if (m["to"] in wanted or m["to"] == "*") and m["from"] not in wanted and (since is None or m["seq"] > since)]
+        delivered = sorted(i for i, r in box["delivered"].items() if r["from"] in wanted)
+        return {"seq": box["seq"], "messages": found, "delivered": delivered}
+
+
+def deliver(ids, by):
+    """These messages reached device `by`: one to that device is done with, and its sender learns it."""
+    with lock:
+        box = fresh_messages()
+        done = [m for m in box["list"] if m["id"] in ids and m["to"] == by]
+        for m in done:
+            box["list"].remove(m)
+            box["delivered"][m["id"]] = {"from": m["from"], "at": time.time()}
+        if done:
+            save_messages()
+
+
 # ---------- the service ----------
 
 MARKER_PATH = re.compile(r"/markers/([A-Za-z0-9-]{8,64})")
-ROUTES = {"/info": ("GET",), "/state": ("GET",), "/position": ("POST",), "/leave": ("POST",), "/mesh": ("GET",), "/admin": ("GET", "POST")}
+ROUTES = {"/info": ("GET",), "/state": ("GET",), "/position": ("POST",), "/leave": ("POST",), "/mesh": ("GET",), "/admin": ("GET", "POST"),
+          "/messages": ("GET", "POST"), "/messages/delivered": ("POST",)}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -622,17 +745,34 @@ class Handler(BaseHTTPRequestHandler):
             raise Refused(404, "Not found.")
         if self.command not in methods:
             raise Refused(405, "This method is not permitted for this address.")
-        if url.query and url.path != "/state":
+        if url.query and url.path not in ("/state", "/messages"):
             raise Refused(400, "This address takes nothing after a question mark.")
         if url.path == "/admin":
             return self.admin(who)
         if url.path == "/info":
             # "mesh": the channel's rev, for a device to tell that it changed; never the key.
-            return 200, {"version": VERSION, "enabled": on, "interval": INTERVAL, "stale": STALE, **({"mesh": channel()["rev"]} if on else {})}
+            return 200, {"version": VERSION, "enabled": on, "interval": INTERVAL, "stale": STALE, **({"mesh": channel()["rev"], "messages": True} if on else {})}
         if not on:
             return 503, {"enabled": False}
         if url.path == "/mesh":
             return 200, mesh_channel()
+        if url.path == "/messages" and self.command == "GET":
+            query = re.fullmatch(r"for=([A-Za-z0-9,-]{8,600})(&since=([0-9]{1,18}))?", url.query)
+            uids = query.group(1).split(",") if query else []
+            if not query or not 1 <= len(uids) <= MAX_FOR or not all(ID.fullmatch(u) for u in uids):
+                raise Refused(400, f"Ask with for=<uid> (up to {MAX_FOR}, separated by commas) and since=<seq>.")
+            return 200, messages_for(uids, int(query.group(3)) if query.group(3) else None)
+        if url.path == "/messages":
+            if not allow("messages", who, RATE_MESSAGES):
+                raise Refused(429, "Too many messages. Try again in 1 minute.")
+            return 200, {"seq": post_message(clean_message(self.body(MESSAGE_BYTES)))}
+        if url.path == "/messages/delivered":
+            body = self.body(MESSAGE_BYTES)
+            ids = body.get("ids") if isinstance(body, dict) else None
+            if not isinstance(ids, list) or not 1 <= len(ids) <= 50:
+                raise Refused(400, "ids must be a list of 1 to 50 message ids.")
+            deliver({clean_id(i, "message id") for i in ids}, clean_id(body.get("by")))
+            return 204, None
         if url.path == "/state":
             since = re.fullmatch(r"since=([0-9]{1,18})", url.query)
             if url.query and not since:
@@ -716,6 +856,7 @@ def serve(host, port):
     load_settings()
     load_markers()
     load_mesh()
+    load_messages()
     try:
         os.unlink(SOCKET)
     except FileNotFoundError:

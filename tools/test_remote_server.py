@@ -304,7 +304,7 @@ class RemoteServerTest(unittest.TestCase):
         for prefix in ("/maps/", "/"):
             conf = self.rs.gateway_conf(prefix, "http://127.0.0.1:8080/", "8443", True)
             blocks = re.findall(r"    location ([^\n]*mapshare[^\n]*) \{\n(.*?)\n    \}\n", conf, re.S)
-            self.assertEqual(["= /mapshare/info", "= /mapshare/state", "= /mapshare/position", "= /mapshare/leave", "= /mapshare/mesh",
+            self.assertEqual(["= /mapshare/info", "= /mapshare/state", "= /mapshare/position", "= /mapshare/leave", "= /mapshare/mesh", "= /mapshare/messages", "= /mapshare/messages/delivered",
                               '~ "^/mapshare/markers/[A-Za-z0-9-]{8,64}$"'], [match for match, _ in blocks])
             methods = {}
             for match, block in blocks:
@@ -314,7 +314,7 @@ class RemoteServerTest(unittest.TestCase):
                 self.assertIn("proxy_set_header X-Fieldmap-Fingerprint $ssl_client_fingerprint;", block)
                 self.assertIn("limit_req zone=fieldmap_share", block)
                 self.assertRegex(block, r"client_max_body_size [128]k;")
-            self.assertEqual(["GET", "GET", "POST", "POST", "GET", "PUT|DELETE"], list(methods.values()))
+            self.assertEqual(["GET", "GET", "POST", "POST", "GET", "GET|POST", "POST", "PUT|DELETE"], list(methods.values()))
             self.assertIn("location /mapshare/ { return 404; }", conf, "the Devices page's switch is not among them")
             self.assertNotIn("admin", conf)
             self.assertEqual(1, conf.count("location / {"), "one catch-all only, or nginx refuses to start")
