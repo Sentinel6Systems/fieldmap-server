@@ -20,7 +20,7 @@
 #                      from there. (Without it each step replaces its file as soon as
 #                      it is done.)
 #
-# Steps (default: all five, in this order):
+# Steps (default: all of these, in this order):
 #   vector     download and merge the OSM extracts, then run Planetiler
 #              -> data/basemap.mbtiles
 #   contours   -> data/contours.mbtiles
@@ -36,6 +36,8 @@
 #   detail     only when the region file sets DETAIL_BBOX: very sharp hillshade of
 #              that small area from the USGS 1 m lidar data, after the hillshade
 #              step -> data/hillshade-detail.mbtiles (build-detail.sh)
+#   routing    routing data for the Fieldmap app (BRouter's 5 x 5 degree squares
+#              around BBOX, downloaded) -> data/routing/ (build-routing.sh)
 # Only when named:
 #   usdata     US federal data for the print styles (build-usdata.sh; the region
 #              file must be inside this folder) -> data/usdata.mbtiles
@@ -51,7 +53,7 @@ source "$REPO_DIR/scripts/lib.sh"
 trap 'disk_full_hint "$REPO_DIR/data"' ERR
 
 usage() {
-    echo "Usage: $0 [--world] [--language <code>] [--staged] <region-file> [vector] [contours] [hillshade] [detail] [elevation] [extras] [usdata]" >&2
+    echo "Usage: $0 [--world] [--language <code>] [--staged] <region-file> [vector] [contours] [hillshade] [detail] [elevation] [extras] [routing] [usdata]" >&2
     exit 1
 }
 OPT_WORLD="" OPT_LANGUAGE="" STAGED=""
@@ -113,11 +115,11 @@ AREAS_LIST="$(printf '%s ' $GEOFABRIK_AREAS)"
 
 STEPS=("$@")
 if [ ${#STEPS[@]} -eq 0 ]; then
-    STEPS=(vector contours hillshade ${DETAIL_BBOX:+detail} elevation extras)
+    STEPS=(vector contours hillshade ${DETAIL_BBOX:+detail} elevation extras routing)
 fi
 for step in "${STEPS[@]}"; do
     case "$step" in
-        vector|contours|hillshade|elevation|extras|usdata) ;;
+        vector|contours|hillshade|elevation|extras|routing|usdata) ;;
         detail) : "${DETAIL_BBOX:?the detail step needs DETAIL_BBOX in $REGION_FILE}" ;;
         *) echo "Error: unknown step '$step'" >&2; exit 1 ;;
     esac
@@ -161,6 +163,10 @@ run_extras() {
 run_detail() {
     # shellcheck disable=SC2086
     "$REPO_DIR/scripts/build-detail.sh" $DETAIL_BBOX
+}
+
+run_routing() {
+    "$REPO_DIR/scripts/build-routing.sh" "${BBOX_ARGS[@]}"
 }
 
 run_usdata() {
@@ -216,8 +222,14 @@ if [ -n "$STAGED" ]; then
     echo
     echo "Every step finished: putting the new files in place."
     for f in "$OUT_DIR"/*.mbtiles; do
+        [ -e "$f" ] || continue
         mv -f "$f" "$REPO_DIR/data/"
     done
+    # The routing files go into data/routing one by one (the folder stays: the web server's
+    # containers have it mounted), and the squares the new index does not list go.
+    if [ -d "$OUT_DIR/routing" ]; then
+        python3 "$REPO_DIR/tools/routing-files.py" install "$OUT_DIR/routing" "$REPO_DIR/data/routing"
+    fi
     rm -f "$OUT_DIR/.key" "$OUT_DIR/.done"
     rmdir "$OUT_DIR"
 fi
@@ -230,3 +242,6 @@ fi
 echo
 echo "Output files:"
 ls -lh "$REPO_DIR"/data/*.mbtiles 2>/dev/null || echo "(none)"
+if [ -f "$REPO_DIR/data/routing/index.json" ]; then
+    echo "Routing data: $(du -sh "$REPO_DIR/data/routing" | cut -f1) in $REPO_DIR/data/routing/"
+fi

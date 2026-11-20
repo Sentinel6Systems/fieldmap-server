@@ -21,8 +21,9 @@ How it works:
   * From outside, the app connects to the gateway (an nginx that demands such a
     certificate, see gateway_conf()), which asks this service for every request whether the
     certificate is still on the list (`GET /check`). Removing a phone locks it out at once.
-    Behind that check the gateway serves the maps, and passes the few addresses of live
-    sharing on to its own service (tools/share-server.py, see share_locations()).
+    Behind that check the gateway serves the maps and the app's routing data
+    (routing_locations()), and passes the few addresses of live sharing on to its own
+    service (tools/share-server.py, see share_locations()).
   * Reaching the gateway: every few minutes this service asks the home router to forward an
     outside port to it (UPnP or NAT-PMP, tools/portmap.py) and notes the box's IPv6
     addresses. The app learns these addresses whenever it is home, from `GET /info`.
@@ -285,6 +286,28 @@ def share_locations():
 """
 
 
+# The app's routing data (scripts/build-routing.sh), at /routing/ as on the box's own web server:
+# the index and BRouter's files, read from data/routing (mounted into the gateway's container),
+# and nothing else of that folder.
+# The index changes with every build under the same name: asked anew each time.
+ROUTING_PATHS = (("= /routing/index.json", '        add_header Cache-Control "no-cache";\n'),
+                 (r'~ "^/routing/[EW][0-9]{1,3}_[NS][0-9]{1,2}\.rd5$"', ""))
+
+
+def routing_locations():
+    """The gateway's part for the routing data: files only, for paired devices only."""
+    out = ""
+    for match, extra in ROUTING_PATHS:
+        out += f"""    location {match} {{
+        if ($request_method !~ ^(GET|HEAD)$) {{ return 405; }}
+        auth_request /_device;
+        root /usr/share/nginx;
+{extra}    }}
+"""
+    return out + """    location /routing/ { return 404; }
+"""
+
+
 def gateway_conf(prefix, upstream, listen, ipv6=False):
     """nginx for the remote gateway: TLS with a certificate demanded from the visitor, every
     request checked against the device list, and only what the app needs behind it."""
@@ -371,6 +394,7 @@ server {{
     }}
 
 {share_locations()}
+{routing_locations()}
 {nothing_else}}}
 """
 

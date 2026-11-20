@@ -3,7 +3,7 @@
 # Run from the repository root on the Pi, as a user with sudo:
 #   sudo ./scripts/install-pi.sh
 # It builds the print tool here (Node is installed by IIAB), starts TileServer GL
-# in Docker on localhost, and adds the two nginx snippets. Re-run it after
+# in Docker on localhost, and adds its nginx snippets (pi/nginx). Re-run it after
 # `git pull` to update; it is safe to run more than once.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -105,6 +105,7 @@ if [ -f /etc/nginx/conf.d/print-nginx.conf ] && grep -q 'fieldmap-server' /etc/n
 fi
 sed "s#/opt/fieldmap-server/#$REPO/#" pi/nginx/mapprinter-nginx.conf > /etc/nginx/conf.d/mapprinter-nginx.conf
 install -m 644 pi/nginx/maps-nginx.conf /etc/nginx/conf.d/maps-nginx.conf
+sed "s#/opt/fieldmap-server/#$REPO/#" pi/nginx/routing-nginx.conf > /etc/nginx/conf.d/routing-nginx.conf
 nginx -t && systemctl reload nginx
 
 echo "== Remote access for the Fieldmap app"

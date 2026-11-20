@@ -13,8 +13,9 @@
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # data/wmm: the magnetic model from tools/wmm-update.py. data/admin: the map builder's files.
-# Both are mounted into the web container, which would otherwise make them as root.
-mkdir -p "$REPO_DIR/data/wmm" "$REPO_DIR/data/admin"
+# data/routing: the app's routing data (build-routing.sh; empty until then, and /routing/
+# answers 404). All are mounted into the web container, which would otherwise make them as root.
+mkdir -p "$REPO_DIR/data/wmm" "$REPO_DIR/data/admin" "$REPO_DIR/data/routing"
 
 # Arguments: NAME BUILDER (pbf LAYER ... | raster FORMAT ENCODING)
 placeholder() {

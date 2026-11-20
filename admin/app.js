@@ -22,6 +22,8 @@ const LAYERS = [
     help: "Small features that help with navigation on the ground. The print map styles show them." },
   { key: "usdata", name: "US Government Data", line: "Aircraft obstacles, official place names, survey marks, and public land.", us: true,
     help: "Free data from US agencies (FAA, USGS, NOAA), shown in the print map styles. Available for the United States only." },
+  { key: "routing", name: "Routing Data", line: "Offline route planning on roads and trails in the Fieldmap app.",
+    help: "BRouter routing files from brouter.de, in squares of 5 × 5 degrees that cover the selected regions. Devices download the files for their offline areas from the server. The size is an estimate." },
 ];
 // Not a layer to tick: the 1 m area of "More options", which is its own step of a build.
 const DETAIL = { key: "detail", name: "Very High Resolution Area" };
@@ -36,7 +38,7 @@ let view = "";                // the region whose parts the map shows; "" is the
 let status = null, estimate = null, hot = null;
 let dismissed = sessionStorage.getItem("dismissed");   // the finished build the user has closed
 const chosen = new Set(JSON.parse(localStorage.getItem("chosen") || "[]"));
-const ALL_LAYERS = ["basemap", "contours", "hillshade", "elevation", "extras", "usdata"];
+const ALL_LAYERS = ["basemap", "contours", "hillshade", "elevation", "extras", "usdata", "routing"];
 const ticked = new Set(JSON.parse(localStorage.getItem("ticked") || JSON.stringify(ALL_LAYERS)));
 
 // ---------- talking to the server ----------

@@ -64,11 +64,12 @@ LABEL = "fieldmap-build"            # on every container a build starts (scripts
 
 # layer on the page -> step of build-region.sh, file in data/
 # "detail": the small area of 1 m hillshade, chosen with the terrain option, not ticked.
+# "routing": the Fieldmap app's routing data, a folder of files (scripts/build-routing.sh).
 LAYERS = {"basemap": ("vector", "basemap.mbtiles"), "contours": ("contours", "contours.mbtiles"),
           "hillshade": ("hillshade", "hillshade.mbtiles"), "detail": ("detail", "hillshade-detail.mbtiles"),
           "elevation": ("elevation", "elevation.mbtiles"),
-          "extras": ("extras", "extras.mbtiles"), "usdata": ("usdata", "usdata.mbtiles")}
-ORDER = ["basemap", "contours", "hillshade", "detail", "elevation", "extras", "usdata"]
+          "extras": ("extras", "extras.mbtiles"), "usdata": ("usdata", "usdata.mbtiles"), "routing": ("routing", "routing")}
+ORDER = ["basemap", "contours", "hillshade", "detail", "elevation", "extras", "usdata", "routing"]
 DETAIL_KM = (10, 20, 30, 50, 100)   # sides of the 1 m area the page offers
 DETAIL_MAX_KM2 = int(os.environ.get("DETAIL_MAX_KM2") or 10000)    # as build-detail.sh
 LANGUAGES = ["en", "zh", "hi", "es", "ar", "fr", "bn", "pt", "ru", "id"]
@@ -326,6 +327,11 @@ def estimate(regions, layers, options):
     if "usdata" in layers:
         states = sum(1 for r in regions if is_us(r)) if not any(r["id"] == "us" for r in regions) else 51
         add("usdata", "US Government Data", 0.05 + states * 0.08, 1 + states * 0.1, 0.1 + states * 0.05)
+    if "routing" in layers:
+        # A rough estimate: BRouter's files come to about a quarter to a half of the OpenStreetMap
+        # extract (the half here), more for a small region, as its 5 degree squares come whole.
+        gb = osm * 0.5 + 0.05
+        add("routing", "Routing Data", gb, 0, gb * 1024 / 10 / 3600)
     have = on_hand(regions, layers, options)
     have["dem"] = min(have.get("dem", 0), next((i["kept_gb"] for i in items if i["key"] == "dem"), 0))
     need, kept, back = 0, 0, have[""]
@@ -581,9 +587,13 @@ def layers_status():
     out = {}
     for key, (_step, name) in LAYERS.items():
         path = os.path.join(DATA, name)
-        size = os.path.getsize(path) if os.path.exists(path) else 0
-        out[key] = {"present": size > 0 and not placeholder(path), "size_gb": round(size / 1024 ** 3, 2),
-                    **state.get(key, {})}
+        if os.path.isdir(path):     # the routing data: there once a build has written its index
+            size = folder_gb(path) * 1024 ** 3
+            present = os.path.isfile(os.path.join(path, "index.json"))
+        else:
+            size = os.path.getsize(path) if os.path.exists(path) else 0
+            present = size > 0 and not placeholder(path)
+        out[key] = {"present": present, "size_gb": round(size / 1024 ** 3, 2), **state.get(key, {})}
     return out
 
 

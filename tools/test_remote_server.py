@@ -319,6 +319,32 @@ class RemoteServerTest(unittest.TestCase):
             self.assertNotIn("admin", conf)
             self.assertEqual(1, conf.count("location / {"), "one catch-all only, or nginx refuses to start")
 
+    def test_the_gateway_serves_the_routing_files_and_nothing_else_of_their_folder(self):
+        for prefix in ("/maps/", "/"):
+            conf = self.rs.gateway_conf(prefix, "http://127.0.0.1:8080/", "8443", True)
+            blocks = re.findall(r"    location ([^\n]*routing[^\n]*) \{\n(.*?)\n    \}\n", conf, re.S)
+            self.assertEqual(["= /routing/index.json", r'~ "^/routing/[EW][0-9]{1,3}_[NS][0-9]{1,2}\.rd5$"'],
+                             [match for match, _ in blocks])
+            for _match, block in blocks:
+                self.assertIn("if ($request_method !~ ^(GET|HEAD)$) { return 405; }", block)
+                self.assertIn("auth_request /_device;", block, "only paired devices")
+                self.assertIn("root /usr/share/nginx;", block)
+                self.assertNotIn("proxy_pass", block)
+            self.assertIn('add_header Cache-Control "no-cache";', blocks[0][1])
+            names = re.search(r'"(.*)"', blocks[1][0]).group(1)
+            for path in ["/routing/W80_N35.rd5", "/routing/E5_N45.rd5", "/routing/W180_S90.rd5", "/routing/E175_N85.rd5"]:
+                self.assertRegex(path, names)
+            for path in ["/routing/", "/routing/index.html", "/routing/W80_N35.rd5.part", "/routing/../remote/ca.key",
+                         "/routing/W80_N35.rd5/x", "/routing/w80_n35.rd5", "/routing/W1234_N35.rd5", "/maps/routing/W80_N35.rd5"]:
+                self.assertNotRegex(path, names)
+            self.assertIn("location /routing/ { return 404; }", conf, "no listing, no other file")
+            self.assertEqual(1, conf.count("location / {"), "one catch-all only, or nginx refuses to start")
+        # The folder the gateway reads them from: the build's output, read-only.
+        for compose in ("docker-compose.yml", os.path.join("pi", "tileserver", "docker-compose.pi.yml")):
+            text = open(os.path.join(HERE, "..", compose)).read()
+            remote = re.search(r"\n  remote:\n(.*?)\n\n", text, re.S).group(1)
+            self.assertIn("- ./data/routing:/usr/share/nginx/routing:ro", remote, compose)
+
     def test_devices_on_the_local_network_can_download_the_app(self):
         self.assertIsNone(self.get("/info").body["app"])
         self.assertEqual(404, self.get("/fieldmap.apk").status, "no app on the box yet")

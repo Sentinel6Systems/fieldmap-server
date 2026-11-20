@@ -190,6 +190,9 @@ for _ in range(200):
     $SUDO systemctl restart fieldmap-share || echo "WARNING: the sharing service did not start. See: journalctl -u fieldmap-share" >&2
 
     echo "== The gateway"
+    # It serves the app's routing data too (scripts/build-routing.sh): the folder belongs to the
+    # owner of this one, not to root, as Docker would make it.
+    as_owner mkdir -p data/routing
     "${COMPOSE[@]}" --profile remote pull -q remote >/dev/null 2>&1 || true
     "${COMPOSE[@]}" --profile remote up -d --quiet-pull remote
     docker restart fieldmap-remote >/dev/null      # read the current certificates and configuration

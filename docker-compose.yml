@@ -32,6 +32,8 @@ services:
       - "${WEB_PORT:-80}:80"
     volumes:
       - ./data/wmm:/usr/share/nginx/wmm:ro
+      # The app's routing data (scripts/build-routing.sh), served as /routing/.
+      - ./data/routing:/usr/share/nginx/routing:ro
       # The map builder's socket (scripts/admin.sh), served as /mapadmin/.
       - ./data/admin:/run/fieldmap-admin
       # The remote access service's socket (scripts/remote.sh), served as /mapremote/ and /phones/.
@@ -58,6 +60,7 @@ services:
       - ./data/remote/gateway/nginx:/etc/nginx/conf.d:ro
       - ./data/remote/run:/run/fieldmap-remote
       - ./data/share/run:/run/fieldmap-share
+      - ./data/routing:/usr/share/nginx/routing:ro
 
   # NetBird (netbird.io), the other way in for paired devices, for a box whose router cannot
   # open a port. Not started by `docker compose up`, and not downloaded, until the owner types
