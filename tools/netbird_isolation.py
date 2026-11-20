@@ -166,7 +166,10 @@ def find(items, key, value):
 # ---------- the run ----------
 
 def check_role(api, need_admin):
-    me = api.get("/users/current") or {}
+    """The role of the token's user. Not from /users/current: NetBird refuses that to every service
+    user. The user list marks the token's own user with is_current."""
+    users = api.get("/users") or []
+    me = next((u for u in users if isinstance(u, dict) and u.get("is_current")), {})
     role = str(me.get("role", ""))
     if need_admin and role not in ADMIN_ROLES:
         raise IsolationError("The access token belongs to a user with the role \"%s\". Setup needs a token of a user "

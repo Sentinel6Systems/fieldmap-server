@@ -113,7 +113,10 @@ class FakeNetBird:
             return 403, {"message": "permission denied"}
         parts = path.split("?")[0].strip("/").split("/")
         if parts == ["users", "current"]:
-            return 200, {"id": "u1", "role": self.role}
+            return 403, {"message": "permission denied"}        # NetBird's answer to every service user
+        if parts == ["users"]:
+            return 200, [{"id": "u0", "role": "owner", "is_current": False, "is_service_user": False},
+                         {"id": "u1", "role": self.role, "is_current": True, "is_service_user": True}]
         if parts == ["accounts"]:
             return 200, [{"id": "acc", "settings": self.settings}]
         if parts[0] == "peers" and method == "PUT":
@@ -386,7 +389,7 @@ class IsolationTest(unittest.TestCase):
         with self.assertRaises(iso.IsolationError) as e:
             s.setup()
         self.assertIn("Admin", str(e.exception))
-        self.assertEqual([("GET", "/users/current")], nb.calls, "nothing else was asked or changed")
+        self.assertEqual([("GET", "/users")], nb.calls, "nothing else was asked or changed")
         nb.role = "admin"
         s.setup()
         nb.role = "auditor"         # a read-only token is enough to check
