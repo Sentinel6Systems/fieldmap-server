@@ -17,8 +17,9 @@ What it answers (the web server and the gateway put /mapshare/ in front):
   GET    /state[?since=n]  every position, and the shared markers (all, or those changed since)
   PUT    /markers/<id>     a shared marker (a GeoJSON Feature with a Point); kept on disk
   DELETE /markers/<id>
+  GET    /mesh             the server's mesh radio channel (a secret, see "The mesh radio channel")
   GET    /admin            for the Devices page: the switch, who is sharing right now
-  POST   /admin            {"on": true|false}: the switch
+  POST   /admin            {"on": true|false}: the switch; {"newMeshKey": true}: a new channel key
 
 Who may ask:
   * through the box's web server, which puts the caller's address in X-Real-IP: callers on
@@ -40,6 +41,7 @@ Settings in the environment (scripts/remote.sh reads them from .env):
   REMOTE_PIN         the box's code: the Devices page's switch then asks for it
 """
 import argparse
+import base64
 import contextlib
 import ipaddress
 import json
@@ -67,6 +69,7 @@ RUN = os.path.join(SHARE, "run")
 SOCKET = os.path.join(RUN, "share.sock")
 SETTINGS = os.path.join(SHARE, "settings.json")     # the Devices page's switch
 MARKERS = os.path.join(SHARE, "markers.json")       # the shared markers; positions are never written
+MESH = os.path.join(SHARE, "mesh.json")             # the mesh radio channel: its key is a secret
 
 VERSION = 1
 INTERVAL = 5                    # seconds between a phone's posts and polls
@@ -77,6 +80,12 @@ MAX_PER_ADDRESS = 25            # ...and from one address on the home network
 MAX_MARKERS = 2000
 MAX_MARKER_BYTES = 4 << 20      # all the markers together
 MAX_REMOVED = 1000              # how many removals are remembered for phones that were away
+MESH_PRESET = "LONG_FAST"       # Meshtastic's default modem preset: the radios of other people relay us
+MESH_HOPS = 3                   # Meshtastic's default hop limit
+MESH_MOVING = 60                # seconds between positions over the mesh on the move...
+MESH_STILL = 600                # ...and while staying in one place: the mesh is slow and shared
+MESH_MOVE = 15                  # meters: a device counts as moving only when it went farther than
+                                # this in MESH_MOVING seconds (GPS positions wander a little)
 POSITION_BYTES = 2048           # body limits
 MARKER_BYTES = 8192
 ADMIN_BYTES = 1024
@@ -100,6 +109,7 @@ TURNING = set("‪‫‬‭‮⁦⁧⁨⁩")
 
 lock = threading.RLock()
 on = False                      # the switch; read from SETTINGS when the service starts
+mesh = {}                       # the mesh radio channel, read from MESH (made when there is none)
 positions = {}                  # uid -> {"position": {...}, "at": clock(), "outside": bool, "caller": key}
 markers = {}                    # id -> {"rev": n, "feature": {...}, "bytes": n}
 removed = []                    # [id, rev], oldest first
@@ -160,6 +170,62 @@ def set_enabled(value):
         on = bool(value)
         if not on:
             positions.clear()
+
+
+# ---------- the mesh radio channel ----------
+
+# Off the grid, the app shares over Meshtastic LoRa radios instead (one radio paired with each
+# device). The devices of one server use one private channel: a name and a random AES-256
+# key that only this server makes. A device takes them from here while it reaches the server
+# (at home, or as a paired device from outside) and writes them into its radio; the radios
+# then carry positions and markers between the devices with no server at all. The key is
+# given out exactly as positions are: to the local network and to paired devices, and only
+# while Location Sharing is enabled. "New Channel Key" on the Devices page makes another one,
+# for a radio that was lost: each device picks it up the next time it reaches the server.
+
+def new_mesh():
+    """A new channel: a name of 9 characters (Meshtastic takes up to 11) and 32 random bytes."""
+    return {"name": "FM-" + secrets.token_hex(3), "psk": base64.b64encode(secrets.token_bytes(32)).decode(),
+            "rev": secrets.token_hex(6), "made": int(time.time())}
+
+
+def load_mesh():
+    """Reads the channel; makes one, and keeps it, when there is none or it cannot be read."""
+    global mesh
+    with lock:
+        try:
+            with open(MESH) as f:
+                data = json.load(f)
+            if not (isinstance(data, dict) and isinstance(data.get("name"), str) and len(base64.b64decode(data.get("psk", ""), validate=True)) == 32
+                    and isinstance(data.get("rev"), str) and isinstance(data.get("made"), int)):
+                raise ValueError("not a channel")
+            mesh = data
+        except (OSError, ValueError, TypeError):
+            new_mesh_key()
+        return mesh
+
+
+def new_mesh_key():
+    """Replaces the channel. Radios on the old one no longer hear the devices that took the new one."""
+    global mesh
+    with lock:
+        made = new_mesh()
+        write_private(MESH, json.dumps(made).encode())
+        mesh = made
+        return mesh
+
+
+def channel():
+    """The channel as it is now (read, or made, the first time it is needed)."""
+    with lock:
+        return mesh or load_mesh()
+
+
+def mesh_channel():
+    """What a device writes into its radio, and how often it sends a position through it."""
+    c = channel()
+    return {"version": 1, "name": c["name"], "psk": c["psk"], "preset": MESH_PRESET, "hopLimit": MESH_HOPS,
+            "moving": MESH_MOVING, "still": MESH_STILL, "move": MESH_MOVE, "rev": c["rev"]}
 
 
 # ---------- what phones send, checked ----------
@@ -471,7 +537,7 @@ def allow(what, who, rate):
 # ---------- the service ----------
 
 MARKER_PATH = re.compile(r"/markers/([A-Za-z0-9-]{8,64})")
-ROUTES = {"/info": ("GET",), "/state": ("GET",), "/position": ("POST",), "/leave": ("POST",), "/admin": ("GET", "POST")}
+ROUTES = {"/info": ("GET",), "/state": ("GET",), "/position": ("POST",), "/leave": ("POST",), "/mesh": ("GET",), "/admin": ("GET", "POST")}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -561,9 +627,12 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/admin":
             return self.admin(who)
         if url.path == "/info":
-            return 200, {"version": VERSION, "enabled": on, "interval": INTERVAL, "stale": STALE}
+            # "mesh": the channel's rev, for a device to tell that it changed; never the key.
+            return 200, {"version": VERSION, "enabled": on, "interval": INTERVAL, "stale": STALE, **({"mesh": channel()["rev"]} if on else {})}
         if not on:
             return 503, {"enabled": False}
+        if url.path == "/mesh":
+            return 200, mesh_channel()
         if url.path == "/state":
             since = re.fullmatch(r"since=([0-9]{1,18})", url.query)
             if url.query and not since:
@@ -589,18 +658,24 @@ class Handler(BaseHTTPRequestHandler):
             raise Refused(403, "Available on the local network only.")
         if self.command == "POST":
             body = self.body(ADMIN_BYTES)
-            if not isinstance(body, dict) or not isinstance(body.get("on"), bool):
+            renew = isinstance(body, dict) and body.get("newMeshKey") is True
+            if not isinstance(body, dict) or not (renew or isinstance(body.get("on"), bool)):
                 raise Refused(400, "on must be true or false.")
             if not allow("switch", who, RATE_SWITCH):
                 raise Refused(429, "Too many requests. Try again in 1 minute.")
             pin = setting("REMOTE_PIN")
             if pin and not secrets.compare_digest(str(body.get("pin", "")).strip().encode(), pin.encode()):
                 return 403, {"error": "Incorrect access code.", "pin": True}
-            set_enabled(body["on"])
-            print("Location sharing " + ("enabled." if on else "disabled."), flush=True)
+            if renew:
+                new_mesh_key()
+                print("New mesh radio channel key.", flush=True)
+            else:
+                set_enabled(body["on"])
+                print("Location sharing " + ("enabled." if on else "disabled."), flush=True)
         with lock:
             return 200, {"service": "fieldmap-share", "version": VERSION, "enabled": on, "pin": bool(setting("REMOTE_PIN")),
-                         "interval": INTERVAL, "stale": STALE, "people": people(), "markers": len(markers)}
+                         "interval": INTERVAL, "stale": STALE, "people": people(), "markers": len(markers),
+                         "mesh": {"made": channel()["made"]}}
 
 
 class Server(ThreadingHTTPServer):
@@ -640,6 +715,7 @@ def serve(host, port):
     os.chmod(RUN, 0o755)                # the web server and the gateway reach the socket in it
     load_settings()
     load_markers()
+    load_mesh()
     try:
         os.unlink(SOCKET)
     except FileNotFoundError:

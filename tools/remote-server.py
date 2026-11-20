@@ -255,7 +255,7 @@ APP_PATHS = (r"(styles\.json|styles/[A-Za-z0-9_.-]+/style\.json|styles/[A-Za-z0-
 # Live sharing between the apps (tools/share-server.py), at /mapshare/ as on the box's own web
 # server: these addresses and methods and nothing else, each with the most it may be sent.
 SHARE_PATHS = (("= /mapshare/info", "GET", "1k"), ("= /mapshare/state", "GET", "1k"),
-               ("= /mapshare/position", "POST", "2k"), ("= /mapshare/leave", "POST", "2k"),
+               ("= /mapshare/position", "POST", "2k"), ("= /mapshare/leave", "POST", "2k"), ("= /mapshare/mesh", "GET", "1k"),
                ('~ "^/mapshare/markers/[A-Za-z0-9-]{8,64}$"', "PUT|DELETE", "8k"))
 
 

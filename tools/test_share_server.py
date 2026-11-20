@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Tests for tools/share-server.py. Run: python3 -m unittest tools/test_share_server.py"""
+import base64
 import contextlib
 import http.client
 import importlib.util
@@ -160,6 +161,60 @@ class ShareServerTest(unittest.TestCase):
         for _ in range(10):
             self.assertEqual(403, self.ask("POST", "/admin", {"on": True, "pin": "0000"}).status)
         self.assertEqual(429, self.ask("POST", "/admin", {"on": True, "pin": "4711"}).status, "the code cannot be found by trying")
+
+    # ---------- the mesh radio channel ----------
+
+    def test_the_mesh_channel_goes_to_local_and_paired_devices_while_sharing_is_on(self):
+        for headers in (HOME, OUTSIDE):
+            r = self.ask("GET", "/mesh", headers=headers)
+            self.assertEqual(200, r.status)
+            self.assertEqual({"version", "name", "psk", "preset", "hopLimit", "moving", "still", "move", "rev"}, set(r.body))
+            self.assertEqual((60, 600, 15), (r.body["moving"], r.body["still"], r.body["move"]))
+            self.assertRegex(r.body["name"], r"^FM-[0-9a-f]{6}$")
+            self.assertLessEqual(len(r.body["name"]), 11, "Meshtastic takes channel names up to 11 characters")
+            self.assertEqual(32, len(base64.b64decode(r.body["psk"])), "AES-256")
+            self.assertEqual(("LONG_FAST", 3), (r.body["preset"], r.body["hopLimit"]))
+            self.assertGreater(r.body["moving"], self.ss.INTERVAL, "slower than through the server")
+        self.assertEqual(403, self.ask("GET", "/mesh", headers={"X-Real-IP": "203.0.113.9"}).status)
+        self.assertEqual(405, self.ask("POST", "/mesh", {}).status)
+        self.ss.set_enabled(False)
+        self.assertEqual(503, self.ask("GET", "/mesh").status)
+        self.assertNotIn("mesh", self.ask("GET", "/info").body)
+
+    def test_info_tells_a_change_of_the_channel_but_never_the_key(self):
+        channel = self.ask("GET", "/mesh").body
+        info = self.ask("GET", "/info").body
+        self.assertEqual(channel["rev"], info["mesh"])
+        self.assertNotIn(channel["psk"], json.dumps(info))
+        self.assertNotIn(channel["psk"], json.dumps(self.ask("GET", "/admin").body))
+
+    def test_the_channel_is_kept_and_a_new_key_replaces_it(self):
+        first = self.ask("GET", "/mesh").body
+        self.ss.mesh = {}
+        self.assertEqual(first, self.ask("GET", "/mesh").body, "read again after a restart")
+        self.assertEqual(0o600, os.stat(self.ss.MESH).st_mode & 0o777)
+        r = self.ask("POST", "/admin", {"newMeshKey": True})
+        self.assertEqual(200, r.status)
+        self.assertTrue(r.body["enabled"], "the switch is left as it was")
+        second = self.ask("GET", "/mesh").body
+        self.assertNotEqual(first["psk"], second["psk"])
+        self.assertNotEqual(first["rev"], second["rev"])
+        self.assertEqual(403, self.ask("POST", "/admin", {"newMeshKey": True}, OUTSIDE).status)
+        self.assertEqual(400, self.ask("POST", "/admin", {"newMeshKey": "yes"}).status)
+
+    def test_the_box_code_guards_a_new_channel_key(self):
+        os.environ["REMOTE_PIN"] = "4711"
+        before = self.ask("GET", "/mesh").body["psk"]
+        self.assertEqual(403, self.ask("POST", "/admin", {"newMeshKey": True}).status)
+        self.assertEqual(before, self.ask("GET", "/mesh").body["psk"])
+        self.assertEqual(200, self.ask("POST", "/admin", {"newMeshKey": True, "pin": "4711"}).status)
+        self.assertNotEqual(before, self.ask("GET", "/mesh").body["psk"])
+
+    def test_a_channel_file_that_cannot_be_read_gives_a_new_channel(self):
+        with open(self.ss.MESH, "w") as f:
+            f.write('{"name": "FM-000000", "psk": "c2hvcnQ=", "rev": "x", "made": 1}')
+        self.ss.mesh = {}
+        self.assertEqual(32, len(base64.b64decode(self.ask("GET", "/mesh").body["psk"])))
 
     # ---------- who may ask ----------
 

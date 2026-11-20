@@ -253,6 +253,9 @@
       <h3>Active Devices</h3>
       <div id="people"></div>
       <p class="quiet" id="share-markers"></p>
+      <h3>Mesh Radio Channel</h3>
+      <p class="quiet" id="mesh-text"></p>
+      <div class="row"><button id="mesh-new" type="button">New Channel Key</button></div>
     </div>
   </section>
 </main>
@@ -438,6 +441,8 @@
       return row;
     }) : [Object.assign(document.createElement("p"), { className: "quiet", textContent: "No active devices." })]));
     $("share-markers").textContent = `Shared markers: ${share.markers}`;
+    $("mesh-text").textContent = "Devices use this private channel to share over Meshtastic radios when they cannot reach the server. " +
+      `They pick it up when they connect to the server. Key created: ${when(share.mesh && share.mesh.made)}`;
   }
 
   $("toggle").onclick = () => {
@@ -449,6 +454,10 @@
     const on = $("share-state").textContent === "Enabled";
     if (on && !confirm("Disable location sharing for all devices? Shared markers are kept.")) return;
     act(SHARE, { on: !on });
+  };
+  $("mesh-new").onclick = () => {
+    if (!confirm("Create a new channel key? Use this when a radio is lost. Each device must connect to the server once to pick up the new key; until then it cannot share over the mesh.")) return;
+    act(SHARE, { newMeshKey: true });
   };
   $("auto-off").onchange = () => act("auto-off", { on: $("auto-off").checked });
   $("manual").onchange = () => act("forwarding", { manual: $("manual").checked });
