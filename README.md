@@ -83,4 +83,5 @@ git pull
 - Server: [TileServer GL](https://github.com/maptiler/tileserver-gl) (BSD)
 
 Show the OpenStreetMap attribution when you show these maps in public.
-The code in this repository is under the MIT license. See [LICENSE](LICENSE).
+The code in this repository is under the GNU General Public License, version 3 (GPL-3.0). See
+[LICENSE](LICENSE). Copies from before November 2026, when it was under the MIT license, keep that license.
