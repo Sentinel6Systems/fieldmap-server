@@ -15,7 +15,8 @@ What it answers (the web server and the gateway put /mapshare/ in front):
   POST   /position         a phone's position; kept in memory only, dropped when stale
   POST   /leave            {"uid"}: that position is gone at once
   GET    /state[?since=n]  every position, and the shared markers (all, or those changed since)
-  PUT    /markers/<id>     a shared marker (a GeoJSON Feature with a Point); kept on disk
+  PUT    /markers/<id>     a shared marker (a GeoJSON Feature with a Point), or an arrow (a
+                           LineString of two points, as the print tool makes them); kept on disk
   DELETE /markers/<id>
   GET    /mesh             the server's mesh radio channel (a secret, see "The mesh radio channel")
   POST   /messages         a short text message, to one device (its uid) or to everybody ("*")
@@ -317,19 +318,30 @@ def clean_marker(marker_id, body):
     if body.get("id") is not None and body["id"] != marker_id:
         raise ValueError("The marker's id is not the one in the address.")
     geometry = body.get("geometry")
-    point = geometry.get("coordinates") if isinstance(geometry, dict) and geometry.get("type") == "Point" else None
-    if not isinstance(point, list) or len(point) not in (2, 3):
-        raise ValueError("A marker is a Point: [lon, lat].")
-    coordinates = [number(point[0], -180, 180, "lon"), number(point[1], -90, 90, "lat")]
-    if len(point) == 3:
-        coordinates.append(number(point[2], -1000, 100000, "alt"))
+    kind = geometry.get("type") if isinstance(geometry, dict) else None
+    raw = geometry.get("coordinates") if kind in ("Point", "LineString") else None
+
+    def position(p):
+        if not isinstance(p, list) or len(p) not in (2, 3):
+            raise ValueError("A marker is a Point: [lon, lat], or an arrow: a LineString of two points.")
+        out = [number(p[0], -180, 180, "lon"), number(p[1], -90, 90, "lat")]
+        if len(p) == 3:
+            out.append(number(p[2], -1000, 100000, "alt"))
+        return out
+    # A marker is a point; an arrow (the print tool's) a line from its start to its head.
+    if kind == "LineString":
+        if not isinstance(raw, list) or len(raw) != 2:
+            raise ValueError("An arrow is a LineString of exactly two points.")
+        coordinates = [position(p) for p in raw]
+    else:
+        coordinates = position(raw)
     properties = body.get("properties")
     if not isinstance(properties, dict):
         raise ValueError("A marker needs properties.")
     properties = clean_properties(properties)
     clean_id(properties.get("by"), "marker's \"by\"")
     clean_time(properties.get("updated"), "marker's \"updated\"")
-    return {"type": "Feature", "id": marker_id, "geometry": {"type": "Point", "coordinates": coordinates}, "properties": properties}
+    return {"type": "Feature", "id": marker_id, "geometry": {"type": kind, "coordinates": coordinates}, "properties": properties}
 
 
 # ---------- positions: in memory only ----------

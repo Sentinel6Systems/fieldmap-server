@@ -467,7 +467,9 @@ class ShareServerTest(unittest.TestCase):
         def changed(**parts):
             return {**marker(), **parts}
         bad = [changed(type="FeatureCollection"), changed(id="another-id-0001"), changed(geometry=None),
-               changed(geometry={"type": "LineString", "coordinates": [[1, 2], [3, 4]]}),
+               changed(geometry={"type": "LineString", "coordinates": [[1, 2], [3, 4], [5, 6]]}),
+               changed(geometry={"type": "LineString", "coordinates": [[1, 2]]}), changed(geometry={"type": "LineString", "coordinates": [[1, 2], [181, 4]]}),
+               changed(geometry={"type": "Polygon", "coordinates": [[[1, 2], [3, 4], [5, 6], [1, 2]]]}),
                changed(geometry={"type": "Point", "coordinates": [181, 0]}), changed(geometry={"type": "Point", "coordinates": [0, 91]}),
                changed(geometry={"type": "Point", "coordinates": [0]}), changed(geometry={"type": "Point", "coordinates": [0, 0, 0, 0]}),
                changed(geometry={"type": "Point", "coordinates": ["0", "0"]}), changed(geometry={"type": "Point", "coordinates": {"lon": 0}}),
@@ -491,6 +493,14 @@ class ShareServerTest(unittest.TestCase):
         self.assertEqual({**marker(note="", count=3, shown=True, none=None), "id": MARKER}, self.ss.markers[MARKER]["feature"])
         for path in ("/markers/short", "/markers/" + "a" * 65, "/markers/has.dot.in.it", "/markers/" + MARKER + "/x", "/markers/"):
             self.assertEqual(404, self.ask("PUT", path, marker()).status, path)
+
+    def test_an_arrow_is_shared_like_a_marker(self):
+        arrow = {**marker(), "geometry": {"type": "LineString", "coordinates": [[2.5, 1.5], [2.6, 1.6]]}}
+        arrow["properties"]["fieldmap"]["kind"] = "arrow"
+        self.assertEqual(200, self.ask("PUT", "/markers/" + MARKER, arrow).status)
+        got = self.ask("GET", "/state").body["markers"][0]
+        self.assertEqual({"type": "LineString", "coordinates": [[2.5, 1.5], [2.6, 1.6]]}, got["geometry"])
+        self.assertEqual("arrow", got["properties"]["fieldmap"]["kind"])
 
     def test_the_box_takes_only_so_many_markers(self):
         with mock.patch.object(self.ss, "MAX_MARKERS", 2):
