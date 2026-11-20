@@ -76,6 +76,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import portmap  # noqa: E402
+import netbird_isolation as isolation  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REMOTE = os.environ.get("REMOTE_DIR") or os.path.join(ROOT, "data", "remote")
@@ -125,6 +126,8 @@ recent_enrols = []
 pairing_until = 0.0
 last_seen = {}                  # device id -> time it last came in from outside, not written yet
 last_way = {}                   # device id -> {"direct" | "netbird": time}, not written yet
+last_nb_address = {}            # device id -> the NetBird address it last came from, not written yet
+isolation_lock = threading.Lock()
 
 
 def openssl(*args, stdin=None):
@@ -431,6 +434,7 @@ def remove(device_id):
         save_devices(kept)
         last_seen.pop(device_id, None)
         last_way.pop(device_id, None)
+        last_nb_address.pop(device_id, None)
         return True
 
 
@@ -453,7 +457,12 @@ def allowed(fingerprint, peer=None):
         return False
     now = int(time.time())
     last_seen[d["id"]] = now
-    last_way.setdefault(d["id"], {})["netbird" if from_netbird(peer) else "direct"] = now
+    via_netbird = from_netbird(peer)
+    last_way.setdefault(d["id"], {})["netbird" if via_netbird else "direct"] = now
+    if via_netbird:
+        # The certificate proves the device, the address points to its NetBird peer: network
+        # isolation moves that peer into this server's device group (netbird_isolation.migrate).
+        last_nb_address[d["id"]] = isolation.valid_address(peer)
     return True
 
 
@@ -467,8 +476,11 @@ def write_seen():
             if d["id"] in last_seen:
                 d["seen"] = last_seen[d["id"]]
                 d["way"] = {**d.get("way", {}), **last_way.get(d["id"], {})}
+                if last_nb_address.get(d["id"]):
+                    d["netbirdAddress"] = last_nb_address[d["id"]]
         last_seen.clear()
         last_way.clear()
+        last_nb_address.clear()
         save_devices(devices)
 
 
@@ -1043,7 +1055,7 @@ def netbird_report():
                 out["keyChecked"] = f.read().strip() != "unchecked"
         except OSError:
             out["keyChecked"] = True
-        if not out["keyChecked"]:
+        if not out["keyChecked"] and not isolated():
             text += (" The new setup key was not verified because the server was already a NetBird peer."
                      " Make sure it shows as valid in the NetBird dashboard; newly paired devices need a valid key.")
         if out["seen"] and time.time() - out["seen"] < 7 * 86400:
@@ -1067,6 +1079,74 @@ def netbird_report():
     if state is None:
         return {**out, "status": "blocked", "text": NETBIRD_PROBLEMS["start"]}
     return {**out, "status": "blocked", "text": NETBIRD_PROBLEMS["server"] % management}
+
+
+# ---------- network isolation in NetBird ----------
+#
+# Each server gets its own groups, access policy and device setup key in the NetBird account, so
+# that servers sharing one account cannot reach each other's devices (tools/netbird_isolation.py).
+# The owner pastes a NetBird access token on the Remote Access page; it is used for that one run
+# and never written down. What the run did is kept in netbird.json under "isolation".
+
+def load_isolation():
+    data = load_netbird().get("isolation")
+    return data if isinstance(data, dict) else {}
+
+
+def isolated():
+    """This server's device key is managed by network isolation (not typed by hand)."""
+    return bool(load_isolation().get("deviceKey"))
+
+
+def device_addresses():
+    """{device id: the NetBird address it last came in from, or ""} for every paired device."""
+    return {d["id"]: last_nb_address.get(d["id"]) or d.get("netbirdAddress", "") for d in load_devices()}
+
+
+def keep_device_key(key):
+    """The device key from network isolation: it replaces the key paired devices get (the block's
+    rev changes, so they pick it up). The server's own NetBird client needs no key any more: it is a
+    member already."""
+    os.makedirs(NETBIRD_DIR, exist_ok=True)
+    os.chmod(NETBIRD_DIR, 0o700)
+    write_private(NETBIRD_KEY, (key + "\n").encode())
+
+
+def run_isolation(action, token):
+    """"setup" (also repairs), "check" (any role that can read), or "replace-key". Returns a note
+    for the owner, or raises ValueError with what failed. The token is not kept."""
+    if way() != "netbird" or not enabled():
+        raise ValueError("Network isolation works with the NetBird VPN method while remote connectivity is enabled.")
+    address = netbird_address()
+    if not address:
+        raise ValueError("The server is not connected to NetBird yet. Connect NetBird with a setup key first.")
+    if not isolation_lock.acquire(blocking=False):
+        raise ValueError("Another network isolation run is in progress. Try again in a minute.")
+    try:
+        nb = load_netbird()
+        record = dict(load_isolation())
+        management = nb.get("management") or NETBIRD_CLOUD
+        typed_before = bool(netbird_key()) and not record.get("deviceKey")
+        try:
+            if action == "check":
+                isolation.check(record, management, token, gateway_port(), device_addresses())
+            else:
+                isolation.setup(record, management, token, address, gateway_port(), device_addresses(), keep_device_key,
+                                new_key=action == "replace-key" or not netbird_key())
+        except isolation.IsolationError as e:
+            raise ValueError(str(e))
+        finally:
+            save_netbird(isolation=record)
+        if typed_before:
+            return ("Devices now receive this server's own setup key. Revoke the setup key you entered by hand "
+                    "earlier in the NetBird dashboard, so that it cannot add more peers.")
+        return ""
+    finally:
+        isolation_lock.release()
+
+
+def isolation_report():
+    return isolation.status(load_isolation(), gateway_port(), netbird_address() if netbird_wanted() else "")
 
 
 # ---------- the service ----------
@@ -1191,7 +1271,8 @@ class Handler(BaseHTTPRequestHandler):
         return {"service": "fieldmap-remote", "version": 3, "ready": ready(), "enabled": enabled(), "pin": bool(setting("REMOTE_PIN")),
                 "autoOff": {"on": auto_off(), "days": IDLE_DAYS, "at": auto_off_at()},
                 "way": way(), "direct": direct(),
-                "netbird": {"on": block is not None, "rev": block["rev"] if block else "", **netbird_report()},
+                "netbird": {"on": block is not None, "rev": block["rev"] if block else "", **netbird_report(),
+                            "isolation": isolation_report()},
                 "forwarding": {**forwarding(), "port": gateway_port(), "boxAddress": portmap.lan_ipv4() or "",
                                "changingTo": load_settings().get("changingPort") if load_settings().get("changingPort") != gateway_port() else None},
                 "pairing": {"open": pairing_left() > 0, "seconds": pairing_left()},
@@ -1235,7 +1316,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.body()
         if self.path not in ("/enrol", "/pairing", "/remove", "/enabled", "/auto-off", "/recheck", "/forwarding", "/find-address", "/new-port",
-                             "/way", "/netbird"):
+                             "/way", "/netbird", "/netbird/isolation"):
             return self.send(404, {"error": "Not found."})
         if not lan(self.headers):
             return self.send(403, {"error": "Devices can be paired on the local network only."})
@@ -1273,6 +1354,20 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self.send(400, {"error": str(e)})
             return self.send(200, self.info())
+        if self.path == "/netbird/isolation":
+            # {"action": "setup" | "check" | "replace-key", "token": "nbp_..."}: the token is used for
+            # this one request and never written anywhere (not to a file, not to a log).
+            action = str(body.get("action", ""))
+            token = isolation.clean_token(body.get("token"))
+            if action not in ("setup", "check", "replace-key"):
+                return self.send(400, {"error": "Unknown action."})
+            if not token:
+                return self.send(400, {"error": "Invalid access token. Copy it from the NetBird dashboard (it starts with nbp_)."})
+            try:
+                note = run_isolation(action, token)
+            except ValueError as e:
+                return self.send(409, {"error": str(e)})
+            return self.send(200, {**self.info(), "note": note})
         if self.path == "/netbird":
             # {"on": true, "management": "...", "setupKey": "..."} keeps the key and the server and
             # makes NetBird the way in (a key that is kept needs no typing again); {"on": false}
@@ -1284,6 +1379,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, {"error": "Invalid management URL. For NetBird's cloud, use %s." % NETBIRD_CLOUD})
             if str(body.get("setupKey") or "").strip() and not key:
                 return self.send(400, {"error": "Invalid setup key. Copy it from the NetBird dashboard."})
+            if key and isolated():
+                # A key typed by hand would put new devices outside this server's segment.
+                return self.send(409, {"error": "Network isolation manages this server's setup key. Use Replace Device Key "
+                                                "instead. To stop network isolation, run ./scripts/remote.sh netbird-forget."})
+            if on and isolated() and management and management != (load_netbird().get("management") or NETBIRD_CLOUD):
+                return self.send(409, {"error": "Network isolation is set up for the current management server. To change "
+                                                "the server, run ./scripts/remote.sh netbird-forget first."})
             if on and not key and not netbird_key():
                 return self.send(400, {"error": "Enter a setup key first."})
             if on:
@@ -1451,6 +1553,7 @@ def main():
         else:
             sys.exit(f"No device with the id {args.id}. See: remote-server.py devices")
     elif args.command == "netbird-forget":
+        install_id = load_isolation().get("id", "")
         for path in (NETBIRD, NETBIRD_KEY, NETBIRD_CLIENT):
             try:
                 os.unlink(path)
@@ -1458,6 +1561,10 @@ def main():
                 pass
         # Without NetBird, the router's port is the way in again.
         save_settings(netbird=False, way="direct")
+        if install_id:
+            n = isolation.names(install_id)
+            print("NetBird is forgotten on this server. Network isolation was set up: delete the groups %s and %s, the "
+                  "policy %s and the setup key %s in the NetBird dashboard." % (n["server"], n["devices"], n["policy"], n["key"]))
     elif args.command == "router":
         state = check_router()
         print(json.dumps(state, indent=1))
@@ -1471,6 +1578,7 @@ def main():
         print("Remote Connectivity Method: " + ("NetBird VPN" if (live.get("way") or way()) == "netbird" else "Port Forwarding"))
         print("Port Forwarding:            " + r["text"])
         print("NetBird VPN:                " + n["text"])
+        print("Network Isolation:          " + (n.get("isolation") or isolation_report())["text"])
         print("Public Endpoints:           " + (", ".join("%s:%s" % (e["host"], e["port"]) for e in endpoints()) or "none"))
         print(f"Paired Devices:             {len(load_devices())}")
         print("Code:           " + ("asked for (REMOTE_PIN)" if setting("REMOTE_PIN") else "none"))

@@ -118,7 +118,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
 | `pi/` | Raspberry Pi + Internet-in-a-Box deployment: compose file, nginx snippets, notes |
 | `systemd/` | Start the compose stack, and optionally the Map Builder page, at boot |
-| `phones/`, `scripts/remote.sh`, `scripts/firewall.sh`, `tools/remote-server.py`, `tools/portmap.py`, `tools/netbird-run.sh` | Remote access for the Android app: the Devices page, pairing, the router's port, NetBird, the gateway, the server's firewall |
+| `phones/`, `scripts/remote.sh`, `scripts/firewall.sh`, `tools/remote-server.py`, `tools/portmap.py`, `tools/netbird-run.sh`, `tools/netbird_isolation.py` | Remote access for the Android app: the Devices page, pairing, the router's port, NetBird and its network isolation, the gateway, the server's firewall |
 | `tools/share-server.py` | Sharing positions and markers between devices with the Android app |
 | `scripts/app.sh`, `tools/app-file.py` | The Android app kept on the server, for devices to install from the Devices page |
 | `data/` | Your mbtiles files (not in git) |

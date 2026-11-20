@@ -150,7 +150,7 @@ choice per scale in the print tool.
   `REMOTE_FIREWALL_ALLOW=22` in `.env` **before** you update, then run `sudo ./scripts/firewall.sh apply`.
 - Back up `data/remote/` with the server. If it is lost, every device has to be paired again.
 - The service is `tools/remote-server.py` with `tools/portmap.py` (Python's standard library, `openssl` and `ip`),
-  run by `fieldmap-remote.service`. Tests: `python3 -m unittest tools/test_remote_server.py tools/test_portmap.py`.
+  run by `fieldmap-remote.service`. Tests: `python3 -m unittest tools/test_remote_server.py tools/test_portmap.py tools/test_netbird_isolation.py` (network isolation against a fake NetBird API).
 - NetBird: tested against a self-hosted NetBird server (v0.83.1) in containers, with the whole server (systemd, Docker,
   the installers) in a container and a second NetBird member as the device, direct and through NetBird's relay; not
   yet against NetBird's cloud or over a real Starlink line.
@@ -175,9 +175,33 @@ choice per scale in the print tool.
   `data/remote/netbird/state/`, so it comes back after a restart with the same address. It is updated every week with
   the gateway. A container (not NetBird's package) keeps everything of NetBird inside this folder and out of the
   machine's package list, and it updates with the rest.
-- **Use a NetBird network made only for the server.** A new NetBird account lets all its members reach each other. Each
-  paired device becomes a member. In a network shared with other machines, a device can then reach whatever that
-  network's rules permit.
+- **Use a NetBird network made only for the server, or network isolation.** A new NetBird account lets all its
+  members reach each other (the **Default** policy, All to All). Each paired device becomes a member.
+- **Network isolation** (`tools/netbird_isolation.py`) gives each server its own segment in a shared account: groups
+  `fieldmap-server-<id>` and `fieldmap-devices-<id>` (`<id>` random, made once), one policy `fieldmap-<id>` (device
+  group to server group, one direction, TCP, the gateway port only), and a reusable device setup key whose
+  auto-group is the device group (365 days, 100 uses). NetBird gives a peer only the peers a policy links it to, so
+  a device's network map holds its own server and nothing else: no device-to-device rule (sharing goes through the
+  server) and no server-to-device rule. The group comes from the key inside NetBird; nothing a device sends
+  chooses it. The server's own firewall and the gateway's certificate check stay as the next two locks.
+- **The NetBird token is used once.** Creating setup keys needs NetBird's Admin role (Network Admin may not), and an
+  Admin token can change the whole account, every other server's segment included (NetBird cannot limit a token to
+  some groups). So the owner pastes one per run (`POST /phones/netbird/isolation`, local network and access code
+  only); it lives in memory for that request and is never written to a file, a log or an answer. A check needs only
+  a token that can read (Auditor). What a run did is kept in `data/remote/netbird.json` under `isolation` (ids,
+  names, times, results); the device key in `data/remote/netbird/setup-key` as before.
+- **Runs are safe to repeat** and never take over a group, policy or key with our name that this server did not
+  record. The server's peer and the devices are found by their NetBird address (unique in an account; the API gives
+  no public key): the gateway notes the address each paired certificate comes from over NetBird. Names are never
+  trusted. Nothing is ever taken out of a group, and no policy but our own is changed.
+- **The check** reads the account: any enabled policy other than ours that names our groups, the All group, or one
+  of our peers directly makes the page say **Not Isolated** (the Default policy by name); so do a missing or
+  changed own policy, a changed gateway port, or another peer in the server group (a copied installation). A failed
+  run, a check older than 30 days, or a new server address never shows as verified. Warnings: device-group peers
+  that are not paired any more, devices not matched yet, peer approval, peer expose, the device key near expiry.
+- **Known limits:** a removed device stays a NetBird peer until the owner deletes it (no token is kept to do it); the
+  check reads policies, it sends no test traffic; it runs only when the owner pastes a token; devices that joined
+  before isolation are moved only after they connected through NetBird once (with Default still on, or by hand).
 - **A lost device:** press **Remove** on the Devices page (the server then refuses it at once), delete it under
   **Peers** in the NetBird dashboard, revoke the setup key there, and give the server a new one (**Change Setup Key**,
   type the new key, **Connect**). Devices that joined before keep working with the identity they have. NetBird does not check

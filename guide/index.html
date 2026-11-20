@@ -356,6 +356,32 @@
       is lost: press <b>Remove</b> beside it on the <b>Devices</b> page, delete it under <b>Peers</b> in the NetBird
       dashboard, revoke the setup key, create a new one, and enter it with <b>Change Setup Key</b> and
       <b>Connect</b>. The other devices keep working.</p>
+    <h3 id="netbird-isolation">Network Isolation</h3>
+    <p>Several Fieldmap servers can share one NetBird account. Network Isolation gives this server and its devices a
+      segment of their own: devices reach only this server's gateway port, and nothing of other servers, their
+      devices, or other computers in the account. The server makes two groups (<b>fieldmap-server-&lt;id&gt;</b>,
+      <b>fieldmap-devices-&lt;id&gt;</b>), one access policy (<b>fieldmap-&lt;id&gt;</b>) and a setup key for its
+      devices. Nothing is set up on the devices.</p>
+    <ol>
+      <li>In the NetBird dashboard, open <b>Team</b>, <b>Service Users</b>. Create a service user named
+        <b>fieldmap-setup</b> with the role <b>Admin</b>, and an access token for it that expires in <b>1</b> day.
+        Copy the token (it starts with <b>nbp_</b>).</li>
+      <li>On the Remote Access page, in the NetBird VPN card, paste it into <b>NetBird Access Token</b> and press
+        <b>Set Up Network Isolation</b>.</li>
+      <li>Devices that joined NetBird before are moved into the device group once they have connected through
+        NetBird. Leave the <b>Default</b> policy on, let each of them connect from outside once, then press
+        <b>Repair Network Isolation</b> with a new token.</li>
+      <li>In the dashboard, open <b>Access Control</b>, <b>Policies</b>. If other computers in the account need the
+        <b>Default</b> policy, give them policies of their own first. Then switch <b>Default</b> off.</li>
+      <li>Press <b>Check Isolation</b> with a token (the <b>Auditor</b> role is enough). The page should say
+        <b>Verified by policy check</b>.</li>
+      <li>Revoke the setup key you typed by hand, and delete the token or the service user.</li>
+    </ol>
+    <div class="caution"><b>Caution</b>An Admin token can change your whole NetBird account. The server uses it once
+      and never stores it. Give it a short life and delete it afterward.</div>
+    <p>Press <b>Check Isolation</b> about once a month and after you change policies. Before the device key expires
+      (after a year), press <b>Replace Device Key</b>; paired devices keep working. A removed device stays a NetBird
+      peer until you delete it under <b>Peers</b>.</p>
     <p id="netbird-own">With your own NetBird server, create the setup key on its dashboard and enter its address
       (for example <b>https://netbird.example.com</b>) in <b>Management URL</b> before you press
       <b>Connect</b>.</p>

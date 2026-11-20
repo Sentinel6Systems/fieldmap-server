@@ -2,6 +2,13 @@
 
 ## Since v1.0.0
 
+- NetBird **Network Isolation** on Admin › Remote Access, for several servers in one NetBird account: each server
+  makes its own groups, an access policy (its devices to its gateway port only) and a setup key for its devices,
+  with a NetBird access token that is used once and never stored. Devices paired earlier are moved into the
+  server's device group by the NetBird address they connect from. **Check Isolation** reads the account's
+  policies and reports the account-wide Default policy, or any other policy that reaches this server's peers; it
+  never changes them. **Replace Device Key** makes a new device key and revokes the old one. Nothing changes in
+  the app. After `git pull`, restart the remote access service (the installer does it).
 - Documentation split up: a short README, a user guide by task (`docs/user-guide.md`), a reference
   (`docs/reference.md`), design and test notes (`docs/how-it-works.md`) and this changelog.
 - A **User Guide** tab (`/guide/`) that works offline and prints. The header is now **Maps**, **Print a map**,

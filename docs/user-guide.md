@@ -289,13 +289,51 @@ server, because each paired device becomes a member of it.
 > **Note:** Change the connectivity method only while the devices are on the local network or can get to it. A
 > device that is away when you change it can't connect until it has been on the local network once.
 
+### Isolate the server in a shared NetBird account
+
+Several Fieldmap servers can share one NetBird account. **Network Isolation** on the Remote Access page gives
+this server and its devices a segment of their own: devices reach only this server's gateway port, and nothing of
+other servers, their devices, or other machines in the account. It needs NetBird connected (above).
+
+The server makes, in the NetBird account: two groups (`fieldmap-server-<id>` for the server,
+`fieldmap-devices-<id>` for its devices), one access policy (`fieldmap-<id>`: devices to the server, TCP, the
+gateway port only), and a setup key for its devices that puts every new device in the device group. Devices then
+get this key instead of the one you typed. Nobody sets anything up on the devices.
+
+1. **Create an access token.** In the NetBird dashboard, open **Team** › **Service Users**, create a service user
+   named `fieldmap-setup` with the role **Admin**, then create an access token for it that expires in **1** day.
+   Copy the token (it starts with `nbp_`). An Admin token can change the whole NetBird account, so the server uses
+   it once and never stores it.
+2. **Set it up.** On the Remote Access page, in the NetBird VPN card, paste the token into **NetBird Access Token**
+   and press **Set Up Network Isolation**. The page shows the groups, the policy and the result of the check.
+3. **Move devices paired earlier.** A device that joined NetBird before is moved into the device group by the
+   address it connects from, once it has connected through NetBird. Leave the account's **Default** policy on for
+   now, let each of those devices connect from outside once, then press **Repair Network Isolation** with a new
+   token. **Devices in Group** and the warnings show which devices are not matched yet. (You can also add a device
+   to `fieldmap-devices-<id>` by hand under **Peers**.)
+4. **Turn off the Default policy.** A new NetBird account has a policy named **Default** that lets every peer reach
+   every other peer; while it is on, the page says **Not Isolated**. The server never changes it. In the dashboard,
+   open **Access Control** › **Policies**. If other computers in the account need Default, give them policies of
+   their own first. Then switch **Default** off.
+5. **Check.** Paste a token and press **Check Isolation** (a token with the **Auditor** role is enough). The page
+   should say **Verified by policy check**. This checks NetBird's policies; it is not a traffic test.
+6. **Clean up.** Revoke the setup key you typed by hand (**Setup Keys**), and delete the token or the service user.
+
+**Later:** press **Check Isolation** about once a month (the page says **Not Recently Verified** after 30 days) and
+after you change policies in the dashboard. The device key lasts a year; before it expires, press **Replace Device
+Key**. Devices already paired keep working; the old key is revoked. A device you remove on the Devices page stays a
+NetBird peer: delete it under **Peers** (the next check lists it). If the page reports a changed or missing group or
+policy, press **Repair Network Isolation**. While isolation is set up, **Change Setup Key** is not offered: a key
+typed by hand would put new devices outside the segment. To stop, run `./scripts/remote.sh netbird-forget`; it
+names the groups, policy and key to delete in the dashboard.
+
 **Stop using NetBird:** choose **Port Forwarding** under **Remote Connectivity Method**. The server keeps the key
 for later. To remove NetBird from the server completely, run `./scripts/remote.sh netbird-forget` and delete
 `fieldmap-box` under **Peers** in the dashboard.
 
 **A lost device:** press **Remove** beside it on the Devices page, delete it under **Peers** in the NetBird
 dashboard, revoke the setup key, create a new one, and enter it on the Remote Access page with **Change Setup Key**
-and **Connect**. The other devices keep working.
+and **Connect** (with network isolation: **Replace Device Key** instead). The other devices keep working.
 
 **Your own NetBird server:** create the setup key on your NetBird server's dashboard, and enter its address (for
 example `https://netbird.example.com`) in **Management URL** before you press **Connect**.

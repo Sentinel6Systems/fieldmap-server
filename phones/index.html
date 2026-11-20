@@ -57,6 +57,14 @@
   .way input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
   .way b { display: block; }
   .reach.starting { border-left-color: var(--amber); }
+  .reach.verified { border-left-color: var(--sig); }
+  .reach.open, .reach.failed { border-left-color: var(--warn); }
+  .reach.stale, .reach.none { border-left-color: var(--amber); }
+  dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 8px 0; }
+  dl.facts dt { color: var(--muted); }
+  dl.facts dd { margin: 0; font: 13px var(--mono); overflow-wrap: anywhere; }
+  ul.issues { margin: 6px 0; padding-left: 20px; }
+  ul.issues.problems li { color: var(--warn); }
   .mono-strong { font: 600 15px var(--mono); overflow-wrap: anywhere; }
   .forward { font: 600 17px var(--mono); padding: 12px 14px; border: 1px solid var(--sig); background: var(--panel2); margin: 12px 0 8px; overflow-wrap: anywhere; }
   .check { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; cursor: pointer; }
@@ -155,7 +163,7 @@
         <li>Enter the setup key below.</li>
         <li>Click <b>Connect</b>.</li>
       </ol>
-      <label class="field"><span>Setup Key</span>
+      <label class="field" id="nb-key-field"><span>Setup Key</span>
         <small id="nb-key-note"></small>
         <input id="nb-key" type="password" autocomplete="off" spellcheck="false" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"></label>
       <label class="field"><span>Management URL</span>
@@ -164,6 +172,33 @@
       <div class="row"><button id="nb-connect" type="button" class="primary">Connect</button></div>
     </div>
     <p class="quiet">The setup key is stored on the server and not shown again. Only paired devices receive it.</p>
+    <div id="iso-box" hidden>
+      <h3>Network Isolation</h3>
+      <p class="quiet">Gives this server and its devices their own segment in the NetBird account: devices reach only this
+        server's gateway port, and nothing of other servers or other machines in the account.</p>
+      <p class="reach" id="iso-state"></p>
+      <dl class="facts" id="iso-facts" hidden>
+        <dt>Installation ID</dt><dd id="iso-id"></dd>
+        <dt>Server Group</dt><dd id="iso-server"></dd>
+        <dt>Device Group</dt><dd id="iso-devices"></dd>
+        <dt>Devices in Group</dt><dd id="iso-count"></dd>
+        <dt>Access Policy</dt><dd id="iso-policy"></dd>
+        <dt>Device Key Expires</dt><dd id="iso-key"></dd>
+        <dt>Last Check</dt><dd id="iso-checked"></dd>
+      </dl>
+      <ul class="issues problems" id="iso-problems"></ul>
+      <ul class="issues" id="iso-warnings"></ul>
+      <p class="quiet" id="iso-note" hidden></p>
+      <label class="field"><span>NetBird Access Token</span>
+        <small>From a NetBird service user with the Admin role (Check Isolation also works with the Auditor role). Used
+          once for the action you click, never stored. See the <a href="/guide/#netbird-isolation">User Guide</a>.</small>
+        <input id="iso-token" type="password" autocomplete="off" spellcheck="false" placeholder="nbp_…"></label>
+      <div class="row">
+        <button id="iso-setup" type="button" class="primary">Set Up Network Isolation</button>
+        <button id="iso-check" type="button">Check Isolation</button>
+        <button id="iso-key-new" type="button">Replace Device Key</button>
+      </div>
+    </div>
   </section>
 
   <section class="card" id="app-card" data-for="devices">
@@ -332,6 +367,28 @@
       ? "A setup key is stored. Leave empty to keep it."
       : "Paste the setup key from the NetBird dashboard.";
     if (document.activeElement !== $("nb-management") && !managementEdited) $("nb-management").value = nb.management;
+    // Network isolation: once NetBird is connected. While it manages the device key, the key is
+    // not typed by hand any more (Replace Device Key instead).
+    const iso = nb.isolation;
+    $("iso-box").hidden = !viaNetbird || !(nb.status === "connected" || iso.managed);
+    $("nb-key-field").hidden = iso.managed;
+    if (iso.managed) $("nb-change-row").hidden = true;
+    $("iso-state").textContent = iso.text;
+    $("iso-state").className = "reach " + iso.status;
+    $("iso-facts").hidden = !iso.managed;
+    $("iso-id").textContent = iso.id;
+    $("iso-server").textContent = iso.serverGroup;
+    $("iso-devices").textContent = iso.deviceGroup;
+    $("iso-count").textContent = `${iso.deviceCount}` + (iso.unmatched ? ` (${iso.unmatched} paired device(s) not matched yet)` : "");
+    $("iso-policy").textContent = iso.policy;
+    $("iso-key").textContent = iso.keyExpires ? new Date(iso.keyExpires * 1000).toLocaleDateString([], { dateStyle: "medium" }) : "";
+    $("iso-checked").textContent = when(iso.lastCheck);
+    const items = (list) => list.map((t) => Object.assign(document.createElement("li"), { textContent: t }));
+    $("iso-problems").replaceChildren(...items(iso.problems));
+    $("iso-warnings").replaceChildren(...items(iso.warnings));
+    $("iso-setup").textContent = iso.managed ? "Repair Network Isolation" : "Set Up Network Isolation";
+    $("iso-check").hidden = !iso.managed;
+    $("iso-key-new").hidden = !iso.managed;
     const left = info.pairing.seconds;
     $("pair").hidden = left > 0;
     $("pair").disabled = !on;
@@ -413,6 +470,27 @@
     if ($("nb-key").value.trim()) body.setupKey = $("nb-key").value;
     await act("netbird", body);
     if ($("error").hidden) { $("nb-key").value = ""; managementEdited = false; changeKey = false; }
+  };
+  // The token goes to the server with this one request and is cleared from the page right away.
+  async function isolate(action) {
+    const token = $("iso-token").value.trim();
+    if (!token) return error(new Error("Paste a NetBird access token first."));
+    $("iso-token").value = "";
+    busy = true;
+    $("iso-state").textContent = "Working with the NetBird API…";
+    try {
+      const done = await call("netbird/isolation", { action, token });
+      error(null);
+      $("iso-note").textContent = done.note || "";
+      $("iso-note").hidden = !done.note;
+    } catch (e) { error(e); }
+    busy = false;
+    show();
+  }
+  $("iso-setup").onclick = () => isolate("setup");
+  $("iso-check").onclick = () => isolate("check");
+  $("iso-key-new").onclick = () => {
+    if (confirm("Replace the device setup key? Paired devices keep working. Devices paired from now on use the new key, and the old key is revoked.")) isolate("replace-key");
   };
   $("address").oninput = () => { addressEdited = true; };
   $("save-address").onclick = () => { addressEdited = false; act("forwarding", { manual: true, address: $("address").value }); };
