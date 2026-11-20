@@ -1,7 +1,7 @@
 /* fieldmap-server: the look every page shares (colours, type, the header, buttons, form
    controls, cards). Each page adds its own layout on top of it:
-     the Maps page      ui/maps.tmpl          TileServer GL serves this folder at files/
-     the print tool     print/public/         print/build.mjs copies this folder into dist/
+     the map            print/public/         print/build.mjs copies this folder into dist/
+     the tile server    ui/maps.tmpl          TileServer GL serves this folder at files/
      the map builder    admin/                tools/admin-server.py serves this folder too
    System fonts only: nothing is fetched from anywhere. Follows the device's light or dark
    setting. */

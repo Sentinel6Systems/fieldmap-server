@@ -1,8 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
-<!-- The Maps page: TileServer GL's front page (options.frontPage in config.json), in the look
-     the other pages share. The map itself, a menu of the styles, and the tile addresses for
-     other apps. MapLibre and Leaflet are TileServer GL's own copies. -->
+<!-- TileServer GL's front page (options.frontPage in config.json), in the look the other pages
+     share: a map, a menu of the styles, and the tile addresses for other apps. MapLibre and
+     Leaflet are TileServer GL's own copies. On the web front (/ in Docker, /maps/ behind
+     Internet-in-a-Box) nginx sends this address to the map at /map/ instead, so this page is
+     seen only on the tile server's own port. -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">

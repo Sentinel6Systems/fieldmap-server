@@ -1,28 +1,27 @@
 // fieldmap-server: the header every page shares. A page carries
-//   <header class="fm-bar" id="fm-bar" data-page="maps|print|guide|access|phones|builder" data-root="<its own folder>"></header>
+//   <header class="fm-bar" id="fm-bar" data-page="map|guide|access|phones|builder" data-root="<its own folder>"></header>
 // and loads this file right after it. The header shows the name, a link to each page that
 // is there (the current one marked), and a Home button when the site sets one.
 //
-// Maps, Print Map and the User Guide are for everyone. What not everyone needs is under the
-// Admin tab: remote access, the devices and the map builder now, more later. On those pages a
-// second row under the header names them (when there is more than one).
+// The Map (printing is one of its tabs) and the User Guide are for everyone. What not everyone
+// needs is under the Admin tab: remote access, the devices and the map builder now, more
+// later. On those pages a second row under the header names them (when there is more than one).
 //
 // Where the other pages are is found out, not configured, on this page's own host:
-//   the print tool    /mapprinter/   (its config.json answers)
-//   the Maps page     /maps/ behind Internet-in-a-Box, else /   (styles.json answers)
+//   the map           /map/          (its config.json answers)
 //   the User Guide    /guide/        (its fieldmap.css answers)
 //   the map builder   /mapadmin/     (answers; "Unavailable" when only its place is there)
 //   the Devices page  /phones/       (the Fieldmap app; the same, and only on the box's own network,
 //                                    where the page itself answers), and Remote access beside it
 //                                    at /phones/remote.html
-// A page that is not found gets no link. Home is homeUrl (and homeName) in the print
-// tool's config.json: the address of a landing page in front of these pages, if any.
+// A page that is not found gets no link. Home is homeUrl (and homeName) in the map's
+// config.json: the address of a landing page in front of these pages, if any.
 (() => {
   const bar = document.getElementById("fm-bar");
   if (!bar) return;
   const here = bar.dataset.page;
   const own = new URL(bar.dataset.root || "./", location.href).pathname;
-  const PAGES = [["maps", "Maps", "Maps"], ["print", "Print Map", "Print"], ["guide", "User Guide", "Guide"], ["admin", "Admin", "Admin"]];
+  const PAGES = [["map", "Map", "Map"], ["guide", "User Guide", "Guide"], ["admin", "Admin", "Admin"]];
   // Under Admin, in this order. The Admin tab opens the first one that is running.
   const ADMIN = [["access", "Remote Access"], ["phones", "Devices"], ["builder", "Map Builder"]];
   const inAdmin = ADMIN.some(([key]) => key === here);
@@ -82,27 +81,14 @@
     if (items.length > 1) bar.after(el("nav", { className: "fm-sub", ariaLabel: "Admin pages" }, ...items));
   }
 
-  // The Maps page and the print tool both keep the place in the address (#zoom/lat/lon):
-  // going from one to the other opens the same place.
-  bar.addEventListener("click", (e) => {
-    const a = e.target.closest(".fm-nav a");
-    const place = /^#[\d.]+\/-?[\d.]+\/-?[\d.]+/.test(location.hash);
-    const mapPage = (key) => key === "maps" || key === "print";
-    if (a && place && mapPage(here) && mapPage(a.dataset.page)) a.href = a.href.split("#")[0] + location.hash;
-  });
-
   const get = async (url) => { try { return await fetch(url, { cache: "no-store" }); } catch { return null; } };
   const json = async (url) => { const r = await get(url); try { return r && r.ok ? await r.json() : null; } catch { return null; } };
 
   async function find() {
     const found = {};
-    const printRoot = here === "print" ? own : "/mapprinter/";
-    const [config, mapsRoot, guide, builder, phones] = await Promise.all([
-      json(printRoot + "config.json"),
-      here === "maps" ? own : (async () => {
-        for (const root of ["/maps/", "/"]) if (Array.isArray(await json(root + "styles.json"))) return root;
-        return null;
-      })(),
+    const mapRoot = here === "map" ? own : "/map/";
+    const [config, guide, builder, phones] = await Promise.all([
+      json(mapRoot + "config.json"),
       here === "guide" ? own : (async () => {
         const r = await get("/guide/fieldmap.css");
         return r && r.ok && (r.headers.get("Content-Type") || "").includes("css") ? "/guide/" : null;
@@ -122,14 +108,13 @@
       })(),
     ]);
     if (config && typeof config === "object") {
-      found.print = printRoot;
+      found.map = mapRoot;
       // Only a web address: never a script.
       try {
         const url = config.homeUrl && new URL(config.homeUrl, location.href);
         if (url && /^https?:$/.test(url.protocol)) found.home = { url: url.href, name: String(config.homeName || "Home").slice(0, 24) };
       } catch { /* not an address: no Home button */ }
     }
-    if (mapsRoot) found.maps = mapsRoot;
     if (guide) found.guide = guide;
     if (builder) found.builder = builder;
     if (phones) found.phones = phones;

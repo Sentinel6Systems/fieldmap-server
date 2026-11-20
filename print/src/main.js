@@ -12,7 +12,12 @@ import { UNITS, defaultUnit, unitMetres, shapeRing, shapeCenter, shapeSummary, s
 import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groupsOf } from "./layers.js";
 import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
 import { initWmmNotice } from "./wmm.js";
+import { startLive, conversations, partnerOf, ageText } from "./live.js";
+import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS } from "./shared.js";
 
+// The map at /map/: what the devices share (live.js, shared.js), drawing, terrain analysis, and
+// printing (the Print tab: the sheet on the map, render.js). Opened with ?print (the print
+// tool's old address), it starts on the Print tab.
 const qs = new URLSearchParams(location.search);
 
 const LS = {
@@ -31,9 +36,12 @@ const state = Object.assign(
 if ((state.settingsVersion || 1) < 2) { state.binder = false; state.settingsVersion = 2; }
 state.layers = { ...LAYER_DEFAULTS, ...(state.layers || {}) };
 
-// Print styles, in menu order. Only the ones the tile server actually has are offered.
-// ?style=<id> forces any style on the server for this visit.
+// Print styles, first in the menu. The others the tile server has follow, except the print
+// scale bands (below) and the transparent overlay. ?style=<id> forces any style on the server
+// for this visit. A style that is not a print style prints in the first print style.
 const PRINT_STYLES = [["topo-print", "Standard"], ["topo-usgs", "USGS Quadrangle"]];
+const printable = (id) => PRINT_STYLES.some(([p]) => p === id);
+const BAND = /-(12k|24k|50k|100k)$/;
 // Tile server base. Tried in order: ?tiles=<url>, then /maps on this host (the Pi behind
 // Internet-in-a-Box), then this host's root (the docker-compose stack, where nginx fronts
 // TileServer GL), then port 8080 on this host.
@@ -51,22 +59,28 @@ let serverStyles = new Set();
 async function availableStyles() {
   try {
     const r = await fetch(`${TILES}/styles.json`, { cache: "no-store" });
-    serverStyles = new Set((await r.json()).map((s) => s.id));
-    return PRINT_STYLES.filter(([id]) => serverStyles.has(id));
+    const list = await r.json();
+    serverStyles = new Set(list.map((s) => s.id));
+    const others = list.filter((s) => !printable(s.id) && !BAND.test(s.id) && s.id !== "overlay").map((s) => [s.id, s.name || s.id]);
+    return [...PRINT_STYLES.filter(([id]) => serverStyles.has(id)), ...others];
   } catch { return [PRINT_STYLES[0]]; }
 }
 // Print scale bands with their own style (<style>-12k, -24k, -50k, -100k): line weights
 // fixed for the scale, so a sheet looks the same at any latitude. Used when the server has one.
 const band = (scale) => (scale <= 16000 ? "12k" : scale <= 36000 ? "24k" : scale <= 75000 ? "50k" : "100k");
+/** The style a sheet is printed in: the map's, when it is a print style, else the first print style. */
+const printStyleId = () => (printable(STYLE) || !serverStyles.has(PRINT_STYLES[0][0]) ? STYLE : PRINT_STYLES[0][0]);
 async function printStyle() {
-  const id = `${STYLE}-${band(state.scale)}`;
-  if (serverStyles.has(id)) {
-    try { return applyLayers(await fetchStyle(styleUrlFor(id)), state.layers); } catch (e) { console.warn("print style:", e); }
-  }
+  const base = printStyleId();
+  const id = `${base}-${band(state.scale)}`;
+  try {
+    if (serverStyles.has(id)) return applyLayers(await fetchStyle(styleUrlFor(id)), state.layers);
+    if (base !== STYLE) return applyLayers(await fetchStyle(styleUrlFor(base)), state.layers);
+  } catch (e) { console.warn("print style:", e); }
   return drawnStyle();
 }
 const styles = await availableStyles();
-let STYLE = qs.get("style") || (styles.some(([id]) => id === state.style) ? state.style : PRINT_STYLES[0][0]);
+let STYLE = qs.get("style") || (styles.some(([id]) => id === state.style) ? state.style : (styles[0] || PRINT_STYLES[0])[0]);
 let styleUrl = styleUrlFor(STYLE);
 
 // The style as served, with relative sprite, glyph and source URLs made absolute so the
@@ -96,6 +110,8 @@ let pendingArrow = null;    // {a:{lng,lat}} while placing the end
 let pendingShape = null;    // {type, center | points} while a shape is being drawn
 let selected = null;        // {kind:"marker"|"arrow"|"shape", id}
 let paletteOpenFor = null;  // id of the row whose swatches are open
+// The panel's tab: layers | markers | messages | print. The sheet is on the map only on the Print tab.
+let tab = qs.has("print") ? "print" : ["layers", "markers", "messages", "print"].includes(state.tab) ? state.tab : "layers";
 
 fetch("config.json").then((r) => (r.ok ? r.json() : {})).then((c) => (config = c)).catch(() => {});
 
@@ -107,7 +123,6 @@ const styleSel = $("style");
 for (const [id, label] of styles) styleSel.add(new Option(label, id));
 if (!styles.some(([id]) => id === STYLE)) styleSel.add(new Option(STYLE, STYLE));
 styleSel.value = STYLE;
-styleSel.parentElement.hidden = styleSel.options.length < 2;
 const paperSel = $("paper");
 for (const [k, p] of Object.entries(PAPERS)) paperSel.add(new Option(p.label, k));
 paperSel.value = state.paper;
@@ -139,6 +154,42 @@ window.__printMap = map; // for debugging in the console
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
 map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), "top-left");
 map.addControl(new maplibregl.ScaleControl({ unit: "imperial" }), "bottom-left");
+
+// Without a place in the address, start on the area the base map covers. A new install has
+// empty placeholder files (scripts/data-placeholders.sh): say that no maps are installed.
+(async () => {
+  try {
+    const source = Object.values(rawStyle.sources || {}).find((s) => s.type === "vector" && s.url);
+    const data = source ? await (await fetch(source.url, { cache: "no-store" })).json() : null;
+    if (data && data.name === "empty placeholder") $("no-maps").hidden = false;
+    const b = data && data.bounds;
+    if (!start && b && b[2] - b[0] < 300) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, duration: 0 });
+  } catch { /* the map stays where it is */ }
+})();
+
+/* ---------- the tool bar: what can be added to the map ---------- */
+const ICONS = {
+  marker: '<circle cx="12" cy="12" r="5.5" fill="currentColor"/>',
+  arrow: '<path d="M5 19 19 5M10 5h9v9" fill="none" stroke="currentColor" stroke-width="2.2"/>',
+  circle: '<circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2.2"/>',
+  rect: '<rect x="4.5" y="6.5" width="15" height="11" fill="none" stroke="currentColor" stroke-width="2.2"/>',
+  polygon: '<path d="M12 4 20 10 17 19H7L4 10Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>',
+};
+const TOOLS = [["marker", "Add Marker"], ["arrow", "Add Arrow"], ["circle", "Circle"], ["rect", "Rectangle"], ["polygon", "Polygon"]];
+map.addControl({
+  onAdd() {
+    const box = document.createElement("div");
+    box.className = "maplibregl-ctrl maplibregl-ctrl-group toolbar";
+    for (const [key, title] of TOOLS) {
+      const b = document.createElement("button");
+      b.type = "button"; b.id = `add-${key}`; b.title = title; b.ariaLabel = title;
+      b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[key]}</svg>`;
+      box.appendChild(b);
+    }
+    return box;
+  },
+  onRemove() {},
+}, "top-left");
 
 let footprintCenter = null; // {lng,lat}; set on load to the centre of the visible map area
 
@@ -229,6 +280,34 @@ map.on("load", () => {
     paint: { "text-color": "#111", "text-halo-color": "#fff", "text-halo-width": 1.5 },
   });
 
+  // What the devices share (shared.js): areas, lines and routes, markers; the devices on top.
+  map.addSource("live", { type: "geojson", data: emptyFC() });
+  const part = (...parts) => ["match", ["get", "part"], parts, true, false];
+  map.addLayer({ id: "live-area", type: "fill", source: "live", filter: part("area"), paint: { "fill-color": ["get", "color"], "fill-opacity": 0.12 } });
+  map.addLayer({ id: "live-halo", type: "line", source: "live", filter: part("line", "head", "dashed", "area"),
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#fff", "line-width": 6, "line-opacity": 0.6 } });
+  map.addLayer({ id: "live-line", type: "line", source: "live", filter: part("line", "head", "area"),
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3 } });
+  map.addLayer({ id: "live-dashed", type: "line", source: "live", filter: part("dashed"),
+    layout: { "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3, "line-dasharray": [2, 1.5] } });
+  map.addLayer({ id: "live-vertex", type: "circle", source: "live", filter: part("vertex"),
+    paint: { "circle-radius": 4, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
+  map.addLayer({ id: "live-point", type: "circle", source: "live", filter: part("point"),
+    paint: { "circle-radius": 8, "circle-color": ["get", "color"], "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+  map.addLayer({ id: "live-label", type: "symbol", source: "live", filter: part("point", "label"),
+    layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 13, "text-allow-overlap": true,
+      "text-anchor": ["match", ["get", "part"], "point", "left", "center"],
+      "text-offset": ["match", ["get", "part"], "point", ["literal", [0.9, 0]], ["literal", [0, -1]]] },
+    paint: { "text-color": "#111", "text-halo-color": "#fff", "text-halo-width": 1.5 } });
+  map.addSource("people", { type: "geojson", data: emptyFC() });
+  map.addLayer({ id: "people-symbol", type: "symbol", source: "people",
+    layout: { "icon-image": ["get", "icon"], "icon-allow-overlap": true, "icon-ignore-placement": true },
+    paint: { "icon-opacity": ["get", "opacity"] } });
+  map.addLayer({ id: "people-name", type: "symbol", source: "people",
+    layout: { "text-field": ["get", "name"], "text-font": pickFont(), "text-size": 14, "text-offset": [1.2, 0], "text-anchor": "left",
+      "text-allow-overlap": true, "text-ignore-placement": true },
+    paint: { "text-color": "#004e63", "text-halo-color": "#fff", "text-halo-width": 2, "text-opacity": ["get", "opacity"] } });
+
   map.addSource("temp", { type: "geojson", data: emptyFC() });
   map.addLayer({ id: "temp-fill", type: "fill", source: "temp", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": "#333", "fill-opacity": 0.08 } });
   map.addLayer({ id: "temp-line", type: "line", source: "temp", paint: { "line-color": "#333", "line-width": 2, "line-dasharray": [2, 2] } });
@@ -237,6 +316,8 @@ map.on("load", () => {
   footprintCenter = visibleCenter();
   updateFootprint();
   renderLists();
+  showSheet();
+  drawLive();
   terrainReady.then((t) => t.addLayers());
 
   map.on("mousedown", onDown); map.on("touchstart", onDown);
@@ -268,6 +349,9 @@ map.on("click", (e) => {
   if (hitA.length) { select("arrow", hitA[0].properties.id); return; }
   const hitS = map.queryRenderedFeatures(e.point, { layers: ["shapes-line", "shapes-label"] });
   if (hitS.length) { select("shape", hitS[0].properties.id); return; }
+  if (liveClick(e)) return;
+  // On the Print tab, a tap outside the sheet brings the sheet there.
+  if (tab !== "print") return;
   const inside = map.queryRenderedFeatures(e.point, { layers: ["footprint-fill"] }).length > 0;
   if (!inside) { footprintCenter = { lng: e.lngLat.lng, lat: e.lngLat.lat }; updateFootprint(); }
 });
@@ -283,7 +367,7 @@ function onDown(e) {
   if (hit.length) { dragging = { kind: "marker", id: hit[0].properties.id }; return begin(e); }
   hit = map.queryRenderedFeatures(pt, { layers: ["arrow-ends"] });
   if (hit.length) { dragging = { kind: "arrow-end", id: hit[0].properties.id, end: hit[0].properties.end }; return begin(e); }
-  hit = map.queryRenderedFeatures(pt, { layers: ["footprint-fill"] });
+  hit = tab === "print" ? map.queryRenderedFeatures(pt, { layers: ["footprint-fill"] }) : [];
   if (hit.length) {
     const c = currentCenter();
     footprintCenter = { lng: c.lng, lat: c.lat };
@@ -372,6 +456,7 @@ function updateFootprint() {
     ? `${atlas.n * atlas.n} pages of ${cellTxt}`
     : cellTxt;
   $("info-centre").textContent = toMGRS(c.lat, c.lng, 4);
+  $("info-style").textContent = (styles.find(([id]) => id === printStyleId()) || [, printStyleId()])[1];
   $("info-grid").textContent = state.scale <= 12000 ? "MGRS 1 km + 100 m ticks" : state.scale >= 100000 ? "MGRS 1 km, 10 km bold" : "MGRS 1 km";
   const pages = atlas.n > 1 ? atlas.n * atlas.n + 1 : 1;
   const phone = window.innerWidth <= 640 || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
@@ -629,6 +714,7 @@ function setMode(m) {
     m === "rect-end" ? "Tap the opposite corner." :
     m === "polygon" ? (corners < 3 ? `Tap the corners of the polygon. Corners so far: ${corners}.` : `${corners} corners. To finish the shape, tap the first corner, press Enter or press Finish Shape.`) : "";
   $("finish-shape").hidden = !(m === "polygon" && corners >= 3);
+  $("mode-bar").hidden = !m;
 }
 $("add-marker").onclick = () => setMode(mode === "marker" ? null : "marker");
 $("add-arrow").onclick = () => setMode(mode ? null : "arrow-start");
@@ -711,7 +797,7 @@ renderNewColor();
 
 scaleSel.onchange = () => { state.scale = +scaleSel.value; saveSettings(); updateFootprint(); };
 // Switch the map style in place: the sheet outline, markers and arrows are carried over.
-const OWN_SOURCES = ["footprint", "shapes", "arrows", "markers", "temp", ...TERRAIN_SOURCES];
+const OWN_SOURCES = ["footprint", "shapes", "arrows", "markers", "live", "people", "temp", ...TERRAIN_SOURCES];
 function redraw(diff = true) {
   map.setStyle(drawnStyle(), {
     diff,
@@ -728,6 +814,7 @@ styleSel.onchange = async () => {
   rawStyle = await fetchStyle(styleUrl);
   redraw(false);
   renderLayerPanel();
+  updateFootprint();
 };
 
 /* ---------- layer switches ---------- */
@@ -788,7 +875,7 @@ function renderLayerPanel() {
   const hidden = state.layers.off.filter((g) => have.has(g)).length;
   $("layers-summary").textContent = hidden ? `${hidden} hidden` : "";
 }
-$("layers-reset").onclick = () => { state.layers = { ...LAYER_DEFAULTS }; saveSettings(); redraw(); renderLayerPanel(); };
+$("layers-reset").onclick = () => { state.layers = { ...LAYER_DEFAULTS }; saveSettings(); redraw(); renderLayerPanel(); renderLiveSwitches(); drawLive(); };
 renderLayerPanel();
 paperSel.onchange = () => { state.paper = paperSel.value; saveSettings(); updateFootprint(); };
 $("orientation").onchange = (e) => { state.orientation = e.target.value; saveSettings(); updateFootprint(); };
@@ -800,6 +887,244 @@ $("list-page").onchange = (e) => { state.listPage = e.target.checked; saveSettin
 $("bring").onclick = () => { footprintCenter = visibleCenter(); updateFootprint(); };
 $("fit").onclick = () => { const { bounds } = footprintPolygon(); map.fitBounds(bounds, { padding: panelPadding(), duration: 400 }); };
 $("panel-toggle").onclick = () => document.body.classList.toggle("panel-collapsed");
+
+/* ---------- the tabs ---------- */
+const TABS = [...document.querySelectorAll(".tabs [data-tab]")];
+function showTab(name) {
+  if (name === "messages" && TABS.find((b) => b.dataset.tab === "messages").hidden) name = "layers";
+  const was = tab;
+  tab = name;
+  state.tab = name; saveSettings();
+  for (const b of TABS) b.ariaSelected = String(b.dataset.tab === name);
+  for (const key of ["layers", "markers", "messages", "print"]) $(`tab-${key}`).hidden = key !== name;
+  document.body.classList.remove("panel-collapsed");
+  showSheet(was !== "print" && name === "print");
+  if (name === "messages") renderMessages();
+}
+for (const b of TABS) b.onclick = () => showTab(b.dataset.tab);
+
+/** The sheet's outline: on the map only on the Print tab. Opening the tab with the sheet out of
+ *  view brings it to the middle of what can be seen. */
+function showSheet(opening = false) {
+  if (!map.getLayer("footprint-fill")) return;
+  const on = tab === "print";
+  for (const id of ["footprint-fill", "footprint-line", "footprint-label"]) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+  if (opening && footprintCenter && !map.getBounds().contains([footprintCenter.lng, footprintCenter.lat])) {
+    footprintCenter = visibleCenter();
+    updateFootprint();
+  }
+}
+
+/* ---------- what the devices share ---------- */
+const people = new Map();            // uid -> name, from locations and messages
+let live = null;
+let livePopup = null;
+const SHARED_LAYERS = ["live-area", "live-halo", "live-line", "live-dashed", "live-vertex", "live-point", "live-label"];
+const PEOPLE_LAYERS = ["people-symbol", "people-name"];
+
+// The devices' symbols, made again whenever a style change has dropped them.
+map.on("styleimagemissing", (e) => {
+  const fill = PERSON_COLORS[e.id];
+  const ratio = Math.max(1, Math.round(window.devicePixelRatio || 1));
+  if (fill && !map.hasImage(e.id)) map.addImage(e.id, personImage(fill, ratio), { pixelRatio: ratio });
+});
+
+/** The live layers as they are now; also every few seconds, so that locations age between answers. */
+function drawLive() {
+  if (!map.getSource("live")) return;
+  const st = live && live.status === "on" ? live.state : null;
+  const info = (live && live.info) || {};
+  try {
+    map.getSource("live").setData(st ? sharedFC([...st.markers.values()]) : emptyFC());
+    map.getSource("people").setData(st ? peopleFC(st.positions, +info.interval || 5, +info.stale || 120, (Date.now() - st.at) / 1000) : emptyFC());
+    for (const id of SHARED_LAYERS) map.setLayoutProperty(id, "visibility", state.layers.shared !== false ? "visible" : "none");
+    for (const id of PEOPLE_LAYERS) map.setLayoutProperty(id, "visibility", state.layers.people !== false ? "visible" : "none");
+  } catch { /* a new map style is still loading: drawn again in a few seconds */ }
+}
+setInterval(drawLive, 5000);
+
+function renderLiveSwitches() {
+  const box = $("live-switches");
+  box.replaceChildren(
+    toggle("Device Locations", state.layers.people !== false, (on) => { state.layers.people = on; saveSettings(); drawLive(); }, "The devices sharing their location now. On screen only."),
+    toggle("Shared Markers", state.layers.shared !== false, (on) => { state.layers.shared = on; saveSettings(); drawLive(); }, "Markers, arrows and routes shared by the devices. On screen only."),
+  );
+}
+
+const when = (iso) => {
+  const t = new Date(iso);
+  if (isNaN(t)) return "";
+  return t.toDateString() === new Date().toDateString() ? t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : t.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+};
+const nameOf = (uid) => people.get(uid) || "Unknown";
+
+/** A shared item or a device under the pointer: its details in a popup. True when there was one. */
+function liveClick(e) {
+  const hits = map.queryRenderedFeatures(e.point, { layers: [...PEOPLE_LAYERS, ...SHARED_LAYERS].filter((id) => map.getLayer(id)) });
+  if (!hits.length) return false;
+  const h = hits[0];
+  if (PEOPLE_LAYERS.includes(h.layer.id)) showPerson(h.properties.uid);
+  else showShared(h.properties.id);
+  return true;
+}
+function popup(lngLat, html) {
+  if (livePopup) livePopup.remove();
+  livePopup = new maplibregl.Popup({ maxWidth: "260px" }).setLngLat(lngLat).setHTML(`<div class="live-popup">${html}</div>`).addTo(map);
+}
+function showPerson(uid) {
+  const st = live && live.state;
+  const p = st && st.positions.find((x) => x.uid === uid);
+  if (!p) return;
+  const age = (+p.age || 0) + (Date.now() - st.at) / 1000;
+  const metric = state.units === "metric";
+  const lines = [`<b>${escapeHtml(p.name)}</b>`, `<span>${toMGRS(p.lat, p.lon, 5)}</span>`, `<span>Location: ${ageText(age)}</span>`];
+  if (Number.isFinite(p.speed) && p.speed > 0.5) lines.push(`<span>Speed: ${metric ? Math.round(p.speed * 3.6) + " km/h" : Math.round(p.speed * 2.23694) + " mph"}${Number.isFinite(p.course) ? " · " + fmtBearing(p.course) + " T" : ""}</span>`);
+  if (Number.isFinite(p.acc)) lines.push(`<span>Accuracy: ±${metric ? Math.round(p.acc) + " m" : Math.round(p.acc * 3.28084) + " ft"}</span>`);
+  popup([p.lon, p.lat], lines.join(""));
+}
+function sharedDetail(f, d) {
+  const p = f.properties || {};
+  const by = p.by ? ` · ${escapeHtml(nameOf(p.by))}` : "";
+  return `${kindText(d)}${by}${p.updated ? " · " + when(p.updated) : ""}`;
+}
+function showShared(id) {
+  const f = live && live.state && live.state.markers.get(String(id));
+  const d = f && describe(f);
+  if (!d) return;
+  const [lon, lat] = d.points[0];
+  const lines = [`<b>${escapeHtml(d.label || "Unnamed")}</b>`, `<span>${sharedDetail(f, d)}</span>`, `<span>${toMGRS(lat, lon, 5)}</span>`];
+  if (d.kind === "route") {
+    let m = 0;
+    for (let i = 1; i < d.points.length; i++) m += inverse(d.points[i - 1][1], d.points[i - 1][0], d.points[i][1], d.points[i][0]).distance;
+    lines.push(`<span>${d.points.length} points · ${fmtLength(m, state.units)}${d.routing !== "straight" ? " in straight legs" : ""}</span>`);
+  }
+  popup([lon, lat], lines.join(""));
+}
+
+/** The Shared Markers list on the Markers tab, newest first. */
+function renderShared() {
+  const st = live && live.status === "on" ? live.state : null;
+  $("shared-section").hidden = !st;
+  if (!st) return;
+  const items = [...st.markers.values()].map((f) => [f, describe(f)]).filter(([, d]) => d)
+    .sort(([a], [b]) => String((b.properties || {}).updated || "").localeCompare(String((a.properties || {}).updated || "")));
+  $("shared-count").textContent = items.length ? String(items.length) : "";
+  const list = $("shared-list");
+  if (!items.length) { list.innerHTML = `<div class="hint">No shared markers.</div>`; return; }
+  list.replaceChildren(...items.map(([f, d]) => {
+    const row = document.createElement("div");
+    row.className = "shared-row";
+    row.innerHTML = `<span class="shared-dot${d.kind === "marker" ? "" : " line"}" style="background:${d.color}"></span>
+      <span class="what">${escapeHtml(d.label || "Unnamed")}<small>${sharedDetail(f, d)}</small></span>
+      <button class="icon" title="Show on Map">◎</button>`;
+    row.querySelector("button").onclick = () => {
+      const [lon, lat] = d.points[0];
+      map.flyTo({ center: [lon, lat] });
+      showShared(f.id);
+    };
+    return row;
+  }));
+}
+
+/* ---------- messages ---------- */
+let openConversation = null;          // the partner shown, or null for the list
+function renderMessages() {
+  const on = live && live.status === "on" && live.info && live.info.messages;
+  $("messages-status").textContent = !live || on ? "" : live.text;
+  const convs = live ? conversations(live.messages.list, live.uid) : [];
+  const unread = convs.reduce((n, c) => n + c.unread, 0);
+  $("unread").hidden = !unread;
+  $("unread").textContent = String(unread);
+  document.title = unread ? `(${unread}) Map` : "Map";
+  if (tab !== "messages") return;
+  $("conversations").hidden = !!openConversation;
+  $("conversation").hidden = !openConversation;
+  if (!openConversation) {
+    $("conversations").replaceChildren(...convs.map((c) => {
+      const b = document.createElement("button");
+      b.className = "conv-row";
+      b.innerHTML = `<b>${escapeHtml(c.partner === "*" ? c.name : c.name || "Unknown")}</b>${c.unread ? `<span class="badge">${c.unread}</span>` : "<span></span>"}
+        <small>${c.last ? escapeHtml(`${c.last.mine ? "You" : c.last.name}: ${c.last.text}`) : "No messages."}</small>`;
+      b.onclick = () => { openConversation = c.partner; renderMessages(); };
+      return b;
+    }));
+    return;
+  }
+  const c = convs.find((x) => x.partner === openConversation) || { partner: openConversation, name: nameOf(openConversation) };
+  $("conversation-title").textContent = c.name;
+  const list = live.messages.list.filter((m) => partnerOf(m, live.uid) === openConversation);
+  $("conversation-list").replaceChildren(...(list.length ? list.map((m) => {
+    const d = document.createElement("div");
+    d.className = "msg" + (m.mine ? " mine" : "");
+    d.innerHTML = `<small>${escapeHtml(m.mine ? "You" : m.name)} · ${when(m.time)}</small>${escapeHtml(m.text)}<small>${m.mine ? "" : "Received (Server)"}</small>`;
+    return d;
+  }) : [Object.assign(document.createElement("div"), { className: "hint", textContent: "No messages." })]));
+  live.markRead(openConversation);
+}
+$("conversation-back").onclick = () => { openConversation = null; renderMessages(); };
+
+/** Everything that shows what the server holds, after each answer. */
+function onLive(l) {
+  live = l;
+  const st = l.status === "on" ? l.state : null;
+  if (st) for (const p of st.positions) people.set(p.uid, p.name);
+  for (const m of l.messages.list) if (!m.mine) people.set(m.from, m.name);
+  // No sharing service on this server: none of it is shown.
+  const there = l.status !== "absent" && l.status !== "starting";
+  $("live-layers").hidden = !there;
+  // A server from before messages has locations and markers only.
+  const messaging = there && !(l.status === "on" && l.info && !l.info.messages);
+  TABS.find((b) => b.dataset.tab === "messages").hidden = !messaging;
+  if (!messaging && tab === "messages") showTab("layers");
+  $("live-status").textContent = l.status === "on" ? "" : l.text;
+  drawLive();
+  renderShared();
+  renderMessages();
+}
+renderLiveSwitches();
+showTab(tab);
+startLive(onLive);
+
+/* ---------- Tile URLs for other apps ---------- */
+// A style that starts with a background fills every pixel, so its tiles can be JPEG: about a
+// third of the size of PNG. A style without one is an overlay and needs PNG, which can be
+// see-through. (The same addresses as on TileServer GL's own front page.)
+async function fillTileUrls() {
+  const get = async (url) => { try { const r = await fetch(url, { cache: "no-store" }); return r.ok ? await r.json() : null; } catch { return null; } };
+  const [rendered, data] = await Promise.all([get(`${TILES}/rendered.json`), get(`${TILES}/data.json`)]);
+  const rows = await Promise.all((rendered || []).map(async (t) => {
+    const st = await get(styleUrlFor(t.id));
+    const jpeg = !!(st && st.layers && st.layers[0] && st.layers[0].type === "background");
+    return [t.name || t.id, t.id, `${TILES}/styles/${t.id}/{z}/{x}/{y}.${jpeg ? "jpg" : "png"}`];
+  }));
+  rows.sort((a, b) => a[0].localeCompare(b[0], "en", { numeric: true }));
+  $("tile-list").replaceChildren(...rows.map(([name, id, url]) => {
+    const d = document.createElement("div");
+    d.className = "addr";
+    d.innerHTML = `<b>${escapeHtml(name)}</b><div class="copy"><input type="text" readonly aria-label="Tile URL for ${escapeHtml(name)}"><button type="button">Copy</button></div>
+      <p class="more"><a href="${TILES}/styles/${id}.json">TileJSON</a> · <a href="${TILES}/styles/${id}/wmts.xml">WMTS</a> · <a href="${TILES}/styles/${id}/style.json">Style</a></p>`;
+    const [input, button] = d.querySelectorAll("input,button");
+    input.value = url;
+    input.onfocus = () => input.select();
+    button.onclick = () => {
+      // Not navigator.clipboard: that needs https, which a server on a local network rarely has.
+      input.select();
+      const done = document.execCommand("copy");
+      button.textContent = done ? "Copied" : "Press Ctrl+C";
+      setTimeout(() => (button.textContent = "Copy"), 2500);
+    };
+    return d;
+  }));
+  if (!rows.length) $("tile-list").innerHTML = `<p>No Map Styles</p>`;
+  $("data-block").hidden = !(data && data.length);
+  $("data-list").replaceChildren(...(data || []).flatMap((t) => {
+    const span = Object.assign(document.createElement("span"), { textContent: t.name && t.name !== t.id ? `${t.id} (${t.name})` : t.id });
+    const a = (text, href) => Object.assign(document.createElement("a"), { textContent: text, href });
+    return [span, a("TileJSON", `${TILES}/data/${t.id}.json`), a("Inspect", `${TILES}/data/${t.id}/`)];
+  }));
+}
+$("tile-urls").onclick = () => { fillTileUrls(); $("addresses").showModal(); };
+$("addresses-close").onclick = () => $("addresses").close();
 
 /* ---------- PDF ---------- */
 let aborter = null;

@@ -611,11 +611,11 @@ function drawJob() {
   $("repeat").textContent = job.state === "done" ? "Rebuild" : "Resume Build";
   $("repeat").title = job.state === "done" ? "Uses the same regions, layers, and options. Asks before the build starts."
     : "Uses the same regions, layers, and options. The build continues from where it stopped.";
-  // Beside the viewer and the print tool when this page is /mapadmin/ on the web front; else on its own port.
+  // Beside the map when this page is /mapadmin/ on the web front; else on its own port.
   const base = location.pathname.startsWith("/mapadmin") ? location.origin
     : `${location.protocol}//${location.hostname}${status.web_port === 80 ? "" : ":" + status.web_port}`;
-  $("open-map").hidden = $("open-print").hidden = job.state !== "done";
-  $("open-map").href = `${base}/`; $("open-print").href = `${base}/mapprinter/`;
+  $("open-map").hidden = job.state !== "done";
+  $("open-map").href = `${base}/map/`;
   if (job.state === "failed") $("details").open = true;
   // A new build: show its last 200 kB, where a failure is explained, not its beginning.
   if (logFor !== job.started) {
