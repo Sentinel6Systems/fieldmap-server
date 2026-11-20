@@ -508,6 +508,46 @@ class ShareServerTest(unittest.TestCase):
         self.assertEqual({"type": "LineString", "coordinates": [[2.5, 1.5], [2.6, 1.6]]}, got["geometry"])
         self.assertEqual("arrow", got["properties"]["fieldmap"]["kind"])
 
+    def test_a_route_is_shared_like_a_marker(self):
+        points = [[2.5 + i * 0.01, 1.5] for i in range(30)]
+        route = {**marker(), "geometry": {"type": "LineString", "coordinates": points}}
+        route["properties"]["fieldmap"].update(kind="route", waypoints=points, speedMph=25)
+        self.assertEqual(200, self.ask("PUT", "/markers/" + MARKER, route).status)
+        got = self.ask("GET", "/state").body["markers"][0]
+        self.assertEqual({"type": "LineString", "coordinates": points}, got["geometry"])
+        self.assertEqual("route", got["properties"]["fieldmap"]["kind"])
+        self.assertEqual(points, got["properties"]["fieldmap"]["waypoints"])
+        self.assertEqual(25, got["properties"]["fieldmap"]["speedMph"])
+        # Two points are a route too, when it says so.
+        two = {**route, "geometry": {"type": "LineString", "coordinates": points[:2]}}
+        two["properties"] = {**route["properties"], "fieldmap": {**route["properties"]["fieldmap"], "waypoints": points[:2]}}
+        self.assertEqual(200, self.ask("PUT", "/markers/" + MARKER, two).status)
+
+    def test_routes_are_checked_strictly(self):
+        def route(line, **fieldmap):
+            body = {**marker(), "geometry": {"type": "LineString", "coordinates": line}}
+            body["properties"]["fieldmap"].update(kind="route", **fieldmap)
+            return body
+        line = [[2.5 + i * 0.01, 1.5] for i in range(31)]
+        bad = [route(line), route(line[:1]), route(line[:3], waypoints=line), route(line[:3], waypoints=line[:1]),
+               route(line[:3], waypoints=[[1, 2], [200, 2]]), route(line[:3], waypoints="1,2"), route(line[:3], waypoints=[[1, 2], [3, 4, 5, 6]]),
+               route(line[:3], waypoints=[[1, 2], ["a", 2]])]
+        point_route = marker()
+        point_route["properties"]["fieldmap"].update(kind="route", waypoints=[[1, 2], [3, 4]])
+        bad.append(point_route)
+        # Only a route carries a list, and only its waypoints.
+        arrow = {**marker(), "geometry": {"type": "LineString", "coordinates": line[:2]}}
+        arrow["properties"]["fieldmap"].update(kind="arrow", waypoints=line[:2])
+        bad.append(arrow)
+        bad.append(route(line[:3], other=[1, 2]))
+        for body in bad:
+            r = self.ask("PUT", "/markers/" + MARKER, body)
+            self.assertEqual(400, r.status, json.dumps(body)[:160])
+            self.assertTrue(r.body["error"])
+        self.assertEqual({}, self.ss.markers)
+        # Without its waypoints a route is still taken: the line is its points.
+        self.assertEqual(200, self.ask("PUT", "/markers/" + MARKER, route(line[:3])).status)
+
     def test_the_box_takes_only_so_many_markers(self):
         with mock.patch.object(self.ss, "MAX_MARKERS", 2):
             for n in range(2):

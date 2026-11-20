@@ -15,8 +15,9 @@ What it answers (the web server and the gateway put /mapshare/ in front):
   POST   /position         a phone's position; kept in memory only, dropped when stale
   POST   /leave            {"uid"}: that position is gone at once
   GET    /state[?since=n]  every position, and the shared markers (all, or those changed since)
-  PUT    /markers/<id>     a shared marker (a GeoJSON Feature with a Point), or an arrow (a
-                           LineString of two points, as the print tool makes them); kept on disk
+  PUT    /markers/<id>     a shared marker (a GeoJSON Feature with a Point), an arrow (a
+                           LineString of two points, as the print tool makes them), or a route
+                           (a LineString of up to 30 points, fieldmap.kind "route"); kept on disk
   DELETE /markers/<id>
   GET    /mesh             the server's mesh radio channel (a secret, see "The mesh radio channel")
   POST   /messages         a short text message, to one device (its uid) or to everybody ("*")
@@ -104,6 +105,7 @@ MARKER_BYTES = 8192
 ADMIN_BYTES = 1024
 MAX_PROPERTIES = 32             # entries in a marker's properties, and in an object inside them
 MAX_TEXT = 300                  # characters of a text in a marker
+MAX_ROUTE_POINTS = 30           # points of a route: as many as one mesh radio packet carries
 MAX_BUSY = 64                   # requests answered at the same time
 
 # Per caller, as (a second, burst): every request; changing markers (each change is written
@@ -312,8 +314,10 @@ def clean_properties(properties, inside=False):
 
 
 def clean_marker(marker_id, body):
-    """A shared marker as it is kept and given out: a GeoJSON Feature with a Point, its id, and
-    properties that are plain values. ValueError in plain words otherwise."""
+    """A shared marker as it is kept and given out: a GeoJSON Feature with a Point (a marker), a
+    LineString of two points (an arrow) or of up to MAX_ROUTE_POINTS (a route, fieldmap.kind
+    "route"), its id, and properties that are plain values; a route's points also in
+    fieldmap.waypoints. ValueError in plain words otherwise."""
     if not isinstance(body, dict) or body.get("type") != "Feature":
         raise ValueError("A marker is a GeoJSON Feature.")
     if body.get("id") is not None and body["id"] != marker_id:
@@ -324,22 +328,37 @@ def clean_marker(marker_id, body):
 
     def position(p):
         if not isinstance(p, list) or len(p) not in (2, 3):
-            raise ValueError("A marker is a Point: [lon, lat], or an arrow: a LineString of two points.")
+            raise ValueError("A marker is a Point: [lon, lat]; an arrow or a route a LineString of such points.")
         out = [number(p[0], -180, 180, "lon"), number(p[1], -90, 90, "lat")]
         if len(p) == 3:
             out.append(number(p[2], -1000, 100000, "alt"))
         return out
-    # A marker is a point; an arrow (the print tool's) a line from its start to its head.
-    if kind == "LineString":
-        if not isinstance(raw, list) or len(raw) != 2:
-            raise ValueError("An arrow is a LineString of exactly two points.")
-        coordinates = [position(p) for p in raw]
-    else:
-        coordinates = position(raw)
     properties = body.get("properties")
     if not isinstance(properties, dict):
         raise ValueError("A marker needs properties.")
+    fieldmap = properties.get("fieldmap")
+    route = isinstance(fieldmap, dict) and fieldmap.get("kind") == "route"
+    # A marker is a point; an arrow (the print tool's) a line from its start to its head; a route
+    # the line through its points.
+    if kind == "LineString":
+        most = MAX_ROUTE_POINTS if route else 2
+        if not isinstance(raw, list) or not 2 <= len(raw) <= most:
+            raise ValueError(f"A route is a LineString of 2 to {MAX_ROUTE_POINTS} points." if route
+                             else "An arrow is a LineString of exactly two points.")
+        coordinates = [position(p) for p in raw]
+    else:
+        coordinates = position(raw)
+    # A route's points (the ones tapped for it) are the one list a marker may carry.
+    waypoints = None
+    if route and "waypoints" in fieldmap:
+        raw_points = fieldmap["waypoints"]
+        if kind != "LineString" or not isinstance(raw_points, list) or not 2 <= len(raw_points) <= MAX_ROUTE_POINTS:
+            raise ValueError(f"A route's waypoints are 2 to {MAX_ROUTE_POINTS} points.")
+        waypoints = [position(p) for p in raw_points]
+        properties = {**properties, "fieldmap": {k: v for k, v in fieldmap.items() if k != "waypoints"}}
     properties = clean_properties(properties)
+    if waypoints is not None:
+        properties["fieldmap"]["waypoints"] = waypoints
     clean_id(properties.get("by"), "marker's \"by\"")
     clean_time(properties.get("updated"), "marker's \"updated\"")
     return {"type": "Feature", "id": marker_id, "geometry": {"type": kind, "coordinates": coordinates}, "properties": properties}
