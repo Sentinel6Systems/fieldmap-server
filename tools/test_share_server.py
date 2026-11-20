@@ -244,9 +244,15 @@ class ShareServerTest(unittest.TestCase):
         for uid in ("test-phone-0002", "test-phone-0003"):
             self.assertEqual(1, len(self.ask("GET", "/messages?for=" + uid).body["messages"]))
         self.assertEqual(0, len(self.ask("GET", "/messages?for=" + UID).body["messages"]))
-        # A delivery receipt is only for a message to that one device.
+        # A message to everybody stays for the others; its sender learns who has it.
+        self.ask("POST", "/messages/delivered", {"ids": ["test-msg-0001"], "by": "test-phone-0002"})
         self.ask("POST", "/messages/delivered", {"ids": ["test-msg-0001"], "by": "test-phone-0002"})
         self.assertEqual(1, len(self.ask("GET", "/messages?for=test-phone-0003").body["messages"]))
+        self.assertEqual({"test-msg-0001": ["test-phone-0002"]}, self.ask("GET", "/messages?for=" + UID).body["groupDelivered"])
+        self.ask("POST", "/messages/delivered", {"ids": ["test-msg-0001"], "by": UID})
+        self.assertEqual(["test-phone-0002"], self.ask("GET", "/messages?for=" + UID).body["groupDelivered"]["test-msg-0001"], "not its own sender")
+        self.ss.messages = {"seq": 0, "list": [], "delivered": {}}
+        self.assertEqual(["test-phone-0002"], self.ask("GET", "/messages?for=" + UID).body["groupDelivered"]["test-msg-0001"], "kept on the disk")
 
     def test_a_relay_asks_for_several_devices(self):
         self.ask("POST", "/messages", self.message(id="test-msg-0001", to="test-phone-0002"))

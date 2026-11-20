@@ -21,8 +21,9 @@ What it answers (the web server and the gateway put /mapshare/ in front):
   GET    /mesh             the server's mesh radio channel (a secret, see "The mesh radio channel")
   POST   /messages         a short text message, to one device (its uid) or to everybody ("*")
   GET    /messages?for=<uid>[,<uid>...][&since=<seq>]
-                           the messages for those devices (and to everybody) after seq, and
-                           which of the messages they sent were delivered
+                           the messages for those devices (and to everybody) after seq, which
+                           of the messages they sent were delivered, and who has those they sent
+                           to everybody ("groupDelivered": {id: [uids]})
   POST   /messages/delivered {"ids": [...], "by": "<uid>"}: these messages reached that device
   GET    /admin            for the Devices page: the switch, who is sharing right now
   POST   /admin            {"on": true|false}: the switch; {"newMeshKey": true}: a new channel key
@@ -594,16 +595,17 @@ def load_messages():
                 data = json.load(f)
             kept = [{**clean_message(m), "seq": int(m["seq"]), "at": float(m["at"])} for m in data["list"]]
             receipts = {clean_id(i, "id"): {"from": clean_id(r["from"]), "at": float(r["at"])} for i, r in data["delivered"].items()}
-            messages = {"seq": int(data["seq"]), "list": kept, "delivered": receipts}
+            seen = {clean_id(i, "id"): sorted({clean_id(u) for u in us}) for i, us in data.get("seen", {}).items()}
+            messages = {"seq": int(data["seq"]), "list": kept, "delivered": receipts, "seen": seen}
         except FileNotFoundError:
-            messages = {"seq": int(time.time()), "list": [], "delivered": {}}
+            messages = {"seq": int(time.time()), "list": [], "delivered": {}, "seen": {}}
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
             print("The messages on the disk cannot be read (%s): put aside as messages.json.bad, starting empty." % e, flush=True)
             try:
                 os.replace(MESSAGES, MESSAGES + ".bad")
             except OSError:
                 pass
-            messages = {"seq": int(time.time()), "list": [], "delivered": {}}
+            messages = {"seq": int(time.time()), "list": [], "delivered": {}, "seen": {}}
         return messages
 
 
@@ -623,6 +625,8 @@ def fresh_messages():
     limit = time.time() - MESSAGE_DAYS * 86400
     messages["list"] = [m for m in messages["list"] if m["at"] >= limit]
     messages["delivered"] = {i: r for i, r in messages["delivered"].items() if r["at"] >= limit}
+    kept = {m["id"] for m in messages["list"]}
+    messages["seen"] = {i: us for i, us in messages.setdefault("seen", {}).items() if i in kept}
     return messages
 
 
@@ -653,7 +657,9 @@ def messages_for(uids, since=None):
         found = [{k: m[k] for k in ("seq", "id", "from", "name", "to", "text", "time")} for m in box["list"]
                  if (m["to"] in wanted or m["to"] == "*") and m["from"] not in wanted and (since is None or m["seq"] > since)]
         delivered = sorted(i for i, r in box["delivered"].items() if r["from"] in wanted)
-        return {"seq": box["seq"], "messages": found, "delivered": delivered}
+        # Who has their messages to everybody: the uids that said so.
+        group = {m["id"]: box["seen"].get(m["id"], []) for m in box["list"] if m["to"] == "*" and m["from"] in wanted and box["seen"].get(m["id"])}
+        return {"seq": box["seq"], "messages": found, "delivered": delivered, "groupDelivered": group}
 
 
 def deliver(ids, by):
@@ -664,7 +670,11 @@ def deliver(ids, by):
         for m in done:
             box["list"].remove(m)
             box["delivered"][m["id"]] = {"from": m["from"], "at": time.time()}
-        if done:
+        # A message to everybody stays for the others; the server notes who has it.
+        seen = [m for m in box["list"] if m["id"] in ids and m["to"] == "*" and m["from"] != by and by not in box["seen"].get(m["id"], [])]
+        for m in seen:
+            box["seen"].setdefault(m["id"], []).append(by)
+        if done or seen:
             save_messages()
 
 
