@@ -15,6 +15,20 @@ services:
       - ./:/data:ro
     command: --config /data/config.json --bind 127.0.0.1 --port 8080 --public_url /maps/
 
+  # Lines along roads and trails for the map in the browser (brouter/): the same engine and
+  # profiles as the app, on the routing data; on localhost, for IIAB's nginx (/routing/route).
+  brouter:
+    build: ./brouter
+    container_name: fieldmap-brouter
+    restart: always
+    mem_limit: ${BROUTER_MEM_LIMIT:-512m}
+    memswap_limit: ${BROUTER_MEM_LIMIT:-512m}
+    network_mode: host
+    environment:
+      BIND: 127.0.0.1
+    volumes:
+      - ./data/routing:/segments:ro
+
   # The gateway for the Fieldmap Android app away from this network (scripts/remote.sh setup
   # makes its certificates and starts it; `up -d` alone leaves it out). Host networking like
   # the tile server; it listens on REMOTE_PORT (in .env, chosen at random), IPv4 and IPv6.

@@ -41,6 +41,17 @@ services:
       # The sharing service's socket (scripts/remote.sh), served as /mapshare/.
       - ./data/share/run:/run/fieldmap-share
 
+  # Lines along roads and trails for the map in the browser (brouter/): the same engine and
+  # profiles as the app, on the routing data. Reached only through the web front (/routing/route).
+  brouter:
+    build: ./brouter
+    container_name: fieldmap-brouter
+    restart: unless-stopped
+    mem_limit: ${BROUTER_MEM_LIMIT:-512m}
+    memswap_limit: ${BROUTER_MEM_LIMIT:-512m}
+    volumes:
+      - ./data/routing:/segments:ro
+
   # The gateway for the Fieldmap Android app away from this network: it demands a
   # certificate this box issued and serves only what the app needs. Not started by
   # `docker compose up`: scripts/remote.sh setup makes its certificates and starts it, and

@@ -128,5 +128,53 @@ class CommandLine(unittest.TestCase):
         self.assertIn("routing-files.py squares", r.stderr)
 
 
+
+class RouteService(unittest.TestCase):
+    """The route service for the browser (brouter/): the web servers pass on route requests only."""
+    REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def block(self, path):
+        import re
+        text = open(os.path.join(self.REPO, path)).read()
+        m = re.search(r"location = /routing/route \{(.*?)\n\s*\}", text, re.S)
+        self.assertIsNotNone(m, path)
+        return text, m.group(1)
+
+    def test_only_routes_with_the_apps_profiles_and_up_to_30_points(self):
+        import re
+        for path in ("web/nginx.conf", "pi/nginx/routing-nginx.conf"):
+            text, block = self.block(path)
+            self.assertIn("limit_except GET { deny all; }", block)
+            self.assertIn('"^(car-vario|hiking-mountain)$"', block)
+            # BRouter gets a request it builds from the two checked values only: never the
+            # caller's path (its profile upload) or other arguments.
+            self.assertRegex(block, r"/brouter\?lonlats=\$arg_lonlats&profile=\$arg_profile&alternativeidx=0&format=geojson;")
+            self.assertNotIn("$args", block)
+            self.assertNotIn("$request_uri", block)
+            self.assertEqual(1, text.count("/brouter"), path)
+            # No way found (BRouter's own 400 or 500): a plain 404; no service: 503.
+            self.assertIn("error_page 400 404 500 = @no_way;", block)
+            self.assertIn("location @no_way { return 404; }", text)
+            self.assertIn("location @no_router { return 503; }", text)
+            pattern = re.search(r'\$arg_lonlats !~ "(.*?)"\)', block).group(1)
+            ok = ["-149.1568,61.1648|-149.0,61.0", "7.0,45.0%7C7.1,45.1", "|".join(["1.5,2.5"] * 30)]
+            bad = ["-149.1,61.1", "|".join(["1.5,2.5"] * 31), "1,2|3,4&profile=x", "1,2|../x", "1,2;3,4", "1,2|3,4|", ""]
+            for s in ok:
+                self.assertRegex(s, pattern)
+            for s in bad:
+                self.assertNotRegex(s, pattern)
+
+    def test_the_service_reads_the_routing_data_only(self):
+        for path in ("docker-compose.yml", "pi/tileserver/docker-compose.pi.yml"):
+            text = open(os.path.join(self.REPO, path)).read()
+            service = text.split("  brouter:\n", 1)[1].split("\n\n", 1)[0]
+            self.assertIn("build: ./brouter", service)
+            self.assertIn("- ./data/routing:/segments:ro", service)
+            self.assertNotIn("ports:", service)          # not reachable but through the web server
+        docker = open(os.path.join(self.REPO, "brouter/Dockerfile")).read()
+        self.assertIn("sha256sum -c", docker)
+        self.assertIn("USER nobody", docker)
+
+
 if __name__ == "__main__":
     unittest.main()
