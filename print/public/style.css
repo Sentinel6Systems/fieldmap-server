@@ -1,4 +1,4 @@
-/* The print tool's own layout, on top of the shared look (fieldmap.css, from ../ui). */
+/* The map's own layout, on top of the shared look (fieldmap.css, from ../ui). */
 :root { --ctl-h: 36px; }
 html, body { height: 100%; overflow: hidden; }
 #map { position: absolute; inset: var(--bar-h) 0 0 0; }
@@ -12,9 +12,88 @@ html, body { height: 100%; overflow: hidden; }
 .panel-collapsed #panel { bottom: auto; }
 .panel-collapsed #panel-body { display: none; }
 #panel-body { display: flex; flex-direction: column; gap: 8px; }
-.panel-head { display: flex; align-items: center; justify-content: space-between; }
-.panel-head h1 { margin: 0; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .panel-head .icon { min-height: 30px; height: 30px; min-width: 30px; }
+.tab { display: flex; flex-direction: column; gap: 8px; }
+
+/* The panel's tabs: Layers, Markers, Messages, Print. */
+.tabs { display: flex; gap: 2px; min-width: 0; flex: 1; }
+.tabs button {
+  flex: 1 1 auto; height: 34px; min-height: 34px; padding: 0 6px; border: 0; border-bottom: 2px solid transparent; background: none;
+  font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+.tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--sig); }
+.tabs button:hover:not(:disabled) { color: var(--sig); }
+.badge { margin-left: 5px; min-width: 18px; padding: 0 4px; background: var(--sig); color: var(--on-sig); font: 600 11px/18px var(--sans); letter-spacing: 0; }
+
+/* The tool bar on the map (a MapLibre control under the zoom buttons). */
+.toolbar button { display: flex; align-items: center; justify-content: center; }
+.toolbar button svg { width: 18px; height: 18px; }
+.toolbar button.active { background: var(--sig); color: var(--on-sig); outline: none; }
+.maplibregl-ctrl-group.toolbar button { color: #1a1e1a; }
+.maplibregl-ctrl-group.toolbar button.active { background: #4f6b1f; color: #fff; }
+/* What to do next while a tool is in use, over the top of the map. */
+.mode-bar {
+  position: absolute; z-index: 5; top: calc(var(--bar-h) + 12px); left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; max-width: min(520px, calc(100% - 140px));
+  padding: 6px 10px; background: var(--panel); border: 1px solid var(--sig); box-shadow: 0 2px 12px rgba(0,0,0,.35);
+  font-size: 13px; font-weight: 600; color: var(--sig);
+}
+.notice {
+  position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100% - 24px));
+  padding: 18px 20px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 2px 16px rgba(0,0,0,.35);
+}
+.notice h1 { margin: 0 0 6px; }
+.notice p { margin: 0; color: var(--muted); font-size: 14px; }
+.style-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.style-row button { height: var(--ctl-h); font-size: 13px; }
+
+/* Shared: device locations and shared markers from the server. */
+.live-layers { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--line); padding-top: 6px; }
+.live-layers .hint:empty { display: none; }
+.shared-row { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.shared-row .what { min-width: 0; overflow-wrap: anywhere; }
+.shared-row .what small { display: block; color: var(--muted); font-size: 11px; }
+.shared-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
+.shared-dot.line { border-radius: 0; height: 6px; border: 0; box-shadow: none; }
+.row-buttons { display: flex; gap: 8px; }
+label.check.share { margin: 4px 0 0 40px; font-size: 12px; color: var(--muted); }
+#name-hint:empty { display: none; }
+.my-location { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.live-popup { font: 13px/1.35 var(--sans); color: #1a1e1a; }
+.live-popup b { display: block; font-size: 14px; }
+.live-popup span { display: block; color: #5d645b; font-size: 12px; }
+
+/* Messages */
+.conv-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; width: 100%; height: auto; padding: 8px 0; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; font-weight: 400; }
+.conv-row b { font-size: 14px; }
+.conv-row small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-row .badge { align-self: center; }
+.conversation { display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 88%; padding: 6px 9px; background: var(--panel2); border: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
+.msg.mine { align-self: flex-end; border-color: var(--sig); }
+.msg small { display: block; color: var(--muted); font-size: 11px; }
+.composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; position: sticky; bottom: -12px; padding: 8px 0 4px; background: var(--panel); }
+#new-message { margin-top: 8px; }
+
+/* Tile URLs dialog */
+dialog { padding: 0; width: 100%; max-width: min(680px, calc(100vw - 16px)); }
+.dhead { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.dhead h1 { margin: 0; font-size: 20px; line-height: 1.2; }
+.dhead button { margin-left: auto; }
+.dbody { max-height: min(72vh, 680px); overflow-y: auto; padding: 14px 20px 20px; }
+.dbody p { margin: 0 0 4px; color: var(--muted); font-size: 15px; }
+.dbody .dnote { margin-top: 14px; }
+.addr { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.addr:last-child { border-bottom: 0; }
+.addr b { display: block; margin-bottom: 6px; }
+.addr .copy { display: flex; gap: 8px; }
+.addr .copy input { flex: 1; min-width: 0; font: 13px var(--mono); }
+.addr .more, .data { font: 12.5px var(--mono); color: var(--muted); }
+.addr .more { margin: 6px 0 0; }
+.addr .more a, .data a { color: var(--sig); }
+.data { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px 16px; }
+.data span:nth-child(3n+1) { color: var(--ink); overflow-wrap: anywhere; }
 
 h1 { font-size: 19px; line-height: 1.2; margin: 0; }
 h2 { font: 12px var(--mono); margin: 0; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; }
@@ -130,5 +209,8 @@ details.terrain-more[open] { display: flex; flex-direction: column; gap: 6px; }
   #panel { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 58vh; }
   .panel-collapsed #panel { bottom: 8px; }      /* folded, it stays at the bottom */
   .swatches { grid-template-columns: repeat(6, 1fr); }
+  .mode-bar { top: calc(var(--bar-h) + 8px); left: 56px; right: 8px; transform: none; max-width: none; }
+  .dhead { padding: 12px; }
+  .dbody { padding: 10px 12px 16px; }
   .swatch { height: 32px; min-height: 32px; }
 }

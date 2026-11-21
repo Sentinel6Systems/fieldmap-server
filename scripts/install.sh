@@ -84,7 +84,7 @@ echo "== Tile server and print tool"
 ./scripts/mem-limit.sh
 docker compose up -d --build --quiet-pull
 docker restart tileserver >/dev/null
-echo "Started: tileserver, fieldmap-web (print tool), fieldmap-wmm."
+echo "Started: tileserver, fieldmap-web (map), fieldmap-wmm."
 
 UNIT=/etc/systemd/system/fieldmap-admin.service
 echo "== Map Builder page"
@@ -124,13 +124,12 @@ ADDRESS="${ADDRESS:-localhost}"
 WEB="http://$ADDRESS$([ "$WEB_PORT" = 80 ] || echo ":$WEB_PORT")"
 echo
 echo "Ready:"
-echo "  Maps                    $WEB/"
-echo "  Print Map               $WEB/mapprinter/"
+echo "  Map                     $WEB/map/"
 echo "  Tile server (TAK)       http://$ADDRESS:$TILE_PORT/"
 [ "$BUILDER" = yes ] && echo "  Map Builder             $WEB/mapadmin/"
 [ "$REMOTE" = yes ] && echo "  Devices                 $WEB/phones/"
 if [ -z "$(find data -maxdepth 1 -name 'basemap.mbtiles' -size +100k 2>/dev/null)" ]; then
-    echo "No maps are installed yet: the Maps page is blank until the first build."
+    echo "No maps are installed yet: the map is blank until the first build."
     [ "$BUILDER" = yes ] && echo "Open the Map Builder to select regions and start a build."
 fi
 

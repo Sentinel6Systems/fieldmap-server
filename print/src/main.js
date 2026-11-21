@@ -12,7 +12,12 @@ import { UNITS, defaultUnit, unitMetres, shapeRing, shapeCenter, shapeSummary, s
 import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groupsOf } from "./layers.js";
 import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
 import { initWmmNotice } from "./wmm.js";
+import { startLive, conversations, partnerOf, ageText, statusText, cleanText, MAX_NAME, BASE } from "./live.js";
+import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey } from "./shared.js";
 
+// The map at /map/: what the devices share (live.js, shared.js), drawing, terrain analysis, and
+// printing (the Print tab: the sheet on the map, render.js). Opened with ?print (the print
+// tool's old address), it starts on the Print tab.
 const qs = new URLSearchParams(location.search);
 
 const LS = {
@@ -31,9 +36,12 @@ const state = Object.assign(
 if ((state.settingsVersion || 1) < 2) { state.binder = false; state.settingsVersion = 2; }
 state.layers = { ...LAYER_DEFAULTS, ...(state.layers || {}) };
 
-// Print styles, in menu order. Only the ones the tile server actually has are offered.
-// ?style=<id> forces any style on the server for this visit.
+// Print styles, first in the menu. The others the tile server has follow, except the print
+// scale bands (below) and the transparent overlay. ?style=<id> forces any style on the server
+// for this visit. A style that is not a print style prints in the first print style.
 const PRINT_STYLES = [["topo-print", "Standard"], ["topo-usgs", "USGS Quadrangle"]];
+const printable = (id) => PRINT_STYLES.some(([p]) => p === id);
+const BAND = /-(12k|24k|50k|100k)$/;
 // Tile server base. Tried in order: ?tiles=<url>, then /maps on this host (the Pi behind
 // Internet-in-a-Box), then this host's root (the docker-compose stack, where nginx fronts
 // TileServer GL), then port 8080 on this host.
@@ -51,22 +59,28 @@ let serverStyles = new Set();
 async function availableStyles() {
   try {
     const r = await fetch(`${TILES}/styles.json`, { cache: "no-store" });
-    serverStyles = new Set((await r.json()).map((s) => s.id));
-    return PRINT_STYLES.filter(([id]) => serverStyles.has(id));
+    const list = await r.json();
+    serverStyles = new Set(list.map((s) => s.id));
+    const others = list.filter((s) => !printable(s.id) && !BAND.test(s.id) && s.id !== "overlay").map((s) => [s.id, s.name || s.id]);
+    return [...PRINT_STYLES.filter(([id]) => serverStyles.has(id)), ...others];
   } catch { return [PRINT_STYLES[0]]; }
 }
 // Print scale bands with their own style (<style>-12k, -24k, -50k, -100k): line weights
 // fixed for the scale, so a sheet looks the same at any latitude. Used when the server has one.
 const band = (scale) => (scale <= 16000 ? "12k" : scale <= 36000 ? "24k" : scale <= 75000 ? "50k" : "100k");
+/** The style a sheet is printed in: the map's, when it is a print style, else the first print style. */
+const printStyleId = () => (printable(STYLE) || !serverStyles.has(PRINT_STYLES[0][0]) ? STYLE : PRINT_STYLES[0][0]);
 async function printStyle() {
-  const id = `${STYLE}-${band(state.scale)}`;
-  if (serverStyles.has(id)) {
-    try { return applyLayers(await fetchStyle(styleUrlFor(id)), state.layers); } catch (e) { console.warn("print style:", e); }
-  }
+  const base = printStyleId();
+  const id = `${base}-${band(state.scale)}`;
+  try {
+    if (serverStyles.has(id)) return applyLayers(await fetchStyle(styleUrlFor(id)), state.layers);
+    if (base !== STYLE) return applyLayers(await fetchStyle(styleUrlFor(base)), state.layers);
+  } catch (e) { console.warn("print style:", e); }
   return drawnStyle();
 }
 const styles = await availableStyles();
-let STYLE = qs.get("style") || (styles.some(([id]) => id === state.style) ? state.style : PRINT_STYLES[0][0]);
+let STYLE = qs.get("style") || (styles.some(([id]) => id === state.style) ? state.style : (styles[0] || PRINT_STYLES[0])[0]);
 let styleUrl = styleUrlFor(STYLE);
 
 // The style as served, with relative sprite, glyph and source URLs made absolute so the
@@ -96,6 +110,8 @@ let pendingArrow = null;    // {a:{lng,lat}} while placing the end
 let pendingShape = null;    // {type, center | points} while a shape is being drawn
 let selected = null;        // {kind:"marker"|"arrow"|"shape", id}
 let paletteOpenFor = null;  // id of the row whose swatches are open
+// The panel's tab: layers | markers | messages | print. The sheet is on the map only on the Print tab.
+let tab = qs.has("print") ? "print" : ["layers", "markers", "messages", "print"].includes(state.tab) ? state.tab : "layers";
 
 fetch("config.json").then((r) => (r.ok ? r.json() : {})).then((c) => (config = c)).catch(() => {});
 
@@ -107,7 +123,6 @@ const styleSel = $("style");
 for (const [id, label] of styles) styleSel.add(new Option(label, id));
 if (!styles.some(([id]) => id === STYLE)) styleSel.add(new Option(STYLE, STYLE));
 styleSel.value = STYLE;
-styleSel.parentElement.hidden = styleSel.options.length < 2;
 const paperSel = $("paper");
 for (const [k, p] of Object.entries(PAPERS)) paperSel.add(new Option(p.label, k));
 paperSel.value = state.paper;
@@ -137,8 +152,49 @@ const map = new maplibregl.Map({
 });
 window.__printMap = map; // for debugging in the console
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
-map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), "top-left");
+// Browsers give a page the device's location only over https: on a plain http address the
+// button could never work, so it is left out.
+if (window.isSecureContext) map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), "top-left");
 map.addControl(new maplibregl.ScaleControl({ unit: "imperial" }), "bottom-left");
+
+// Without a place in the address, start on the area the base map covers. A new install has
+// empty placeholder files (scripts/data-placeholders.sh): say that no maps are installed.
+(async () => {
+  try {
+    const source = Object.values(rawStyle.sources || {}).find((s) => s.type === "vector" && s.url);
+    const data = source ? await (await fetch(source.url, { cache: "no-store" })).json() : null;
+    if (data && data.name === "empty placeholder") $("no-maps").hidden = false;
+    const b = data && data.bounds;
+    if (!start && b && b[2] - b[0] < 300) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, duration: 0 });
+  } catch { /* the map stays where it is */ }
+})();
+
+/* ---------- the tool bar: what can be added to the map ---------- */
+const ICONS = {
+  marker: '<circle cx="12" cy="12" r="5.5" fill="currentColor"/>',
+  arrow: '<path d="M5 19 19 5M10 5h9v9" fill="none" stroke="currentColor" stroke-width="2.2"/>',
+  circle: '<circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2.2"/>',
+  rect: '<rect x="4.5" y="6.5" width="15" height="11" fill="none" stroke="currentColor" stroke-width="2.2"/>',
+  polygon: '<path d="M12 4 20 10 17 19H7L4 10Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>',
+  me: '<path d="M12 3 21 12 12 21 3 12Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 8.5 15.5 12 12 15.5 8.5 12Z" fill="currentColor"/>',
+};
+// The last one places this browser's person on the map (shared like a device's location); it
+// is there only while location sharing is enabled on the server.
+const TOOLS = [["marker", "Add Marker"], ["arrow", "Add Arrow"], ["circle", "Circle"], ["rect", "Rectangle"], ["polygon", "Polygon"], ["me", "Set My Location"]];
+map.addControl({
+  onAdd() {
+    const box = document.createElement("div");
+    box.className = "maplibregl-ctrl maplibregl-ctrl-group toolbar";
+    for (const [key, title] of TOOLS) {
+      const b = document.createElement("button");
+      b.type = "button"; b.id = `add-${key}`; b.title = title; b.ariaLabel = title;
+      b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[key]}</svg>`;
+      box.appendChild(b);
+    }
+    return box;
+  },
+  onRemove() {},
+}, "top-left");
 
 let footprintCenter = null; // {lng,lat}; set on load to the centre of the visible map area
 
@@ -229,6 +285,43 @@ map.on("load", () => {
     paint: { "text-color": "#111", "text-halo-color": "#fff", "text-halo-width": 1.5 },
   });
 
+  // What the devices share (shared.js): areas, lines and routes, markers; the devices on top.
+  map.addSource("live", { type: "geojson", data: emptyFC() });
+  const part = (...parts) => ["match", ["get", "part"], parts, true, false];
+  map.addLayer({ id: "live-area", type: "fill", source: "live", filter: part("area"), paint: { "fill-color": ["get", "color"], "fill-opacity": 0.12 } });
+  map.addLayer({ id: "live-halo", type: "line", source: "live", filter: part("line", "head", "dashed", "area"),
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#fff", "line-width": 6, "line-opacity": 0.6 } });
+  map.addLayer({ id: "live-line", type: "line", source: "live", filter: part("line", "head", "area"),
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3 } });
+  map.addLayer({ id: "live-dashed", type: "line", source: "live", filter: part("dashed"),
+    layout: { "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3, "line-dasharray": [2, 1.5] } });
+  map.addLayer({ id: "live-vertex", type: "circle", source: "live", filter: part("vertex"),
+    paint: { "circle-radius": 4, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
+  map.addLayer({ id: "live-point", type: "circle", source: "live", filter: part("point"),
+    paint: { "circle-radius": 8, "circle-color": ["get", "color"], "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+  map.addLayer({ id: "live-label", type: "symbol", source: "live", filter: part("point", "label"),
+    layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 13, "text-allow-overlap": true,
+      "text-anchor": ["match", ["get", "part"], "point", "left", "center"],
+      "text-offset": ["match", ["get", "part"], "point", ["literal", [0.9, 0]], ["literal", [0, -1]]] },
+    paint: { "text-color": "#111", "text-halo-color": "#fff", "text-halo-width": 1.5 } });
+  map.addSource("people", { type: "geojson", data: emptyFC() });
+  map.addLayer({ id: "people-symbol", type: "symbol", source: "people",
+    layout: { "icon-image": ["get", "icon"], "icon-allow-overlap": true, "icon-ignore-placement": true },
+    paint: { "icon-opacity": ["get", "opacity"] } });
+  map.addLayer({ id: "people-name", type: "symbol", source: "people",
+    layout: { "text-field": ["get", "name"], "text-font": pickFont(), "text-size": 14, "text-offset": [1.2, 0], "text-anchor": "left",
+      "text-allow-overlap": true, "text-ignore-placement": true },
+    paint: { "text-color": "#004e63", "text-halo-color": "#fff", "text-halo-width": 2, "text-opacity": ["get", "opacity"] } });
+
+  // This browser's own location, placed by hand: like the others, in the server's color, draggable.
+  map.addSource("me", { type: "geojson", data: emptyFC() });
+  map.addLayer({ id: "me-symbol", type: "symbol", source: "me",
+    layout: { "icon-image": "live-me", "icon-allow-overlap": true, "icon-ignore-placement": true } });
+  map.addLayer({ id: "me-name", type: "symbol", source: "me",
+    layout: { "text-field": ["get", "name"], "text-font": pickFont(), "text-size": 14, "text-offset": [1.2, 0], "text-anchor": "left",
+      "text-allow-overlap": true, "text-ignore-placement": true },
+    paint: { "text-color": "#33461a", "text-halo-color": "#fff", "text-halo-width": 2 } });
+
   map.addSource("temp", { type: "geojson", data: emptyFC() });
   map.addLayer({ id: "temp-fill", type: "fill", source: "temp", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": "#333", "fill-opacity": 0.08 } });
   map.addLayer({ id: "temp-line", type: "line", source: "temp", paint: { "line-color": "#333", "line-width": 2, "line-dasharray": [2, 2] } });
@@ -237,6 +330,9 @@ map.on("load", () => {
   footprintCenter = visibleCenter();
   updateFootprint();
   renderLists();
+  showSheet();
+  drawLive();
+  drawMe();
   terrainReady.then((t) => t.addLayers());
 
   map.on("mousedown", onDown); map.on("touchstart", onDown);
@@ -259,6 +355,7 @@ map.on("click", (e) => {
   if (justDragged) { justDragged = false; return; }
   if (onPin(e) || (terrain && terrain.onClick(e))) return;
   if (mode === "marker") { addMarker(e.lngLat); return; }
+  if (mode === "me") { placeMe(e.lngLat); return; }
   if (mode === "arrow-start") { pendingArrow = { a: { lng: e.lngLat.lng, lat: e.lngLat.lat } }; setMode("arrow-end"); return; }
   if (mode === "arrow-end") { addArrow(pendingArrow.a, { lng: e.lngLat.lng, lat: e.lngLat.lat }); pendingArrow = null; setMode(null); return; }
   if (mode && shapeClick(e)) return;
@@ -268,6 +365,9 @@ map.on("click", (e) => {
   if (hitA.length) { select("arrow", hitA[0].properties.id); return; }
   const hitS = map.queryRenderedFeatures(e.point, { layers: ["shapes-line", "shapes-label"] });
   if (hitS.length) { select("shape", hitS[0].properties.id); return; }
+  if (liveClick(e)) return;
+  // On the Print tab, a tap outside the sheet brings the sheet there.
+  if (tab !== "print") return;
   const inside = map.queryRenderedFeatures(e.point, { layers: ["footprint-fill"] }).length > 0;
   if (!inside) { footprintCenter = { lng: e.lngLat.lng, lat: e.lngLat.lat }; updateFootprint(); }
 });
@@ -279,11 +379,13 @@ const onPin = (e) => !!(e.originalEvent && e.originalEvent.target && e.originalE
 function onDown(e) {
   if (mode || (terrain && terrain.picking) || onPin(e)) return;
   const pt = e.point;
-  let hit = map.queryRenderedFeatures(pt, { layers: ["markers-circle"] });
+  let hit = map.getLayer("me-symbol") ? map.queryRenderedFeatures(pt, { layers: ["me-symbol"] }) : [];
+  if (hit.length) { dragging = { kind: "me" }; return begin(e); }
+  hit = map.queryRenderedFeatures(pt, { layers: ["markers-circle"] });
   if (hit.length) { dragging = { kind: "marker", id: hit[0].properties.id }; return begin(e); }
   hit = map.queryRenderedFeatures(pt, { layers: ["arrow-ends"] });
   if (hit.length) { dragging = { kind: "arrow-end", id: hit[0].properties.id, end: hit[0].properties.end }; return begin(e); }
-  hit = map.queryRenderedFeatures(pt, { layers: ["footprint-fill"] });
+  hit = tab === "print" ? map.queryRenderedFeatures(pt, { layers: ["footprint-fill"] }) : [];
   if (hit.length) {
     const c = currentCenter();
     footprintCenter = { lng: c.lng, lat: c.lat };
@@ -299,7 +401,10 @@ function onMove(e) {
   }
   if (pendingShape) { previewShape({ lng: e.lngLat.lng, lat: e.lngLat.lat }); return; }
   if (!dragging) return;
-  if (dragging.kind === "marker") {
+  if (dragging.kind === "me") {
+    state.myLocation = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+    drawMe();
+  } else if (dragging.kind === "marker") {
     const m = markers.find((x) => x.id === dragging.id);
     if (m) { m.lng = e.lngLat.lng; m.lat = e.lngLat.lat; map.getSource("markers").setData(markersFC()); }
   } else if (dragging.kind === "arrow-end") {
@@ -317,6 +422,7 @@ function onUp() {
   const d = dragging; dragging = null; justDragged = true;
   map.getCanvas().style.cursor = "";
   setTimeout(() => (justDragged = false), 300);
+  if (d.kind === "me") placeMe(state.myLocation);
   if (d.kind === "marker") { saveMarkers(); select("marker", d.id); }
   if (d.kind === "arrow-end") { saveArrows(); select("arrow", d.id); }
 }
@@ -372,6 +478,7 @@ function updateFootprint() {
     ? `${atlas.n * atlas.n} pages of ${cellTxt}`
     : cellTxt;
   $("info-centre").textContent = toMGRS(c.lat, c.lng, 4);
+  $("info-style").textContent = (styles.find(([id]) => id === printStyleId()) || [, printStyleId()])[1];
   $("info-grid").textContent = state.scale <= 12000 ? "MGRS 1 km + 100 m ticks" : state.scale >= 100000 ? "MGRS 1 km, 10 km bold" : "MGRS 1 km";
   const pages = atlas.n > 1 ? atlas.n * atlas.n + 1 : 1;
   const phone = window.innerWidth <= 640 || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
@@ -392,16 +499,21 @@ function arrowLabel(a) {
 }
 
 /* ---------- data: markers ---------- */
+// Shared markers and arrows (shared: true) are in the same lists, but the server keeps them, not
+// this browser; the Shared Markers switch hides them on screen and in print.
+const ownOnly = (list) => list.filter((x) => !x.shared);
+const shown = (list) => (state.layers.shared === false ? ownOnly(list) : list);
 function markersFC() {
-  return { type: "FeatureCollection", features: markers.map((m) => ({ type: "Feature", geometry: { type: "Point", coordinates: [m.lng, m.lat] }, properties: { id: m.id, label: m.label, color: m.color } })) };
+  return { type: "FeatureCollection", features: shown(markers).map((m) => ({ type: "Feature", geometry: { type: "Point", coordinates: [m.lng, m.lat] }, properties: { id: m.id, label: m.label, color: m.color } })) };
 }
 function saveMarkers() {
-  localStorage.setItem(LS.markers, JSON.stringify(markers));
+  localStorage.setItem(LS.markers, JSON.stringify(ownOnly(markers)));
+  syncSoon();
   if (map.getSource("markers")) map.getSource("markers").setData(markersFC());
   renderLists();
 }
 function addMarker(ll) {
-  const m = { id: uid(), lng: ll.lng, lat: ll.lat, label: `P${markers.length + 1}`, color: state.color };
+  const m = { id: uid(), lng: ll.lng, lat: ll.lat, label: `P${markers.length + 1}`, color: state.color, shared: sharingOn() };
   markers.push(m);
   setMode(null);
   saveMarkers();
@@ -411,7 +523,7 @@ function addMarker(ll) {
 /* ---------- data: arrows ---------- */
 function arrowsFC() {
   const feats = [];
-  for (const a of arrows) {
+  for (const a of shown(arrows)) {
     const inv = inverse(a.a.lat, a.a.lng, a.b.lat, a.b.lng);
     const head = Math.min(Math.max(inv.distance * 0.08, 15), 400);
     const back = inv.finalBearing + 180;
@@ -431,12 +543,13 @@ function arrowsFC() {
   return { type: "FeatureCollection", features: feats };
 }
 function saveArrows() {
-  localStorage.setItem(LS.arrows, JSON.stringify(arrows));
+  localStorage.setItem(LS.arrows, JSON.stringify(ownOnly(arrows)));
+  syncSoon();
   if (map.getSource("arrows")) map.getSource("arrows").setData(arrowsFC());
   renderLists();
 }
 function addArrow(a, b) {
-  const ar = { id: uid(), a, b, label: `A${arrows.length + 1}`, color: state.color };
+  const ar = { id: uid(), a, b, label: `A${arrows.length + 1}`, color: state.color, shared: sharingOn() };
   arrows.push(ar);
   map.getSource("temp").setData(emptyFC());
   saveArrows();
@@ -534,6 +647,7 @@ function select(kind, id, focus = false) {
   }
 }
 function renderLists() {
+  renderLists.pending = false;
   renderList($("marker-list"), markers, "marker", "No markers yet.", (m) => `${toMGRS(m.lat, m.lng, 4)}`);
   renderList($("arrow-list"), arrows, "arrow", "No arrows yet.", (a) => {
     const i = arrowInfo(a);
@@ -570,20 +684,30 @@ function renderList(list, items, kind, emptyText, detail) {
     const row = document.createElement("div");
     row.className = "item" + (selected && selected.kind === kind && selected.id === it.id ? " selected" : "");
     row.dataset.id = it.id;
+    // Markers and arrows can be shared with the devices (shapes cannot yet).
+    const shareable = kind !== "shape" && (it.shared || sharingOn());
     row.innerHTML = `
       <div class="item-row">
         <button class="dot" title="Color" style="background:${it.color}"></button>
         <input type="text" value="${escapeHtml(it.label)}" placeholder="Name" maxlength="30">
         <button class="icon" title="Show on Map">◎</button>
-        <button class="icon danger" title="Remove">✕</button>
+        <button class="icon danger" title="${it.shared ? "Delete" : "Remove"}">✕</button>
       </div>
-      <div class="item-detail">${detail(it)}</div>`;
+      <div class="item-detail">${detail(it)}${it.shared ? ` · ${escapeHtml(sharedBy(it))}` : ""}</div>
+      ${shareable ? `<label class="check share"><input type="checkbox"${it.shared ? " checked" : ""}><span>Share with All Devices</span></label>` : ""}`;
     const [dot, text, go, del] = row.querySelectorAll("button,input");
+    const share = row.querySelector(".share input");
+    if (share) share.onchange = () => {
+      if (!share.checked && !confirm("Stop sharing?\n\nIt is removed from all devices and kept in this browser.")) { share.checked = true; return; }
+      it.shared = share.checked;
+      persist(kind, true);
+    };
     dot.onclick = (e) => { e.stopPropagation(); paletteOpenFor = paletteOpenFor === it.id ? null : it.id; renderLists(); };
     text.oninput = () => { it.label = text.value; persist(kind); };
     text.onfocus = () => { selected = { kind, id: it.id }; };
     go.onclick = () => { const c = kind === "marker" ? it : kind === "arrow" ? it.a : shapeCenter(it); map.flyTo({ center: [c.lng, c.lat] }); };
     del.onclick = () => {
+      if (it.shared && !confirm("Delete Shared Marker?\n\nIt is removed from all devices.")) return;
       if (kind === "marker") markers = markers.filter((x) => x.id !== it.id);
       else if (kind === "arrow") arrows = arrows.filter((x) => x.id !== it.id);
       else shapes = shapes.filter((x) => x.id !== it.id);
@@ -598,8 +722,8 @@ function renderList(list, items, kind, emptyText, detail) {
   }
 }
 function persist(kind, rerender = false) {
-  if (kind === "marker") { localStorage.setItem(LS.markers, JSON.stringify(markers)); map.getSource("markers").setData(markersFC()); }
-  else if (kind === "arrow") { localStorage.setItem(LS.arrows, JSON.stringify(arrows)); map.getSource("arrows").setData(arrowsFC()); }
+  if (kind === "marker") { localStorage.setItem(LS.markers, JSON.stringify(ownOnly(markers))); map.getSource("markers").setData(markersFC()); syncSoon(); }
+  else if (kind === "arrow") { localStorage.setItem(LS.arrows, JSON.stringify(ownOnly(arrows))); map.getSource("arrows").setData(arrowsFC()); syncSoon(); }
   else { localStorage.setItem(LS.shapes, JSON.stringify(shapes)); map.getSource("shapes").setData(shapesFC()); }
   if (rerender) renderLists();
 }
@@ -613,6 +737,7 @@ function setMode(m) {
   if (!m || !Object.values(SHAPE_MODES).flat().includes(m)) pendingShape = null;
   if (map.getSource("temp") && !pendingArrow && !pendingShape) map.getSource("temp").setData(emptyFC());
   $("add-marker").classList.toggle("active", m === "marker");
+  $("add-me").classList.toggle("active", m === "me");
   $("add-arrow").classList.toggle("active", m === "arrow-start" || m === "arrow-end");
   for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).classList.toggle("active", modes.includes(m));
   map.getCanvas().style.cursor = m ? "crosshair" : "";
@@ -621,6 +746,7 @@ function setMode(m) {
   const corners = pendingShape && pendingShape.points ? pendingShape.points.length : 0;
   $("mode-hint").textContent =
     m === "marker" ? "Tap the map to place the marker." :
+    m === "me" ? "Tap the map where you are. Your location is shared with all devices." :
     m === "arrow-start" ? "Tap the map at the start of the arrow." :
     m === "arrow-end" ? "Tap the map at the end of the arrow." :
     m === "circle-center" ? "Tap the center of the circle." :
@@ -629,14 +755,21 @@ function setMode(m) {
     m === "rect-end" ? "Tap the opposite corner." :
     m === "polygon" ? (corners < 3 ? `Tap the corners of the polygon. Corners so far: ${corners}.` : `${corners} corners. To finish the shape, tap the first corner, press Enter or press Finish Shape.`) : "";
   $("finish-shape").hidden = !(m === "polygon" && corners >= 3);
+  $("mode-bar").hidden = !m;
 }
 $("add-marker").onclick = () => setMode(mode === "marker" ? null : "marker");
+$("add-me").onclick = () => {
+  if (mode === "me") { setMode(null); return; }
+  if (!cleanText($("display-name").value, MAX_NAME)) { askName(); return; }
+  setMode("me");
+};
 $("add-arrow").onclick = () => setMode(mode ? null : "arrow-start");
 for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).onclick = () => setMode(modes.includes(mode) ? null : modes[0]);
 $("finish-shape").onclick = finishPolygon;
+// Only what is kept in this browser: shared items stay (each has its own Delete).
 $("clear-all").onclick = () => {
-  if ((markers.length || arrows.length || shapes.length) && confirm("Clear all markers, arrows and shapes?")) {
-    markers = []; arrows = []; shapes = []; saveMarkers(); saveArrows(); saveShapes();
+  if ((ownOnly(markers).length || ownOnly(arrows).length || shapes.length) && confirm("Clear all markers, arrows and shapes in this browser?\n\nShared ones stay.")) {
+    markers = markers.filter((m) => m.shared); arrows = arrows.filter((a) => a.shared); shapes = []; saveMarkers(); saveArrows(); saveShapes();
   }
 };
 // Save to a file, and load one: GeoJSON (src/drawings.js).
@@ -711,7 +844,7 @@ renderNewColor();
 
 scaleSel.onchange = () => { state.scale = +scaleSel.value; saveSettings(); updateFootprint(); };
 // Switch the map style in place: the sheet outline, markers and arrows are carried over.
-const OWN_SOURCES = ["footprint", "shapes", "arrows", "markers", "temp", ...TERRAIN_SOURCES];
+const OWN_SOURCES = ["footprint", "shapes", "arrows", "markers", "live", "people", "me", "temp", ...TERRAIN_SOURCES];
 function redraw(diff = true) {
   map.setStyle(drawnStyle(), {
     diff,
@@ -728,6 +861,7 @@ styleSel.onchange = async () => {
   rawStyle = await fetchStyle(styleUrl);
   redraw(false);
   renderLayerPanel();
+  updateFootprint();
 };
 
 /* ---------- layer switches ---------- */
@@ -788,7 +922,7 @@ function renderLayerPanel() {
   const hidden = state.layers.off.filter((g) => have.has(g)).length;
   $("layers-summary").textContent = hidden ? `${hidden} hidden` : "";
 }
-$("layers-reset").onclick = () => { state.layers = { ...LAYER_DEFAULTS }; saveSettings(); redraw(); renderLayerPanel(); };
+$("layers-reset").onclick = () => { state.layers = { ...LAYER_DEFAULTS }; saveSettings(); redraw(); renderLayerPanel(); renderLiveSwitches(); drawLive(); };
 renderLayerPanel();
 paperSel.onchange = () => { state.paper = paperSel.value; saveSettings(); updateFootprint(); };
 $("orientation").onchange = (e) => { state.orientation = e.target.value; saveSettings(); updateFootprint(); };
@@ -800,6 +934,449 @@ $("list-page").onchange = (e) => { state.listPage = e.target.checked; saveSettin
 $("bring").onclick = () => { footprintCenter = visibleCenter(); updateFootprint(); };
 $("fit").onclick = () => { const { bounds } = footprintPolygon(); map.fitBounds(bounds, { padding: panelPadding(), duration: 400 }); };
 $("panel-toggle").onclick = () => document.body.classList.toggle("panel-collapsed");
+
+/* ---------- the tabs ---------- */
+const TABS = [...document.querySelectorAll(".tabs [data-tab]")];
+function showTab(name) {
+  if (name === "messages" && TABS.find((b) => b.dataset.tab === "messages").hidden) name = "layers";
+  const was = tab;
+  tab = name;
+  state.tab = name; saveSettings();
+  for (const b of TABS) b.ariaSelected = String(b.dataset.tab === name);
+  for (const key of ["layers", "markers", "messages", "print"]) $(`tab-${key}`).hidden = key !== name;
+  document.body.classList.remove("panel-collapsed");
+  showSheet(was !== "print" && name === "print");
+  if (name === "messages") renderMessages();
+}
+for (const b of TABS) b.onclick = () => showTab(b.dataset.tab);
+
+/** The sheet's outline: on the map only on the Print tab. Opening the tab with the sheet out of
+ *  view brings it to the middle of what can be seen. */
+function showSheet(opening = false) {
+  if (!map.getLayer("footprint-fill")) return;
+  const on = tab === "print";
+  for (const id of ["footprint-fill", "footprint-line", "footprint-label"]) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+  if (opening && footprintCenter && !map.getBounds().contains([footprintCenter.lng, footprintCenter.lat])) {
+    footprintCenter = visibleCenter();
+    updateFootprint();
+  }
+}
+
+/* ---------- what the devices share ---------- */
+const people = new Map();            // uid -> name, from locations and messages
+let live = null;
+let livePopup = null;
+const SHARED_LAYERS = ["live-area", "live-halo", "live-line", "live-dashed", "live-vertex", "live-point", "live-label"];
+const PEOPLE_LAYERS = ["people-symbol", "people-name"];
+
+// The devices' symbols, made again whenever a style change has dropped them.
+map.on("styleimagemissing", (e) => {
+  const fill = PERSON_COLORS[e.id];
+  const ratio = Math.max(1, Math.round(window.devicePixelRatio || 1));
+  if (fill && !map.hasImage(e.id)) map.addImage(e.id, personImage(fill, ratio), { pixelRatio: ratio });
+});
+
+/** The live layers as they are now; also every few seconds, so that locations age between answers.
+ *  Shared markers and arrows are in the map's own lists; this layer has the routes and areas. */
+function drawLive() {
+  if (!map.getSource("live")) return;
+  const st = live && live.status === "on" ? live.state : null;
+  const info = (live && live.info) || {};
+  try {
+    map.getSource("live").setData(st ? sharedFC([...st.markers.values()].filter((f) => !itemFromFeature(f))) : emptyFC());
+    const others = st ? st.positions.filter((p) => p.uid !== live.uid) : [];
+    map.getSource("people").setData(st ? peopleFC(others, +info.interval || 5, +info.stale || 120, (Date.now() - st.at) / 1000) : emptyFC());
+    for (const id of SHARED_LAYERS) map.setLayoutProperty(id, "visibility", state.layers.shared !== false ? "visible" : "none");
+    for (const id of PEOPLE_LAYERS) map.setLayoutProperty(id, "visibility", state.layers.people !== false ? "visible" : "none");
+  } catch { /* a new map style is still loading: drawn again in a few seconds */ }
+}
+setInterval(drawLive, 5000);
+
+function renderLiveSwitches() {
+  const box = $("live-switches");
+  box.replaceChildren(
+    toggle("Device Locations", state.layers.people !== false, (on) => { state.layers.people = on; saveSettings(); drawLive(); }, "The devices sharing their location now. On screen only."),
+    toggle("Shared Markers", state.layers.shared !== false, (on) => {
+      state.layers.shared = on; saveSettings(); drawLive();
+      map.getSource("markers").setData(markersFC()); map.getSource("arrows").setData(arrowsFC());
+    }, "Markers, arrows and routes shared with all devices, on screen and in print."),
+  );
+}
+
+const when = (iso) => {
+  const t = new Date(iso);
+  if (isNaN(t)) return "";
+  return t.toDateString() === new Date().toDateString() ? t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : t.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+};
+const nameOf = (uid) => (live && uid === live.uid ? "You" : people.get(uid) || "Unknown");
+/** "Shared · NAME · time": who changed a shared item last, and when. */
+const sharedBy = (it) => ["Shared", it.by && nameOf(it.by), it.updated && when(it.updated)].filter(Boolean).join(" · ");
+
+/** A route, an area or a device under the pointer: its details in a popup. True when there was one. */
+function liveClick(e) {
+  const hits = map.queryRenderedFeatures(e.point, { layers: ["me-symbol", ...PEOPLE_LAYERS, ...SHARED_LAYERS].filter((id) => map.getLayer(id)) });
+  if (!hits.length) return false;
+  const h = hits[0];
+  if (h.layer.id === "me-symbol") {
+    const m = state.myLocation;
+    popup([m.lng, m.lat], `<b>${escapeHtml(cleanText($("display-name").value, MAX_NAME))}</b><span>${toMGRS(m.lat, m.lng, 5)}</span><span>My Location, placed by hand. Drag it to move it.</span>`);
+  } else if (PEOPLE_LAYERS.includes(h.layer.id)) showPerson(h.properties.uid);
+  else showShared(h.properties.id);
+  return true;
+}
+function popup(lngLat, html) {
+  if (livePopup) livePopup.remove();
+  livePopup = new maplibregl.Popup({ maxWidth: "260px" }).setLngLat(lngLat).setHTML(`<div class="live-popup">${html}</div>`).addTo(map);
+}
+function showPerson(uid) {
+  const st = live && live.state;
+  const p = st && st.positions.find((x) => x.uid === uid);
+  if (!p) return;
+  const age = (+p.age || 0) + (Date.now() - st.at) / 1000;
+  const metric = state.units === "metric";
+  const lines = [`<b>${escapeHtml(p.name)}</b>`, `<span>${toMGRS(p.lat, p.lon, 5)}</span>`, `<span>Location: ${ageText(age)}</span>`];
+  if (Number.isFinite(p.speed) && p.speed > 0.5) lines.push(`<span>Speed: ${metric ? Math.round(p.speed * 3.6) + " km/h" : Math.round(p.speed * 2.23694) + " mph"}${Number.isFinite(p.course) ? " · " + fmtBearing(p.course) + " T" : ""}</span>`);
+  if (Number.isFinite(p.acc)) lines.push(`<span>Accuracy: ±${metric ? Math.round(p.acc) + " m" : Math.round(p.acc * 3.28084) + " ft"}</span>`);
+  popup([p.lon, p.lat], lines.join(""));
+}
+function sharedDetail(f, d) {
+  const p = f.properties || {};
+  return escapeHtml([kindText(d), sharedBy({ by: p.by, updated: p.updated })].join(" · "));
+}
+function showShared(id) {
+  const f = live && live.state && live.state.markers.get(String(id));
+  const d = f && describe(f);
+  if (!d) return;
+  const [lon, lat] = d.points[0];
+  const lines = [`<b>${escapeHtml(d.label || "Unnamed")}</b>`, `<span>${sharedDetail(f, d)}</span>`, `<span>${toMGRS(lat, lon, 5)}</span>`];
+  if (d.kind === "route") {
+    let m = 0;
+    for (let i = 1; i < d.points.length; i++) m += inverse(d.points[i - 1][1], d.points[i - 1][0], d.points[i][1], d.points[i][0]).distance;
+    lines.push(`<span>${d.points.length} points · ${fmtLength(m, state.units)}${d.routing !== "straight" ? " in straight legs" : ""}</span>`);
+  }
+  popup([lon, lat], lines.join(""));
+}
+
+/** The shared routes (and areas) on the Markers tab, newest first: shown, deleted; edited on the devices. */
+function renderRoutes() {
+  const st = live && live.status === "on" ? live.state : null;
+  const items = st ? [...st.markers.values()].filter((f) => !itemFromFeature(f)).map((f) => [f, describe(f)]).filter(([, d]) => d)
+    .sort(([a], [b]) => String((b.properties || {}).updated || "").localeCompare(String((a.properties || {}).updated || ""))) : [];
+  $("routes-head").hidden = !items.length;
+  $("route-list").replaceChildren(...items.map(([f, d]) => {
+    const row = document.createElement("div");
+    row.className = "shared-row";
+    row.innerHTML = `<span class="shared-dot line" style="background:${d.color}"></span>
+      <span class="what">${escapeHtml(d.label || "Unnamed")}<small>${sharedDetail(f, d)}</small></span>
+      <span class="row-buttons"><button class="icon" title="Show on Map">◎</button><button class="icon danger" title="Delete">✕</button></span>`;
+    const [go, del] = row.querySelectorAll("button");
+    go.onclick = () => { const [lon, lat] = d.points[0]; map.flyTo({ center: [lon, lat] }); showShared(f.id); };
+    del.onclick = async () => {
+      if (!confirm("Delete Shared Marker?\n\nIt is removed from all devices.")) return;
+      if ((await shareRequest(String(f.id), null)) === true) { live.state.markers.delete(String(f.id)); drawLive(); renderRoutes(); }
+    };
+    return row;
+  }));
+}
+
+/* ---------- shared markers and arrows: in the map's lists, kept in step with the server ---------- */
+// A change to a shared item (added, moved, renamed, recolored, shared, deleted, no longer
+// shared) is sent shortly after it is made; what the server sends is taken in unless a change
+// of ours to that item is still on its way, or the server's answers do not have it yet.
+const sentAs = new Map();   // id -> itemKey as the server has it (or as it was last sent)
+const holds = new Map();    // id -> the rev the server's state must reach before its copy counts again (Infinity: on its way)
+const sharingOn = () => !!(live && live.status === "on");
+let syncTimer = null, syncing = false, syncAgain = false;
+function syncSoon(ms = 700) { clearTimeout(syncTimer); syncTimer = setTimeout(syncOut, ms); }
+
+/** PUT (feature) or DELETE (null) of one shared item. true, or the status code (0: no answer). */
+async function shareRequest(id, feature) {
+  holds.set(id, Infinity);
+  const opts = feature ? { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(feature) } : { method: "DELETE" };
+  let code = 0, body = null;
+  try {
+    const r = await fetch(`${BASE}markers/${encodeURIComponent(id)}`, opts);
+    code = r.status;
+    try { body = await r.json(); } catch { /* no JSON */ }
+  } catch { /* no answer */ }
+  if (code === 200 && body && Number.isFinite(body.rev)) { holds.set(id, body.rev); return true; }
+  holds.delete(id);
+  if (body && body.error) console.warn("shared marker:", code, body.error);
+  return code;
+}
+
+async function syncOut() {
+  if (!sharingOn()) return;
+  if (syncing) { syncAgain = true; return; }
+  syncing = true;
+  let retry = false;
+  try {
+    const mine = new Map();
+    for (const [kind, list] of [["marker", markers], ["arrow", arrows]]) for (const it of list) if (it.shared) mine.set(it.id, [kind, it]);
+    for (const [id, [kind, it]] of mine) {
+      const key = itemKey(it);
+      if (sentAs.get(id) === key) continue;
+      sentAs.set(id, key);
+      const f = featureFromItem(it, kind, live.uid);
+      it.by = live.uid; it.updated = f.properties.updated;
+      const r = await shareRequest(id, f);
+      if (r === true) continue;
+      sentAs.delete(id);
+      if (r === 400 || r === 413 || r === 507) {
+        // The server will not keep it: it stays in this browser, not shared.
+        it.shared = false;
+        persist(kind, true);
+        fileHint(r === 507 ? "The server cannot store more shared markers. The item is kept in this browser." : "The server did not accept this item. It is kept in this browser.", true);
+      } else retry = true;
+    }
+    for (const id of [...sentAs.keys()]) {
+      if (mine.has(id)) continue;
+      const key = sentAs.get(id);
+      sentAs.delete(id);
+      const r = await shareRequest(id, null);
+      if (r !== true) { sentAs.set(id, key); retry = true; }
+    }
+  } finally {
+    syncing = false;
+  }
+  if (syncAgain) { syncAgain = false; syncSoon(); } else if (retry) syncSoon(5000);
+}
+
+/** What the server holds now, into the lists. */
+function syncIn(st) {
+  let changed = false;
+  const there = new Set();
+  for (const f of st.markers.values()) {
+    const got = itemFromFeature(f);
+    if (!got) continue;
+    const id = got.item.id;
+    there.add(id);
+    const hold = holds.get(id);
+    if (hold !== undefined) { if (hold === Infinity || st.rev < hold) continue; holds.delete(id); }
+    const list = got.kind === "marker" ? markers : arrows;
+    const i = list.findIndex((x) => x.id === id);
+    if (i >= 0 && !list[i].shared) continue;          // this browser's own copy, no longer shared
+    if (i >= 0 && itemKey(list[i]) !== sentAs.get(id)) continue;   // a change of ours not sent yet
+    const key = itemKey(got.item);
+    sentAs.set(id, key);
+    if (i >= 0 && itemKey(list[i]) === key && list[i].updated === got.item.updated) continue;
+    // Changed in place: a list row being typed in keeps the same item.
+    if (i >= 0) { for (const k of ["lng", "lat", "a", "b"]) delete list[i][k]; Object.assign(list[i], got.item); } else list.push(got.item);
+    changed = true;
+  }
+  // Removed on the server: gone here too (one not sent yet, or on its way, stays).
+  for (const kind of ["marker", "arrow"]) {
+    const list = kind === "marker" ? markers : arrows;
+    const keepIt = (x) => !x.shared || there.has(x.id) || !sentAs.has(x.id) || holds.has(x.id);
+    const kept = list.filter(keepIt);
+    if (kept.length === list.length) continue;
+    for (const x of list) if (!keepIt(x)) sentAs.delete(x.id);
+    if (kind === "marker") markers = kept; else arrows = kept;
+    changed = true;
+  }
+  if (changed) sharedChanged();
+}
+/** Sharing ended (switched off on the server): the shared items are the server's, so they go. */
+function dropShared() {
+  if (!markers.some((m) => m.shared) && !arrows.some((a) => a.shared)) return;
+  markers = ownOnly(markers); arrows = ownOnly(arrows);
+  sentAs.clear(); holds.clear();
+  sharedChanged();
+}
+function sharedChanged() {
+  if (map.getSource("markers")) { map.getSource("markers").setData(markersFC()); map.getSource("arrows").setData(arrowsFC()); }
+  // Not while a name is being typed in the lists: after it.
+  const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest("#tab-markers input");
+  if (typing) renderLists.pending = true; else renderLists();
+}
+$("tab-markers").addEventListener("focusout", () => setTimeout(() => { if (renderLists.pending && !document.activeElement.closest("#tab-markers input")) renderLists(); }, 0));
+
+/* ---------- messages ---------- */
+let openConversation = null;          // the partner shown, or null
+let picking = false;                  // choosing whom a new message is for
+let shownCount = 0;                   // messages in the open conversation when it was last drawn
+function renderMessages() {
+  const on = live && live.status === "on" && live.info && live.info.messages;
+  $("messages-status").textContent = !live || on ? "" : live.text;
+  const convs = live ? conversations(live.messages.list, live.uid, nameOf) : [];
+  const unread = convs.reduce((n, c) => n + c.unread, 0);
+  $("unread").hidden = !unread;
+  $("unread").textContent = String(unread);
+  document.title = unread ? `(${unread}) Map` : "Map";
+  if (tab !== "messages") return;
+  $("conversations-view").hidden = !!openConversation || picking;
+  $("pick-view").hidden = !picking;
+  $("conversation").hidden = !openConversation;
+  if (picking) {
+    const st = live && live.state;
+    const list = st ? st.positions.filter((p) => p.uid !== live.uid).sort((a, b) => a.name.localeCompare(b.name)) : [];
+    $("pick-list").replaceChildren(...(list.length ? list.map((p) => {
+      const b = document.createElement("button");
+      b.className = "conv-row";
+      b.innerHTML = `<b>${escapeHtml(p.name)}</b><span></span><small>Location: ${ageText((+p.age || 0) + (Date.now() - st.at) / 1000)}</small>`;
+      b.onclick = () => { picking = false; openConversation = p.uid; shownCount = -1; renderMessages(); $("message-text").focus(); };
+      return b;
+    }) : [Object.assign(document.createElement("div"), { className: "hint", textContent: "No active devices." })]));
+    return;
+  }
+  if (!openConversation) {
+    $("conversations").replaceChildren(...convs.map((c) => {
+      const b = document.createElement("button");
+      b.className = "conv-row";
+      b.innerHTML = `<b>${escapeHtml(c.name || "Unknown")}</b>${c.unread ? `<span class="badge">${c.unread}</span>` : "<span></span>"}
+        <small>${c.last ? escapeHtml(`${c.last.mine ? "You" : c.last.name}: ${c.last.text}`) : "No messages."}</small>`;
+      b.onclick = () => { openConversation = c.partner; shownCount = -1; renderMessages(); };
+      return b;
+    }));
+    return;
+  }
+  const c = convs.find((x) => x.partner === openConversation) || { partner: openConversation, name: nameOf(openConversation) };
+  $("conversation-title").textContent = c.name;
+  const list = live.messages.list.filter((m) => partnerOf(m, live.uid) === openConversation);
+  $("conversation-list").replaceChildren(...(list.length ? list.map((m) => {
+    const d = document.createElement("div");
+    d.className = "msg" + (m.mine ? " mine" : "");
+    d.innerHTML = `<small>${escapeHtml(m.mine ? "You" : m.name)} · ${when(m.time)}</small>${escapeHtml(m.text)}<small>${statusText(m)}</small>`;
+    return d;
+  }) : [Object.assign(document.createElement("div"), { className: "hint", textContent: "No messages." })]));
+  // A new message, or the conversation just opened: the newest is in view.
+  if (list.length !== shownCount) { shownCount = list.length; $("panel").scrollTop = $("panel").scrollHeight; }
+  live.markRead(openConversation);
+}
+$("conversation-back").onclick = () => { openConversation = null; renderMessages(); };
+$("pick-back").onclick = () => { picking = false; renderMessages(); };
+$("new-message").onclick = () => { picking = true; renderMessages(); };
+$("display-name").value = state.displayName || "";
+$("display-name").onchange = () => {
+  state.displayName = cleanText($("display-name").value, MAX_NAME);
+  $("display-name").value = state.displayName;
+  saveSettings();
+  if (state.displayName) $("name-hint").textContent = "";
+  // The location placed by hand goes on under the new name; without a name it stops.
+  if (state.myLocation) { if (state.displayName) placeMe(state.myLocation); else stopMe(); }
+};
+/** Asks for the Display Name: messages and My Location need it. */
+function askName() {
+  showTab("messages");
+  $("name-hint").textContent = "Enter a Display Name first.";
+  $("display-name").focus();
+}
+
+/* ---------- My Location, placed by hand ---------- */
+function placeMe(ll) {
+  const name = cleanText($("display-name").value, MAX_NAME);
+  if (!name) { askName(); return; }
+  state.myLocation = { lng: ll.lng, lat: ll.lat };
+  saveSettings();
+  if (live) live.setLocation({ lat: ll.lat, lon: ll.lng }, name);
+  if (mode === "me") setMode(null);
+  drawMe();
+}
+function stopMe() {
+  state.myLocation = null;
+  saveSettings();
+  if (live) live.setLocation(null);
+  drawMe();
+}
+function drawMe() {
+  const m = sharingOn() && state.myLocation;
+  if (map.getSource("me")) {
+    try {
+      map.getSource("me").setData(m ? { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: [m.lng, m.lat] },
+        properties: { name: cleanText($("display-name").value, MAX_NAME) } }] } : emptyFC());
+    } catch { /* a new map style is still loading */ }
+  }
+  $("my-location").hidden = !sharingOn();
+  $("my-location-text").textContent = m ? `My Location: ${toMGRS(m.lat, m.lng, 5)}` : "My Location: Not Shared. Set it with the tool bar on the map.";
+  $("my-location-stop").hidden = !m;
+}
+$("my-location-stop").onclick = stopMe;
+function sendMessage() {
+  const box = $("message-text");
+  if (!live || !openConversation || !cleanText(box.value)) return;
+  const name = cleanText($("display-name").value, MAX_NAME);
+  if (!name) { askName(); return; }
+  state.displayName = name; saveSettings();
+  if (live.send(openConversation, box.value, name)) box.value = "";
+  box.focus();
+}
+$("message-send").onclick = sendMessage;
+$("message-text").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendMessage(); } });
+
+/** Everything that shows what the server holds, after each answer. */
+function onLive(l) {
+  live = l;
+  const st = l.status === "on" ? l.state : null;
+  if (st) for (const p of st.positions) people.set(p.uid, p.name);
+  for (const m of l.messages.list) if (!m.mine) people.set(m.from, m.name);
+  // No sharing service on this server: none of it is shown.
+  const there = l.status !== "absent" && l.status !== "starting";
+  $("live-layers").hidden = !there;
+  // A server from before messages has locations and markers only.
+  const messaging = there && !(l.status === "on" && l.info && !l.info.messages);
+  TABS.find((b) => b.dataset.tab === "messages").hidden = !messaging;
+  if (!messaging && tab === "messages") showTab("layers");
+  $("live-status").textContent = l.status === "on" ? "" : l.text;
+  if (st) { syncIn(st); syncSoon(); }
+  else if (l.status === "disabled" || l.status === "absent") dropShared();
+  // Sharing came or went: the lists offer Share with All Devices only while it is on.
+  if (sharingOn() !== onLive.sharing) {
+    onLive.sharing = sharingOn();
+    sharedChanged();
+    $("add-me").hidden = !onLive.sharing;
+    if (!onLive.sharing && mode === "me") setMode(null);
+    drawMe();
+  }
+  drawLive();
+  renderRoutes();
+  renderMessages();
+}
+renderLiveSwitches();
+showTab(tab);
+$("add-me").hidden = true;            // until the server says location sharing is enabled
+live = startLive(onLive);
+if (state.myLocation && cleanText(state.displayName, MAX_NAME)) live.setLocation({ lat: state.myLocation.lat, lon: state.myLocation.lng }, state.displayName);
+
+/* ---------- Tile URLs for other apps ---------- */
+// A style that starts with a background fills every pixel, so its tiles can be JPEG: about a
+// third of the size of PNG. A style without one is an overlay and needs PNG, which can be
+// see-through. (The same addresses as on TileServer GL's own front page.)
+async function fillTileUrls() {
+  const get = async (url) => { try { const r = await fetch(url, { cache: "no-store" }); return r.ok ? await r.json() : null; } catch { return null; } };
+  const [rendered, data] = await Promise.all([get(`${TILES}/rendered.json`), get(`${TILES}/data.json`)]);
+  const rows = await Promise.all((rendered || []).map(async (t) => {
+    const st = await get(styleUrlFor(t.id));
+    const jpeg = !!(st && st.layers && st.layers[0] && st.layers[0].type === "background");
+    return [t.name || t.id, t.id, `${TILES}/styles/${t.id}/{z}/{x}/{y}.${jpeg ? "jpg" : "png"}`];
+  }));
+  rows.sort((a, b) => a[0].localeCompare(b[0], "en", { numeric: true }));
+  $("tile-list").replaceChildren(...rows.map(([name, id, url]) => {
+    const d = document.createElement("div");
+    d.className = "addr";
+    d.innerHTML = `<b>${escapeHtml(name)}</b><div class="copy"><input type="text" readonly aria-label="Tile URL for ${escapeHtml(name)}"><button type="button">Copy</button></div>
+      <p class="more"><a href="${TILES}/styles/${id}.json">TileJSON</a> · <a href="${TILES}/styles/${id}/wmts.xml">WMTS</a> · <a href="${TILES}/styles/${id}/style.json">Style</a></p>`;
+    const [input, button] = d.querySelectorAll("input,button");
+    input.value = url;
+    input.onfocus = () => input.select();
+    button.onclick = () => {
+      // Not navigator.clipboard: that needs https, which a server on a local network rarely has.
+      input.select();
+      const done = document.execCommand("copy");
+      button.textContent = done ? "Copied" : "Press Ctrl+C";
+      setTimeout(() => (button.textContent = "Copy"), 2500);
+    };
+    return d;
+  }));
+  if (!rows.length) $("tile-list").innerHTML = `<p>No Map Styles</p>`;
+  $("data-block").hidden = !(data && data.length);
+  $("data-list").replaceChildren(...(data || []).flatMap((t) => {
+    const span = Object.assign(document.createElement("span"), { textContent: t.name && t.name !== t.id ? `${t.id} (${t.name})` : t.id });
+    const a = (text, href) => Object.assign(document.createElement("a"), { textContent: text, href });
+    return [span, a("TileJSON", `${TILES}/data/${t.id}.json`), a("Inspect", `${TILES}/data/${t.id}/`)];
+  }));
+}
+$("tile-urls").onclick = () => { fillTileUrls(); $("addresses").showModal(); };
+$("addresses-close").onclick = () => $("addresses").close();
 
 /* ---------- PDF ---------- */
 let aborter = null;
@@ -815,7 +1392,7 @@ async function makePdf(kind) {
     const c = currentCenter();
     const { pdf, pages } = await renderSheet({
       styleUrl: await printStyle(), center: c, scale: state.scale, paper: state.paper, orientation: state.orientation,
-      dpi: effectiveDpi(), title: state.title.trim(), markers, arrows, shapes, units: state.units, shapeMeasure: state.shapeMeasure !== false, listPage: state.listPage, config,
+      dpi: effectiveDpi(), title: state.title.trim(), markers: shown(markers), arrows: shown(arrows), shapes, units: state.units, shapeMeasure: state.shapeMeasure !== false, listPage: state.listPage, config,
       atlas: +state.atlas || 1, binder: state.binder, gridLines: state.layers.grid !== false, ink: state.layers.ink, signal: aborter.signal,
       terrain: terrain && terrain.printData(),
       onStatus: (t) => (status.textContent = t),

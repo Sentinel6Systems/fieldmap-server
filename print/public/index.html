@@ -3,19 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Print Map</title>
+<title>Map</title>
 <link rel="stylesheet" href="maplibre-gl.css">
 <link rel="stylesheet" href="fieldmap.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="fm-bar" id="fm-bar" data-page="print"></header>
+<header class="fm-bar" id="fm-bar" data-page="map"></header>
 <script src="nav.js"></script>
 <div id="map"></div>
 
+<!-- While a tool of the tool bar is in use: what to do next. -->
+<div id="mode-bar" class="mode-bar" hidden>
+  <span id="mode-hint"></span>
+  <button id="finish-shape" class="primary compact" hidden>Finish Shape</button>
+</div>
+
+<div id="no-maps" class="notice" hidden>
+  <h1>No Maps Installed</h1>
+  <p>Build maps on the Map Builder page, or run scripts/build-region.sh on the server.</p>
+</div>
+
 <aside id="panel">
   <div class="panel-head">
-    <h1>Print Map</h1>
+    <nav class="tabs" role="tablist" aria-label="Panel">
+      <button role="tab" data-tab="layers" aria-selected="true">Layers</button>
+      <button role="tab" data-tab="markers" aria-selected="false">Markers</button>
+      <button role="tab" data-tab="messages" aria-selected="false" hidden>Messages<span id="unread" class="badge" hidden></span></button>
+      <button role="tab" data-tab="print" aria-selected="false">Print</button>
+    </nav>
     <button id="panel-toggle" class="icon" title="Show or Hide Panel">▾</button>
   </div>
   <div id="panel-body">
@@ -26,60 +42,39 @@
     <div class="wmm-result"></div>
   </div>
 
-  <label>Map Style
-    <select id="style"></select>
-  </label>
-  <label>Scale
-    <select id="scale"></select>
-  </label>
-  <div class="row2">
-    <label>Paper
-      <select id="paper"></select>
+  <section id="tab-layers" class="tab" role="tabpanel">
+    <label>Map Style
+      <span class="style-row">
+        <select id="style"></select>
+        <button id="tile-urls" class="secondary" type="button" title="Tile URLs for ATAK, WinTAK, iTAK and other map apps">Tile URLs</button>
+      </span>
     </label>
-    <label>Orientation
-      <select id="orientation">
-        <option value="portrait">Portrait</option>
-        <option value="landscape">Landscape</option>
-      </select>
-    </label>
-  </div>
-  <label>Pages
-    <select id="atlas"></select>
-  </label>
-  <div id="atlas-warning" class="warning"></div>
 
-  <dl class="info">
-    <dt>Ground Area</dt><dd id="info-footprint">–</dd>
-    <dt>Grid</dt><dd id="info-grid">–</dd>
-    <dt>Center</dt><dd id="info-centre">–</dd>
-  </dl>
-  <div class="hint">Drag the blue rectangle to move the sheet, or tap the map outside it to move the sheet there.</div>
-  <div class="row2">
-    <button id="bring" class="secondary">Center Sheet Here</button>
-    <button id="fit" class="secondary">Fit Map to Sheet</button>
-  </div>
+    <div id="live-layers" class="live-layers" hidden>
+      <h2>Shared</h2>
+      <div id="live-switches"></div>
+      <div id="live-status" class="hint"></div>
+    </div>
 
-  <details id="layers" class="layers">
-    <summary><h2>Layers</h2><span id="layers-summary" class="hint"></span></summary>
-    <div id="layer-controls"></div>
-    <button id="layers-reset" class="secondary" type="button">Show All Layers</button>
-    <div class="hint">These settings apply to the map on screen and on every printed page.</div>
-  </details>
+    <details id="layers" class="layers">
+      <summary><h2>Layers</h2><span id="layers-summary" class="hint"></span></summary>
+      <div id="layer-controls"></div>
+      <button id="layers-reset" class="secondary" type="button">Show All Layers</button>
+      <div class="hint">These settings apply to the map on screen and on every printed page.</div>
+    </details>
 
-  <details id="terrain" class="layers terrain" hidden>
-    <summary><h2>Terrain</h2><span id="terrain-summary" class="hint"></span></summary>
-    <div id="terrain-controls"></div>
-  </details>
+    <details id="terrain" class="layers terrain" hidden>
+      <summary><h2>Terrain</h2><span id="terrain-summary" class="hint"></span></summary>
+      <div id="terrain-controls"></div>
+    </details>
+  </section>
 
-  <label>Title
-    <input id="title" type="text" placeholder="Map title (optional)" maxlength="60">
-  </label>
-
-  <section class="features">
+  <section id="tab-markers" class="tab features" role="tabpanel" hidden>
     <div class="section-head">
       <h2>Markers &amp; Drawings</h2>
-      <button id="clear-all" class="secondary danger compact" title="Clear all markers, arrows and shapes">Clear All</button>
+      <button id="clear-all" class="secondary danger compact" title="Clear all markers, arrows and shapes in this browser">Clear All</button>
     </div>
+    <div class="hint">Add them with the tool bar on the map. Shared ones are kept on the server for all devices; the others in this browser.</div>
     <label class="inline">Units
       <select id="units">
         <option value="imperial">Imperial (ft, mi, acres)</option>
@@ -88,21 +83,12 @@
     </label>
     <div class="hint">Default Color</div>
     <div id="new-color"></div>
-    <div class="row2 add-buttons">
-      <button id="add-marker" class="secondary">Add Marker</button>
-      <button id="add-arrow" class="secondary">Add Arrow</button>
-    </div>
-    <div class="row3">
-      <button id="add-circle" class="secondary">Circle</button>
-      <button id="add-rect" class="secondary">Rectangle</button>
-      <button id="add-polygon" class="secondary">Polygon</button>
-    </div>
-    <div id="mode-hint" class="hint"></div>
-    <button id="finish-shape" class="primary" hidden>Finish Shape</button>
     <h3>Markers</h3>
     <div id="marker-list"></div>
     <h3>Arrows</h3>
     <div id="arrow-list"></div>
+    <h3 id="routes-head" hidden>Routes</h3>
+    <div id="route-list"></div>
     <h3>Shapes</h3>
     <div id="shape-list"></div>
     <div class="row2 file-buttons">
@@ -110,37 +96,122 @@
       <button id="load-drawings" class="secondary" title="Add the markers, arrows and shapes from a saved file to the map.">Import Drawings</button>
     </div>
     <input id="load-file" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
-    <div id="file-hint" class="hint">Drawings are saved in this browser only. Export them to keep a copy or to use them in another browser.</div>
+    <div id="file-hint" class="hint">Export makes a file of them to keep a copy or to use in another browser. Imported items are not shared until you share them.</div>
     <label class="check">
       <input id="shape-measure" type="checkbox">
       <span>Show Measurements</span>
     </label>
   </section>
 
-  <label class="check" title="Adds a page with the map symbols and the list of markers, arrows and shapes. In an atlas, it follows the index.">
-    <input id="list-page" type="checkbox">
-    <span>Include Legend Page</span>
-  </label>
-  <label class="check" title="Wider left margin on atlas pages, for a 3-ring binder.">
-    <input id="binder" type="checkbox">
-    <span>Binder Margin</span>
-  </label>
+  <section id="tab-messages" class="tab" role="tabpanel" hidden>
+    <div id="messages-status" class="hint"></div>
+    <label>Display Name
+      <input id="display-name" type="text" maxlength="24" placeholder="Your name on the map and in messages">
+    </label>
+    <div id="name-hint" class="hint error"></div>
+    <div id="my-location" class="my-location" hidden>
+      <span id="my-location-text"></span>
+      <button id="my-location-stop" class="secondary compact" hidden>Stop Sharing</button>
+    </div>
+    <div id="conversations-view">
+      <div id="conversations"></div>
+      <button id="new-message" class="secondary">New Message</button>
+    </div>
+    <div id="pick-view" hidden>
+      <div class="section-head">
+        <button id="pick-back" class="icon" title="Back to Messages">‹</button>
+        <h2>New Message</h2>
+      </div>
+      <div id="pick-list"></div>
+    </div>
+    <div id="conversation" hidden>
+      <div class="section-head">
+        <button id="conversation-back" class="icon" title="Back to Messages">‹</button>
+        <h2 id="conversation-title"></h2>
+      </div>
+      <div id="conversation-list" class="conversation"></div>
+      <div class="composer">
+        <input id="message-text" type="text" maxlength="140" placeholder="Message" aria-label="Message" autocomplete="off">
+        <button id="message-send" class="primary">Send</button>
+      </div>
+    </div>
+  </section>
 
-  <label>Quality
-    <select id="dpi">
-      <option value="200">Standard (200 dpi)</option>
-      <option value="300">High (300 dpi)</option>
-    </select>
-  </label>
+  <section id="tab-print" class="tab" role="tabpanel" hidden>
+    <label>Scale
+      <select id="scale"></select>
+    </label>
+    <div class="row2">
+      <label>Paper
+        <select id="paper"></select>
+      </label>
+      <label>Orientation
+        <select id="orientation">
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select>
+      </label>
+    </div>
+    <label>Pages
+      <select id="atlas"></select>
+    </label>
+    <div id="atlas-warning" class="warning"></div>
 
-  <div class="actions">
-    <button id="download" class="secondary">Download PDF</button>
-    <button id="print" class="primary">Print</button>
-  </div>
-  <button id="cancel" class="secondary danger" hidden>Cancel</button>
-  <div id="status" class="status"></div>
+    <dl class="info">
+      <dt>Map Style</dt><dd id="info-style">–</dd>
+      <dt>Ground Area</dt><dd id="info-footprint">–</dd>
+      <dt>Grid</dt><dd id="info-grid">–</dd>
+      <dt>Center</dt><dd id="info-centre">–</dd>
+    </dl>
+    <div class="hint">Drag the blue rectangle to move the sheet, or tap the map outside it to move the sheet there.</div>
+    <div class="row2">
+      <button id="bring" class="secondary">Center Sheet Here</button>
+      <button id="fit" class="secondary">Fit Map to Sheet</button>
+    </div>
+
+    <label>Title
+      <input id="title" type="text" placeholder="Map title (optional)" maxlength="60">
+    </label>
+
+    <label class="check" title="Adds a page with the map symbols and the list of markers, arrows and shapes. In an atlas, it follows the index.">
+      <input id="list-page" type="checkbox">
+      <span>Include Legend Page</span>
+    </label>
+    <label class="check" title="Wider left margin on atlas pages, for a 3-ring binder.">
+      <input id="binder" type="checkbox">
+      <span>Binder Margin</span>
+    </label>
+
+    <label>Quality
+      <select id="dpi">
+        <option value="200">Standard (200 dpi)</option>
+        <option value="300">High (300 dpi)</option>
+      </select>
+    </label>
+
+    <div class="actions">
+      <button id="download" class="secondary">Download PDF</button>
+      <button id="print" class="primary">Print</button>
+    </div>
+    <button id="cancel" class="secondary danger" hidden>Cancel</button>
+    <div id="status" class="status"></div>
+  </section>
   </div>
 </aside>
+
+<dialog id="addresses" aria-labelledby="addresses-title">
+  <div class="dhead"><h1 id="addresses-title">Tile URLs for Other Apps</h1><button id="addresses-close" type="button">Close</button></div>
+  <div class="dbody">
+    <p>ATAK, WinTAK, iTAK and other map apps load maps from a tile URL. Copy the URL of the map you want. It works for devices that reach the server the same way you do now.</p>
+    <div class="fm-label">Map Tiles</div>
+    <div id="tile-list"></div>
+    <div id="data-block" hidden>
+      <div class="fm-label">Data Sources</div>
+      <div id="data-list" class="data"></div>
+    </div>
+    <p class="dnote">TileJSON, WMTS, Style and Inspect open pages of the tile server itself, which look different.</p>
+  </div>
+</dialog>
 
 <script type="module" src="app.js"></script>
 </body>

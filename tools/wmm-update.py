@@ -3,7 +3,7 @@
 
 The print tool has a WMM built in. This script downloads a newer one when it is
 published and writes it to data/wmm/wmm.json, which the web server serves to the
-print tool at /mapprinter/wmm/wmm.json. No rebuild is needed.
+map at /map/wmm/wmm.json. No rebuild is needed.
 
 Usage (Python 3 standard library only):
   tools/wmm-update.py status            what is installed, as JSON
