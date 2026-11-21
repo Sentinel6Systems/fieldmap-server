@@ -8,12 +8,14 @@
 [Unit]
 Description=fieldmap-server remote access for the Android app
 After=network.target
+RequiresMountsFor=/opt/fieldmap-server/data
 
 [Service]
 User=fieldmap
 WorkingDirectory=/opt/fieldmap-server
 ExecStart=/opt/fieldmap-server/scripts/remote.sh serve
 Restart=on-failure
+MemoryMax=256M
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict

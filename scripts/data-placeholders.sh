@@ -10,17 +10,21 @@
 # Existing files are never touched.
 #
 # Usage: ./scripts/data-placeholders.sh
+# The files are in data/, or in FIELDMAP_DATA (in .env, see scripts/install-pi.sh).
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+DATA="$(grep -E '^FIELDMAP_DATA=' "$REPO_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+DATA="${DATA%\"}"; DATA="${DATA#\"}"; DATA="${DATA%\'}"; DATA="${DATA#\'}"
+DATA="${FIELDMAP_DATA:-${DATA:-$REPO_DIR/data}}"
 # data/wmm: the magnetic model from tools/wmm-update.py. data/admin: the map builder's files.
 # data/routing: the app's routing data (build-routing.sh; empty until then, and /routing/
 # answers 404). All are mounted into the web container, which would otherwise make them as root.
-mkdir -p "$REPO_DIR/data/wmm" "$REPO_DIR/data/admin" "$REPO_DIR/data/routing"
+mkdir -p "$DATA/wmm" "$DATA/admin" "$DATA/routing"
 
 # Arguments: NAME BUILDER (pbf LAYER ... | raster FORMAT ENCODING)
 placeholder() {
     local name="$1" builder="$2"
-    local out="$REPO_DIR/data/$name.mbtiles"
+    local out="$DATA/$name.mbtiles"
     shift 2
     [ -s "$out" ] && return 0
     python3 - "$out" "$@" <<'PY'
@@ -43,7 +47,7 @@ else:
         ("maxzoom", "12"), ("bounds", "-180,-85.05113,180,85.05113")])
 db.commit()
 PY
-    echo "Wrote an empty data/$name.mbtiles (run $builder for the real layers)."
+    echo "Wrote an empty $out (run $builder for the real layers)."
 }
 
 placeholder basemap "build-region.sh, or the Map Builder page," pbf

@@ -2,6 +2,21 @@
 
 ## Since v1.0.0
 
+- `install-pi.sh` installs without Internet-in-a-Box too: on Raspberry Pi OS Lite 64-bit, Debian 13 or Ubuntu 24.04
+  whose own nginx serves port 80, as one step of another installer. `FIELDMAP_DATA` puts the data folder outside the
+  repository (every container and service reads it directly), `FIELDMAP_NGINX_DIR` the nginx snippets into a folder
+  included inside the server block (rolled back if `nginx -t` fails), `FIELDMAP_PORTS_FILE` tells the machine's own
+  firewall what remote access needs from outside; the services then run as their own user `fieldmap`, and only once
+  the data folder is mounted. The script installs Docker (and Docker Compose v2 on Ubuntu too) and Node.js where
+  they are missing, never asks anything, ends with checks through nginx and a list of what it changed, and a second
+  run changes and restarts nothing. Without the new settings it works as before. See [pi/README.md](pi/README.md).
+- The remote gateway's nginx image, NetBird's client and the route service's Java base image are pinned by their
+  digests, like the tile server: a newer one comes with an update of this repository, not with the weekly pull.
+- **New Random Port** on the Remote Access page works again: the service asks for the port, and `remote.sh setup`
+  (run as root) writes it to `.env`, which the service, shut in by systemd, cannot write.
+- With `install-pi.sh`, the route service's image builds: Docker there has no network of its own, so the build
+  uses the machine's.
+
 - NetBird **Network Isolation** on Admin › Remote Access, for several servers in one NetBird account: each server
   makes its own groups, an access policy (its devices to its gateway port only) and a setup key for its devices,
   with a NetBird access token that is used once and never stored. Devices paired earlier are moved into the

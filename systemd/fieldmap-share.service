@@ -10,6 +10,7 @@
 [Unit]
 Description=fieldmap-server live sharing for the Android app
 After=network.target
+RequiresMountsFor=/opt/fieldmap-server/data
 
 [Service]
 User=fieldmap

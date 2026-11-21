@@ -30,6 +30,39 @@ the script again.
 Building the map data itself (Planetiler, GDAL) wants an x86 machine with plenty of RAM and disk; do that with
 `scripts/build-region.sh <region-file>` elsewhere and copy the `.mbtiles` files over.
 
+## Without Internet-in-a-Box: beside a web server of the machine's own
+
+`install-pi.sh` also installs on Raspberry Pi OS Lite 64-bit (Debian 13), Debian 13 or Ubuntu 24.04 (arm64 or amd64)
+without Internet-in-a-Box, where the machine's own nginx serves port 80 and another installer may call this one as a
+step. The settings come from the environment and are kept in `.env`, so later runs (and `git pull` updates) need not
+name them again:
+
+```bash
+sudo FIELDMAP_DATA=/srv/maps \
+     FIELDMAP_NGINX_DIR=/etc/nginx/fieldmap.d \
+     FIELDMAP_PORTS_FILE=/etc/<host-firewall>/fieldmap.ports \
+     FIELDMAP_SERVER_NAME=<server-name> \
+     /opt/fieldmap-server/scripts/install-pi.sh
+```
+
+| Setting | What it is |
+|---|---|
+| `FIELDMAP_DATA` | The data folder, outside the repository (on a disk of its own, for example): the `.mbtiles` files and the services' folders `wmm/`, `remote/`, `share/`, `app/`, `routing/`. Every container and service reads it directly (a symbolic link at `data/` would not work inside the containers). The services start only once it is mounted (`RequiresMountsFor`). |
+| `FIELDMAP_NGINX_DIR` | Where the nginx snippets (`pi/nginx/*.conf`, location blocks) go: a folder that the server block for port 80 includes, `include /etc/nginx/fieldmap.d/*.conf;` **inside** `server { }`. Not `/etc/nginx/conf.d` on Debian: that one is included at http level, where location blocks fail. If `nginx -t` fails, the snippets are put back as they were and the script stops. |
+| `FIELDMAP_PORTS_FILE` | For a machine whose own firewall drops everything from outside: what remote access needs from outside, now, one line each, rewritten when it changes (see [Firewall](../docs/reference.md#firewall)): `wan tcp <port>` (the gateway, while the router's port is the way in: from anywhere, on any interface but a Wi-Fi hotspot's) and `iface nb-fieldmap tcp <port>` (the gateway, while NetBird is the way in: on NetBird's interface only). Comments only: nothing. |
+| `FIELDMAP_SERVER_NAME` | The host name of that server block, for the checks at the end (default `127.0.0.1`). |
+| `FIELDMAP_USER` | The user the services run as. With `FIELDMAP_DATA` the default is a system user `fieldmap`, made by the script; otherwise the owner of the repository. |
+
+Put the repository where nginx (`www-data`) can read it, such as `/opt/fieldmap-server` owned by the admin user; not
+in a home folder, which is often closed to other users (mode 700). The script installs what is missing: Docker
+(Debian's `docker.io`, with `docker-compose` on Debian or `docker-compose-v2` on Ubuntu, and `docker-buildx`;
+`pi/docker/daemon.json` is written before Docker's first start, so Docker never makes a network or firewall rules of
+its own) and Node.js (`nodejs`, `npm`; 18 or newer) to build the map. It needs these ports on 127.0.0.1 and stops if
+something else has one: 8080 (tile server), 8091 (magnetic model), 8092 (remote access), 8093 (location sharing) and
+17777 (route service). It never asks anything and never reboots; it ends with checks through nginx and a list of what
+it changed. A second run changes nothing and restarts nothing that did not change. It exits with an error and says why
+when something fails.
+
 ## What the script does, step by step
 
 1. **Docker.** `sudo apt install docker.io docker-compose`. Copy `docker/daemon.json` to `/etc/docker/daemon.json`
@@ -76,7 +109,9 @@ enabled on the Devices page. On an open hotspot, everyone who joins can see the 
   Raspberry Pi OS ships turned off: `install-pi.sh` turns it on (adds `cgroup_enable=memory cgroup_memory=1` to
   `/boot/firmware/cmdline.txt`, backup next to it as `cmdline.txt.fieldmap.bak`), adds a one-time job that recreates
   the tile server with its cap at the next boot, and offers to reboot. Until that reboot everything works, uncapped.
-- The image in `docker-compose.pi.yml` is pinned by digest so a later pull cannot change it unnoticed.
+- The images in `docker-compose.pi.yml` (TileServer GL, the gateway's nginx, NetBird, and the route service's Java
+  base image in `brouter/Dockerfile`) are pinned by digest so a later pull cannot change them unnoticed. Newer versions
+  come with an update of this repository.
 - IIAB's nginx uses a limited MIME table: serve JavaScript as `.js`, not `.mjs` (the print tool's build already does).
 - To keep the default map view on the recipient's area, edit `center` and `zoom` in the Pi's copies of the styles;
   leave the repository's styles generic.

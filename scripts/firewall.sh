@@ -25,6 +25,16 @@
 # Settings in .env: REMOTE_FIREWALL=off (no firewall: for a machine that serves other things to
 # the internet; the rule for NetBird's interface stays, it belongs to NetBird), REMOTE_PORT (written by scripts/remote.sh setup), REMOTE_FIREWALL_ALLOW (ports
 # open from outside besides the gateway: none by default; 22 to reach SSH from outside).
+#
+# A machine with a firewall of its own that drops everything from outside (install-pi.sh's
+# FIELDMAP_PORTS_FILE): this table cannot open anything through that one. So "apply" also writes
+# what remote access needs from outside, now, to that file, for that firewall to open; rewritten
+# only when it changes (a .path unit of that firewall can watch it):
+#   wan tcp <port>                 from outside the local network, on any interface but a Wi-Fi
+#                                  hotspot's: the gateway while the router's port is the way in,
+#                                  and the REMOTE_FIREWALL_ALLOW ports
+#   iface nb-fieldmap tcp <port>   on NetBird's interface only: the gateway while NetBird is the way in
+# Comments only: nothing from outside (remote access off, or on the local network only).
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TABLE="inet fieldmap_guard"
@@ -39,6 +49,26 @@ setting() {
     echo "$line"
 }
 [ "$(id -u)" -eq 0 ] || { echo "Run as root (sudo)." >&2; exit 1; }
+# The data folder: data/ here, or FIELDMAP_DATA (install-pi.sh keeps it in .env).
+DATA="$(setting FIELDMAP_DATA "")"
+DATA="${FIELDMAP_DATA:-${DATA:-$REPO_DIR/data}}"
+PORTS_FILE="$(setting FIELDMAP_PORTS_FILE "")"
+# What this run changed, for install-pi.sh's summary (FIELDMAP_CHANGES: a file it reads).
+changed() {
+    echo "Changed: $1"
+    if [ -n "${FIELDMAP_CHANGES:-}" ]; then echo "$1" >> "$FIELDMAP_CHANGES"; fi
+}
+# The rules as this script last wrote them: written again only when they differ, or when the
+# table is gone.
+LAST=/run/fieldmap-firewall.nft
+apply_rules() {
+    local rules
+    rules="$(cat)"
+    if [ "$rules" = "$(cat "$LAST" 2>/dev/null)" ] && nft list table $TABLE >/dev/null 2>&1; then return 0; fi
+    printf '%s\n' "$rules" | nft -f -
+    printf '%s\n' "$rules" > "$LAST"
+    changed "the firewall rules (nftables table $TABLE)"
+}
 
 # Another firewall on the machine (Internet-in-a-Box's iiab-gen-iptables, ufw) may drop new
 # connections from the home network, which for a box plugged into a home router is its "WAN"
@@ -84,10 +114,15 @@ install)
     if ! command -v systemctl >/dev/null || [ ! -d /run/systemd/system ]; then
         echo "This machine has no systemd: the firewall is applied once now, not kept up. Run this again after a restart." >&2
     else
+        reload=no
         for unit in fieldmap-firewall.service fieldmap-firewall.timer fieldmap-firewall.path; do
-            sed "s|/opt/fieldmap-server|$REPO_DIR|g" "$REPO_DIR/systemd/$unit" > "/etc/systemd/system/$unit"
+            new="$(sed -e "s|/opt/fieldmap-server/data|$DATA|g" -e "s|/opt/fieldmap-server|$REPO_DIR|g" "$REPO_DIR/systemd/$unit")"
+            [ "$new" = "$(cat "/etc/systemd/system/$unit" 2>/dev/null)" ] && continue
+            printf '%s\n' "$new" > "/etc/systemd/system/$unit"
+            reload=yes
+            changed "/etc/systemd/system/$unit"
         done
-        systemctl daemon-reload
+        [ "$reload" = no ] || systemctl daemon-reload
         if [ "$(setting REMOTE_FIREWALL on)" = off ]; then
             systemctl disable -q --now fieldmap-firewall.timer 2>/dev/null || true
             # The path unit stays: with no firewall of the box's own, NetBird's interface is still
@@ -104,6 +139,7 @@ install)
     ;;
 off)
     if command -v nft >/dev/null; then nft delete table $TABLE 2>/dev/null || true; fi
+    rm -f "$LAST"
     iptables_close
     exit 0
     ;;
@@ -128,14 +164,35 @@ try:
     nb = s.get("way") == "netbird"
     print(yes(on), yes(on and not nb), yes(on and nb and s.get("netbird") is True))
 except Exception:
-    print("no no no")' "$REPO_DIR/data/remote/settings.json" 2>/dev/null || echo "no no no")"
+    print("no no no")' "$DATA/remote/settings.json" 2>/dev/null || echo "no no no")"
 # Remote access taken off the box (remote.sh off, install.sh --no-remote): no gateway listens, and
 # an open port with nothing behind it would answer "closed".
-if [ -e "$REPO_DIR/data/remote/run/no-remote" ] || [ -z "$PORT" ]; then ON=no; DIRECT=no; NETBIRD=no; fi
-if [ "$DIRECT" = yes ]; then iptables_open "$PORT" all
+if [ -e "$DATA/remote/run/no-remote" ] || [ -z "$PORT" ]; then ON=no; DIRECT=no; NETBIRD=no; fi
+# A machine with a ports file has a firewall that reads it (below), not Internet-in-a-Box's.
+if [ -n "$PORTS_FILE" ]; then iptables_close
+elif [ "$DIRECT" = yes ]; then iptables_open "$PORT" all
 elif [ "$NETBIRD" = yes ]; then iptables_open "$PORT" netbird
 elif [ "$ON" = yes ]; then iptables_open "$PORT" local
 else iptables_close; fi
+
+# This machine's own firewall: the file it reads (see the top of this file).
+if [ -n "$PORTS_FILE" ]; then
+    want="$(
+        echo "# fieldmap-server (scripts/firewall.sh apply): what remote access needs from outside the"
+        echo "# local network now. Rewritten when that changes; comments only = nothing."
+        if [ "$DIRECT" = yes ]; then echo "# The gateway, through the router's port: from anywhere."; echo "wan tcp $PORT"; fi
+        if [ "$NETBIRD" = yes ]; then echo "# The gateway, through NetBird: on NetBird's interface only."; echo "iface $NB_IF tcp $PORT"; fi
+        allow="$(setting REMOTE_FIREWALL_ALLOW "" | tr ', ' '\n\n' | grep -E '^[0-9]{1,5}$' | sort -un || true)"
+        if [ -n "$allow" ]; then echo "# REMOTE_FIREWALL_ALLOW in .env"; printf 'wan tcp %s\n' $allow; fi
+    )"
+    if [ "$want" != "$(cat "$PORTS_FILE" 2>/dev/null)" ]; then
+        mkdir -p "$(dirname "$PORTS_FILE")"
+        printf '%s\n' "$want" > "$PORTS_FILE.tmp"
+        chmod 644 "$PORTS_FILE.tmp"
+        mv -f "$PORTS_FILE.tmp" "$PORTS_FILE"
+        changed "$PORTS_FILE: $(grep -v '^#' "$PORTS_FILE" | paste -sd, - | sed 's/^$/nothing from outside/')"
+    fi
+fi
 
 # NetBird's interface: the gateway's port while NetBird is a way in, then nothing. In "input" the
 # port is the one on this machine; in "forward" (a gateway in a container) the container's 8443,
@@ -150,6 +207,7 @@ fi
 
 if [ "$(setting REMOTE_FIREWALL on)" = off ] && [ "$NETBIRD" = no ]; then
     nft delete table $TABLE 2>/dev/null || true
+    rm -f "$LAST"
     echo "No firewall of its own on this box (REMOTE_FIREWALL=off)."
     exit 0
 fi
@@ -164,7 +222,7 @@ command -v nft >/dev/null || { echo "nftables is not installed: no firewall on t
 
 if [ "$(setting REMOTE_FIREWALL on)" = off ]; then
     # No firewall of the box's own, but NetBird runs: its interface is still held to the gateway.
-    nft -f - <<EOF
+    apply_rules <<EOF
 table $TABLE
 delete table $TABLE
 table $TABLE {
@@ -214,7 +272,7 @@ for r in routes:
 print(", ".join(str(n) for n in ipaddress.collapse_addresses(out)))' 2>/dev/null || true)"
 LAN6="${LAN6:-::1/128, fe80::/10, fc00::/7}"
 
-nft -f - <<EOF
+apply_rules <<EOF
 table $TABLE
 delete table $TABLE
 table $TABLE {

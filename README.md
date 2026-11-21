@@ -34,7 +34,8 @@ cp .env.example .env          # optional: ports and other settings
 ```
 
 The installer starts everything, keeps it running across reboots and prints the page addresses. On a Raspberry
-Pi behind Internet-in-a-Box, use `sudo ./scripts/install-pi.sh` instead (see [pi/README.md](pi/README.md)).
+Pi behind Internet-in-a-Box, or a machine whose own nginx serves port 80 (another installer may call it as one step),
+use `sudo ./scripts/install-pi.sh` instead (see [pi/README.md](pi/README.md)).
 
 ## First steps
 

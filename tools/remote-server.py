@@ -778,24 +778,16 @@ def free_port():
     raise ValueError("No free port found.")
 
 
-ENV = os.path.join(ROOT, ".env")
 APPLY = os.path.join(REMOTE, "apply-request")     # fieldmap-remote-apply.path runs remote.sh setup
+PORT_REQUEST = os.path.join(REMOTE, "port-request")  # the new port, for remote.sh setup to write to .env
 
 
 def new_port():
-    """Gives the gateway a new random port: written to .env, then applied by remote.sh setup,
-    which fieldmap-remote-apply.path runs (as root) when APPLY changes. This service is
-    restarted by it."""
+    """Gives the gateway a new random port: written to PORT_REQUEST, then applied by remote.sh
+    setup, which fieldmap-remote-apply.path runs (as root) when APPLY changes. It writes the port
+    to .env (this service may write only its own folder) and restarts this service."""
     port = free_port()
-    try:
-        with open(ENV) as f:
-            lines = [l for l in f.read().splitlines() if not l.startswith("REMOTE_PORT=")]
-    except OSError:
-        lines = []
-    tmp = ENV + ".tmp"
-    with open(tmp, "w") as f:
-        f.write("\n".join(lines + ["REMOTE_PORT=%d" % port]) + "\n")
-    os.replace(tmp, ENV)
+    write_private(PORT_REQUEST, b"%d\n" % port)
     save_settings(changingPort=port)
     write_private(APPLY, str(int(time.time())).encode())
     os.chmod(APPLY, 0o644)

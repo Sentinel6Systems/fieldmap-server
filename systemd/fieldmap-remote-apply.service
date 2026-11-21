@@ -2,6 +2,7 @@
 # (fieldmap-remote-apply.path). Installed by scripts/remote.sh setup.
 [Unit]
 Description=fieldmap-server remote access setup, after a port change
+RequiresMountsFor=/opt/fieldmap-server/data
 
 [Service]
 Type=oneshot

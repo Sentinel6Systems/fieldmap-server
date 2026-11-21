@@ -132,7 +132,7 @@ choice per scale in the print tool.
 - **The gateway lets in only paired devices.** It is an nginx container that refuses everyone without a
   certificate this server issued, checks every request against the list of paired devices, and serves only what the app
   needs: styles, fonts, symbols and data tiles, and the few sharing addresses (below). Not the
-  pictures the tile server draws, not the print tool, not the Map Builder, nothing else. It limits connections per visitor and takes nginx's security fixes every week.
+  pictures the tile server draws, not the print tool, not the Map Builder, nothing else. It limits connections per visitor. Its nginx image is pinned by its digest; nginx's security fixes come with an update of this repository.
 - **A firewall on the server itself** (see [Firewall](reference.md#firewall) in the reference) lets nothing in from outside the local network
   and VPNs but the gateway, and answers nothing else. Devices at home, and the server's own connections out, are not
   affected. Where the machine has a firewall already (Internet-in-a-Box's drops everything from the
@@ -172,8 +172,8 @@ choice per scale in the print tool.
   `./scripts/remote.sh netbird-apply` as root, which starts or removes it. It runs on the machine's own network with
   only the right to change network settings, on its own interface `nb-fieldmap`, with NetBird's DNS, routes, firewall
   changes, IPv6, SSH server and remote jobs off (`tools/netbird-run.sh`). Its identity is kept in
-  `data/remote/netbird/state/`, so it comes back after a restart with the same address. It is updated every week with
-  the gateway. A container (not NetBird's package) keeps everything of NetBird inside this folder and out of the
+  `data/remote/netbird/state/`, so it comes back after a restart with the same address. Its image is pinned by its digest like
+  the gateway's. A container (not NetBird's package) keeps everything of NetBird inside this folder and out of the
   machine's package list, and it updates with the rest.
 - **Use a NetBird network made only for the server, or network isolation.** A new NetBird account lets all its
   members reach each other (the **Default** policy, All to All). Each paired device becomes a member.

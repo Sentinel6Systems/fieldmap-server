@@ -3,7 +3,8 @@
 # the Fieldmap app and with the same two profiles (car-vario: Driving, hiking-mountain: Walking),
 # on the routing data of the server (data/routing, scripts/build-routing.sh). So the browser
 # draws the same lines as the phones. The web server passes on route requests only (/routing/route).
-FROM eclipse-temurin:17-jre
+# The Java runtime, pinned by its digest (17-jre).
+FROM eclipse-temurin:17-jre@sha256:541b08fc7f494edf14e436ff6bfb55767e4a115c87bfc547b8c5de957b58737f
 
 ARG BROUTER_VERSION=1.7.10
 ARG BROUTER_SHA256=023fec3ba997758e8cd7ab9e1bae52e962af3f00b57683e3de86b84ffad01532

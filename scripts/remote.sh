@@ -15,7 +15,8 @@
 #                                      firewall stays, closed to everything from outside)
 #                                      (to switch remote access off and on: Admin, Remote access; sharing: Admin, Devices)
 #
-# On a Raspberry Pi behind Internet-in-a-Box, run it with sudo, like install-pi.sh.
+# Where install-pi.sh installed it (a Raspberry Pi behind Internet-in-a-Box, or a machine whose
+# own nginx serves the pages), run it with sudo, like install-pi.sh.
 # Elsewhere run it as the owner of this folder; it asks for sudo where it needs it.
 #
 # What "setup" does:
@@ -43,9 +44,12 @@
 #   REMOTE_DIRECT=off      do not ask the router to open a port
 #   REMOTE_FIREWALL=off    no firewall on the box
 #   REMOTE_FIREWALL_ALLOW  ports open from outside besides the gateway (none by default; 22 for SSH)
-#   NETBIRD_IMAGE          NetBird's container image (netbirdio/netbird:latest)
+#   NETBIRD_IMAGE          NetBird's container image (default: the version the compose file names)
 #   REMOTE_RELAY=tailscale also make the gateway reachable through Tailscale Funnel (needs the box
 #                          signed in to a Tailscale account: sudo tailscale up)
+# and the ones install-pi.sh keeps there: FIELDMAP_DATA (the data folder, when it is not data/
+# here), FIELDMAP_USER (the user the services run as), FIELDMAP_NGINX_DIR (where the nginx
+# snippet goes).
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
@@ -59,10 +63,31 @@ setting() {
     echo "${value:-$2}"
 }
 
-OWNER="$(stat -c %U "$REPO_DIR")"
+# The data folder: data/ here, or FIELDMAP_DATA (install-pi.sh keeps it in .env).
+DATA="${FIELDMAP_DATA:-$(setting FIELDMAP_DATA "$REPO_DIR/data")}"
+REPO_OWNER="$(stat -c %U "$REPO_DIR")"
+# The services run as FIELDMAP_USER (install-pi.sh sets it beside FIELDMAP_DATA), or as the
+# owner of this folder. Their files belong to that user, whoever runs the script; .env stays
+# the folder owner's.
+OWNER="$(setting FIELDMAP_USER "$REPO_OWNER")"
 SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO=sudo
-# The files belong to the owner of this folder, whoever runs the script.
-as_owner() { if [ "$(id -un)" = "$OWNER" ]; then "$@"; else sudo -u "$OWNER" "$@"; fi; }
+as_user() { local user="$1"; shift; if [ "$(id -un)" = "$user" ]; then "$@"; else sudo -u "$user" "$@"; fi; }
+as_owner() { as_user "$OWNER" "$@"; }
+# Where the Python tools find their folders in it.
+DIRS=(REMOTE_DIR="$DATA/remote" SHARE_DIR="$DATA/share" APP_DIR="$DATA/app")
+NGINX_DIR="$(setting FIELDMAP_NGINX_DIR /etc/nginx/conf.d)"
+
+# What this run changed, for install-pi.sh's summary (FIELDMAP_CHANGES: a file it reads).
+changed() {
+    echo "Changed: $1"
+    if [ -n "${FIELDMAP_CHANGES:-}" ]; then echo "$1" >> "$FIELDMAP_CHANGES"; fi
+}
+# A sum of what is in these files and folders (missing ones count as empty).
+sum_of() { { { find "$@" -type f -print0 2>/dev/null || true; } | sort -z | xargs -0r sha256sum; } | sha256sum | cut -c1-64; }
+# The last run's sums (install-pi.sh's folder, made here when this script runs alone).
+STATE=/var/lib/fieldmap-server
+stamp() { $SUDO cat "$STATE/$1" 2>/dev/null || true; }
+stamp_save() { $SUDO mkdir -p "$STATE" && echo "$2" | $SUDO tee "$STATE/$1" >/dev/null; }
 
 # The gateway's port on this machine: chosen at random by the first "setup" and kept in .env
 # (an uncommon port: nothing else on the box takes it, and it is not one scanners try first).
@@ -88,18 +113,38 @@ fi
 export REMOTE_PUBLISH="$REMOTE_PORT"
 [ "$RELAY" = tailscale ] && [ "$(setting REMOTE_DIRECT on)" = off ] && REMOTE_PUBLISH="127.0.0.1:$REMOTE_PORT"
 
-server() { as_owner env REMOTE_PIN="$(setting REMOTE_PIN "")" REMOTE_ADDRESS="$(setting REMOTE_ADDRESS "")" \
+server() { as_owner env "${DIRS[@]}" REMOTE_PIN="$(setting REMOTE_PIN "")" REMOTE_ADDRESS="$(setting REMOTE_ADDRESS "")" \
     REMOTE_PORT="$REMOTE_PORT" REMOTE_DIRECT="$(setting REMOTE_DIRECT on)" python3 tools/remote-server.py "$@"; }
 # The running service, through its socket: the same requests the Maps page makes.
-ask() { curl -fsS -m 10 --unix-socket data/remote/run/remote.sock "http://box/$1" "${@:2}"; }
+ask() { curl -fsS -m 10 --unix-socket "$DATA/remote/run/remote.sock" "http://box/$1" "${@:2}"; }
 
-# A systemd unit from systemd/, with this folder and its owner filled in.
+# A systemd unit from systemd/, with this folder, the data folder and the user filled in; written
+# only when it differs from the installed one (then UNITS_CHANGED=yes).
+UNITS_CHANGED=no
 install_unit() {
-    sed -e "s|/opt/fieldmap-server|$REPO_DIR|g" -e "s|^User=fieldmap$|User=$OWNER|" "systemd/$1" | $SUDO tee "/etc/systemd/system/$1" >/dev/null
+    local new
+    new="$(sed -e "s|/opt/fieldmap-server/data|$DATA|g" -e "s|/opt/fieldmap-server|$REPO_DIR|g" -e "s|^User=fieldmap$|User=$OWNER|" "systemd/$1")"
+    [ "$new" = "$(cat "/etc/systemd/system/$1" 2>/dev/null)" ] && return 0
+    printf '%s\n' "$new" | $SUDO tee "/etc/systemd/system/$1" >/dev/null
+    UNITS_CHANGED=yes
+    changed "/etc/systemd/system/$1"
 }
+# Restarts a service when it is not running, or when its unit, its code or .env changed since the
+# last run (a second run of the installers restarts nothing).
+restart_if_changed() {
+    local unit="$1" sum; shift
+    sum="$(sum_of "/etc/systemd/system/$unit.service" .env "$@")"
+    if [ "$sum" != "$(stamp "$unit")" ] || ! systemctl is-active -q "$unit"; then
+        $SUDO systemctl restart "$unit" || return 1
+        changed "restarted $unit"
+    fi
+    stamp_save "$unit" "$sum"
+}
+# NetBird's image, as the compose file names it.
+netbird_image() { "${COMPOSE[@]}" --profile netbird config --images 2>/dev/null | grep -m1 netbird || true; }
 
 # NetBird, as the Remote access page left it (data/remote/netbird/client.env, written by the service).
-NETBIRD_DIR=data/remote/netbird
+NETBIRD_DIR="$DATA/remote/netbird"
 netbird_setting() { { grep -m1 "^$1=" "$NETBIRD_DIR/client.env" 2>/dev/null || true; } | cut -d= -f2-; }
 
 # Stops NetBird's client the slow way, so that it takes its interface down itself; an interface
@@ -125,13 +170,14 @@ serve)
     # What the systemd service runs.
     export REMOTE_PIN="$(setting REMOTE_PIN "")" REMOTE_ADDRESS="$(setting REMOTE_ADDRESS "")" \
         REMOTE_PORT REMOTE_DIRECT="$(setting REMOTE_DIRECT on)"
+    export "${DIRS[@]}"
     if [ "$PI" = yes ]; then exec python3 tools/remote-server.py serve --port "$SERVICE_PORT"; fi
     exec python3 tools/remote-server.py serve
     ;;
 
 share-serve)
     # What the systemd service for live sharing runs. It gets the box's code and nothing else.
-    export REMOTE_PIN="$(setting REMOTE_PIN "")"
+    export REMOTE_PIN="$(setting REMOTE_PIN "")" "${DIRS[@]}"
     if [ "$PI" = yes ]; then exec python3 tools/share-server.py serve --port "$SHARE_PORT"; fi
     exec python3 tools/share-server.py serve
     ;;
@@ -143,6 +189,18 @@ setup)
     if ! command -v systemctl >/dev/null || [ ! -d /run/systemd/system ]; then
         echo "This machine has no systemd: remote access for the app needs it. Skipped." >&2
         exit 2
+    fi
+    # A new port chosen on the Remote access page (tools/remote-server.py new_port): into .env.
+    if [ -f "$DATA/remote/port-request" ]; then
+        new="$(tr -dc 0-9 < "$DATA/remote/port-request" | cut -c1-5)"
+        if [ -n "$new" ] && [ "$new" -ge 1024 ] && [ "$new" -le 65535 ] && [ "$new" != "$REMOTE_PORT" ]; then
+            { grep -v '^REMOTE_PORT=' .env 2>/dev/null || true; echo "REMOTE_PORT=$new"; } > "$DATA/remote/.env.new"
+            as_user "$REPO_OWNER" tee .env < "$DATA/remote/.env.new" >/dev/null
+            rm -f "$DATA/remote/.env.new"
+            REMOTE_PORT="$new"
+            changed "the gateway's port (REMOTE_PORT in .env), as asked on the Remote access page"
+        fi
+        as_owner rm -f "$DATA/remote/port-request"
     fi
     if [ -z "$REMOTE_PORT" ]; then
         # A port between 20000 and 60999 that nothing on this machine listens on.
@@ -161,44 +219,50 @@ for _ in range(200):
     finally:
         s.close()')"
         [ -n "$REMOTE_PORT" ] || { echo "Error: found no free port for the gateway." >&2; exit 1; }
-        echo "REMOTE_PORT=$REMOTE_PORT" | as_owner tee -a .env >/dev/null
-        echo "The gateway's port on this box: $REMOTE_PORT (kept in .env as REMOTE_PORT)."
+        echo "REMOTE_PORT=$REMOTE_PORT" | as_user "$REPO_OWNER" tee -a .env >/dev/null
+        changed "the gateway's port on this box: $REMOTE_PORT (kept in .env as REMOTE_PORT)"
     fi
     export REMOTE_PUBLISH="$REMOTE_PORT"
     [ "$RELAY" = tailscale ] && [ "$(setting REMOTE_DIRECT on)" = off ] && REMOTE_PUBLISH="127.0.0.1:$REMOTE_PORT"
     if [ "$PI" = yes ]; then INIT=(--prefix /maps/ --upstream http://127.0.0.1:8080/ --listen "$REMOTE_PORT" --ipv6); fi
 
     echo "== Certificates and the gateway's configuration"
+    gateway_before="$(sum_of "$DATA/remote/gateway")"
     server init "${INIT[@]}"
-    as_owner rm -f data/remote/run/no-remote      # the Devices page is there (web/nginx.conf)
+    as_owner rm -f "$DATA/remote/run/no-remote"      # the Devices page is there (web/nginx.conf)
 
     echo "== The service that pairs phones and keeps the router's port open"
     install_unit fieldmap-remote.service
-    $SUDO systemctl daemon-reload
-    $SUDO systemctl enable -q fieldmap-remote
-    $SUDO systemctl restart fieldmap-remote
-
-    echo "== The service for live sharing between the apps"
-    # Its folder belongs to the owner of this one (Docker makes a mounted folder that is
-    # missing, as root: give that back).
-    if [ -n "$(find data/share -maxdepth 1 ! -user "$OWNER" 2>/dev/null)" ]; then $SUDO chown -R "$OWNER" data/share; fi
-    as_owner mkdir -p data/share/run
+    # Its folder belongs to the user it runs as (Docker makes a mounted folder that is missing,
+    # as root: give that back).
+    as_owner mkdir -p "$DATA/share/run"
+    if [ -n "$(find "$DATA/share" ! -user "$OWNER" -print -quit 2>/dev/null)" ]; then $SUDO chown -R "$OWNER" "$DATA/share"; changed "owner of $DATA/share"; fi
     install_unit fieldmap-share.service
-    $SUDO systemctl daemon-reload
-    $SUDO systemctl enable -q fieldmap-share
+    if [ "$UNITS_CHANGED" = yes ]; then $SUDO systemctl daemon-reload; fi
+    $SUDO systemctl enable -q fieldmap-remote fieldmap-share
+    restart_if_changed fieldmap-remote scripts/remote.sh tools/remote-server.py tools/portmap.py tools/netbird_isolation.py
+    echo "== The service for live sharing between the apps"
     # Remote access does not depend on it: if it does not start, the rest is still set up.
-    $SUDO systemctl restart fieldmap-share || echo "WARNING: the sharing service did not start. See: journalctl -u fieldmap-share" >&2
+    restart_if_changed fieldmap-share scripts/remote.sh tools/share-server.py ||
+        echo "WARNING: the sharing service did not start. See: journalctl -u fieldmap-share" >&2
 
     echo "== The gateway"
     # It serves the app's routing data too (scripts/build-routing.sh): the folder belongs to the
     # owner of this one, not to root, as Docker would make it.
-    as_owner mkdir -p data/routing
-    "${COMPOSE[@]}" --profile remote pull -q remote >/dev/null 2>&1 || true
+    as_owner mkdir -p "$DATA/routing"
+    gateway_id="$(docker inspect -f '{{.Id}}' fieldmap-remote 2>/dev/null || true)"
     "${COMPOSE[@]}" --profile remote up -d --quiet-pull remote
-    docker restart fieldmap-remote >/dev/null      # read the current certificates and configuration
+    if [ "$(docker inspect -f '{{.Id}}' fieldmap-remote 2>/dev/null || true)" != "$gateway_id" ]; then
+        changed "started the gateway (fieldmap-remote)"
+    elif [ "$(sum_of "$DATA/remote/gateway")" != "$gateway_before" ]; then
+        docker restart fieldmap-remote >/dev/null      # read the current certificates and configuration
+        changed "restarted the gateway (fieldmap-remote) for its new configuration"
+    fi
     if [ "$PI" = yes ]; then
-        sed -e "s#127.0.0.1:8092#127.0.0.1:$SERVICE_PORT#" -e "s#127.0.0.1:8093#127.0.0.1:$SHARE_PORT#" pi/nginx/mapremote-nginx.conf | $SUDO tee /etc/nginx/conf.d/mapremote-nginx.conf >/dev/null
-        $SUDO nginx -t -q && $SUDO systemctl reload nginx
+        snippets="$(mktemp -d)"
+        sed -e "s#127.0.0.1:8092#127.0.0.1:$SERVICE_PORT#" -e "s#127.0.0.1:8093#127.0.0.1:$SHARE_PORT#" pi/nginx/mapremote-nginx.conf > "$snippets/mapremote-nginx.conf"
+        $SUDO ./scripts/nginx-snippets.sh "$snippets" "$NGINX_DIR" || { rm -rf "$snippets"; exit 1; }
+        rm -rf "$snippets"
     fi
     install_unit fieldmap-remote-update.service
     install_unit fieldmap-remote-update.timer
@@ -207,20 +271,25 @@ for _ in range(200):
     as_owner mkdir -p "$NETBIRD_DIR" && as_owner chmod 700 "$NETBIRD_DIR"      # fieldmap-netbird.path watches a file in it
     install_unit fieldmap-netbird.service
     install_unit fieldmap-netbird.path
-    $SUDO systemctl daemon-reload
+    if [ "$UNITS_CHANGED" = yes ]; then $SUDO systemctl daemon-reload; fi
     $SUDO systemctl enable -q --now fieldmap-remote-update.timer fieldmap-remote-apply.path fieldmap-netbird.path
 
-    # NetBird, where the owner set it up before: bring it up to date with the rest.
+    # NetBird, where the owner set it up before: bring it up to date with the rest (not running,
+    # or not on the image the compose file names).
     if [ -f "$NETBIRD_DIR/client.env" ]; then
-        echo "== NetBird"
-        $SUDO "$0" netbird-apply || echo "WARNING: NetBird did not start (see above). Everything else works." >&2
+        want=""; [ "$(netbird_setting FIELDMAP_NETBIRD)" = on ] && want="true $(netbird_image)"
+        if [ "$(docker inspect -f '{{.State.Running}} {{.Config.Image}}' fieldmap-netbird 2>/dev/null || true)" != "$want" ]; then
+            echo "== NetBird"
+            if $SUDO "$0" netbird-apply; then changed "NetBird brought up to date"
+            else echo "WARNING: NetBird did not start (see above). Everything else works." >&2; fi
+        fi
     fi
 
     echo "== The firewall on this box"
     # The gateway's port is open only while remote access is switched on.
     $SUDO ./scripts/firewall.sh install
 
-    sleep 3
+    [ -z "${FIELDMAP_CHANGES:-}" ] || [ ! -s "$FIELDMAP_CHANGES" ] || sleep 3
     if ! curl -fs -m 5 "$LOCAL" | grep -q fieldmap-remote; then
         echo "WARNING: $LOCAL does not answer, so phones cannot pair yet." >&2
         [ "$PI" = yes ] || echo "         Run ./scripts/install.sh (it rebuilds the web front), then this again." >&2
@@ -240,17 +309,17 @@ for _ in range(200):
             echo "This box is not signed in to Tailscale: run 'sudo tailscale up', then this again." >&2
         else
             $SUDO tailscale funnel --bg --tcp=443 "tcp://localhost:$REMOTE_PORT"
-            echo "$name:443" | as_owner tee data/remote/address >/dev/null
+            echo "$name:443" | as_owner tee "$DATA/remote/address" >/dev/null
         fi
     else
-        as_owner rm -f data/remote/address
+        as_owner rm -f "$DATA/remote/address"
     fi
 
     echo
     "$0" status || true
     echo
     if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("enabled") is True else 1)' \
-        data/remote/settings.json 2>/dev/null; then
+        "$DATA/remote/settings.json" 2>/dev/null; then
         echo "Remote connectivity is enabled. To pair another device, open Admin > Devices on the local network."
         echo "To disable it: Admin > Remote Access."
     else
@@ -262,7 +331,7 @@ for _ in range(200):
 
 status)
     server status
-    as_owner python3 tools/share-server.py status
+    as_owner env "${DIRS[@]}" python3 tools/share-server.py status
     echo "Service:        $(systemctl is-active fieldmap-remote 2>/dev/null || true)"
     echo "Share service:  $(systemctl is-active fieldmap-share 2>/dev/null || true)"
     echo "Gateway:        $(docker inspect -f '{{.State.Status}}' fieldmap-remote 2>/dev/null || echo 'not started')"
@@ -297,8 +366,8 @@ netbird-apply)
         $SUDO mkdir -p "$NETBIRD_DIR/state"
         echo "$management" | $SUDO tee "$NETBIRD_DIR/state/.management" >/dev/null
         $SUDO rm -f "$NETBIRD_DIR/problem"          # what was wrong last time may be right now
-        if ! "${COMPOSE[@]}" --profile netbird pull -q netbird >/dev/null 2>&1 &&
-           ! docker image inspect "$(setting NETBIRD_IMAGE netbirdio/netbird:latest)" >/dev/null 2>&1; then
+        if ! docker image inspect "$(netbird_image)" >/dev/null 2>&1 &&
+           ! "${COMPOSE[@]}" --profile netbird pull -q netbird >/dev/null 2>&1; then
             printf 'download\n' | $SUDO tee "$NETBIRD_DIR/problem" >/dev/null
             echo "Error: NetBird could not be downloaded. Check the internet connection of this box." >&2
             exit 1
@@ -335,8 +404,10 @@ netbird-forget)
     ;;
 
 update-gateway)
-    # Weekly (fieldmap-remote-update.timer): the gateway is what faces the internet, so it takes
-    # nginx's security fixes as they come. Recreated only when the image changed.
+    # Weekly (fieldmap-remote-update.timer): keeps the gateway, what faces the internet, on the
+    # image the compose file names. That image is pinned by its digest: nginx's security fixes come
+    # with an update of this repository (git pull, then the installer). Recreated only when the
+    # image changed.
     before="$(docker inspect -f '{{.Image}}' fieldmap-remote 2>/dev/null || true)"
     "${COMPOSE[@]}" --profile remote pull -q remote
     "${COMPOSE[@]}" --profile remote up -d remote
@@ -354,14 +425,14 @@ update-gateway)
     ;;
 
 off)
-    if [ -f data/remote/address ] && command -v tailscale >/dev/null; then
+    if [ -f "$DATA/remote/address" ] && command -v tailscale >/dev/null; then
         $SUDO tailscale funnel --tcp=443 "tcp://localhost:$REMOTE_PORT" off || true
     fi
-    as_owner rm -f data/remote/address
+    as_owner rm -f "$DATA/remote/address"
     "${COMPOSE[@]}" --profile remote stop remote >/dev/null 2>&1 || true
     netbird_stop                    # NetBird, the other way in, goes with the gateway
     $SUDO systemctl disable -q --now fieldmap-remote fieldmap-share fieldmap-remote-update.timer fieldmap-remote-apply.path fieldmap-netbird.path 2>/dev/null || true
-    as_owner mkdir -p data/remote/run && as_owner touch data/remote/run/no-remote   # no Devices tab, no gateway port
+    as_owner mkdir -p "$DATA/remote/run" && as_owner touch "$DATA/remote/run/no-remote"   # no Devices tab, no gateway port
     # The firewall stays: with no gateway, nothing from outside gets in or gets an answer.
     $SUDO ./scripts/firewall.sh install
     echo "Remote access is removed: the gateway and the services (location sharing too) are stopped."

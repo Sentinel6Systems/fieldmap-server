@@ -54,10 +54,11 @@ services:
 
   # The gateway for the Fieldmap Android app away from this network: it demands a
   # certificate this box issued and serves only what the app needs. Not started by
-  # `docker compose up`: scripts/remote.sh setup makes its certificates and starts it, and
-  # updates it every week (nginx's stable line, for its security fixes).
+  # `docker compose up`: scripts/remote.sh setup makes its certificates and starts it.
+  # nginx's stable line, pinned by its digest: a newer one comes with an update of this
+  # repository (REMOTE_IMAGE in .env chooses another).
   remote:
-    image: ${REMOTE_IMAGE:-nginx:stable-alpine}
+    image: ${REMOTE_IMAGE:-nginx@sha256:caf4e1e032a20f9c3c5e28fc7f25ffd768ad8677b4975c54193075997b3a97e3}  # 1.30.7-alpine (stable)
     container_name: fieldmap-remote
     profiles: ["remote"]
     restart: unless-stopped
@@ -78,10 +79,10 @@ services:
   # a setup key on the Remote access page: then scripts/remote.sh netbird-apply starts it.
   # It joins the owner's NetBird network (tools/netbird-run.sh) on this machine's own network,
   # which is why it may change network settings (NET_ADMIN) and nothing else. On its interface
-  # the box's firewall lets in the gateway's port only (scripts/firewall.sh). Updated every
-  # week with the gateway.
+  # the box's firewall lets in the gateway's port only (scripts/firewall.sh). Pinned by its
+  # digest like the gateway; a newer one comes with an update of this repository.
   netbird:
-    image: ${NETBIRD_IMAGE:-netbirdio/netbird:latest}
+    image: ${NETBIRD_IMAGE:-netbirdio/netbird@sha256:a2f6a659b281d4d6e9820ed07b6822fddfc992f31a6a01e7b1e65c5ad0fa3072}  # 0.83.2
     container_name: fieldmap-netbird
     profiles: ["netbird"]
     restart: unless-stopped

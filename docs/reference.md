@@ -10,7 +10,7 @@ The scripts, files, options and addresses of fieldmap-server. For step-by-step i
 ./scripts/install.sh                  # install or update everything (asks for sudo for the services)
 ./scripts/install.sh --no-builder     # leave the Map Builder out (removes its service if it was installed)
 ./scripts/install.sh --no-remote      # leave remote access and sharing out; the firewall is still put up
-sudo ./scripts/install-pi.sh          # Raspberry Pi behind Internet-in-a-Box (see pi/README.md)
+sudo ./scripts/install-pi.sh          # Raspberry Pi behind Internet-in-a-Box, or beside a machine's own nginx (see pi/README.md)
 ```
 
 Settings go in `.env` (copy `.env.example`): ports, the config file, the tile server image, and the `ADMIN_*`,
@@ -681,6 +681,14 @@ at all. It does not rely on the router, over IPv4 and IPv6: some routers let IPv
   `.env` and run `sudo ./scripts/firewall.sh apply`. `REMOTE_FIREWALL=off` leaves the firewall out (for a machine
   that serves other things to the internet).
 - `sudo ./scripts/firewall.sh show` lists the rules, with a count of what was dropped.
+- **A machine with a firewall of its own** that drops everything from outside (not Internet-in-a-Box's, which the
+  script opens itself): this firewall cannot open anything through that one. With `FIELDMAP_PORTS_FILE` (see
+  [pi/README.md](../pi/README.md)), every apply writes what remote access needs from outside, now, to that file, for
+  the other firewall to open, and rewrites it only when that changes (a `.path` unit can watch it):
+  `wan tcp <port>` while the router's port is the way in (the gateway, from anywhere; and each
+  `REMOTE_FIREWALL_ALLOW` port), `iface nb-fieldmap tcp <port>` while NetBird is the way in (the gateway, on NetBird's
+  interface only). Comments only: nothing from outside. NetBird's own traffic needs nothing open: it connects out,
+  and the answers come back as answers. A Wi-Fi hotspot of the machine needs only the web server's port 80.
 
 ## The app file on the server
 
@@ -707,7 +715,7 @@ REMOTE_DIRECT=off                      # do not ask the router for anything
 REMOTE_FIREWALL=off                    # no firewall on the server (for a server that serves other things from outside)
 REMOTE_FIREWALL_ALLOW=22               # ports open from outside besides the gateway (none by default); 22 is SSH
 REMOTE_RELAY=tailscale                 # also reach the gateway through Tailscale Funnel (sign the server in first)
-NETBIRD_IMAGE=netbirdio/netbird:latest # NetBird's client image (set up on the Remote Access page, not here)
+NETBIRD_IMAGE=netbirdio/netbird@sha256:<digest>  # another NetBird client image than the pinned one (set up on the Remote Access page, not here)
 ```
 
 Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port by hand, use the Remote Access page (see the [user guide](user-guide.md#remote-access)).

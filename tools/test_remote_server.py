@@ -343,7 +343,7 @@ class RemoteServerTest(unittest.TestCase):
         for compose in ("docker-compose.yml", os.path.join("pi", "tileserver", "docker-compose.pi.yml")):
             text = open(os.path.join(HERE, "..", compose)).read()
             remote = re.search(r"\n  remote:\n(.*?)\n\n", text, re.S).group(1)
-            self.assertIn("- ./data/routing:/usr/share/nginx/routing:ro", remote, compose)
+            self.assertRegex(remote, r"- (\./data|\$\{FIELDMAP_DATA:-\./data\})/routing:/usr/share/nginx/routing:ro", compose)
 
     def test_devices_on_the_local_network_can_download_the_app(self):
         self.assertIsNone(self.get("/info").body["app"])
@@ -445,17 +445,15 @@ class RemoteServerTest(unittest.TestCase):
         finally:
             os.environ.pop("REMOTE_PORT", None)
 
-    def test_a_new_random_port_is_written_to_env_and_applied(self):
-        env = os.path.join(self.tmp.name, ".env")
-        with open(env, "w") as f:
-            f.write("TILESERVER_MEM_LIMIT=1g\nREMOTE_PORT=41234\n")
-        with mock.patch.object(self.rs, "ENV", env):
+    def test_a_new_random_port_is_requested_and_applied(self):
+        os.environ["REMOTE_PORT"] = "41234"
+        try:
             info = self.post("/new-port", {})
+        finally:
+            os.environ.pop("REMOTE_PORT", None)
         self.assertEqual(202, info.status)
-        lines = open(env).read().splitlines()
-        self.assertEqual("TILESERVER_MEM_LIMIT=1g", lines[0])
-        self.assertEqual(1, sum(l.startswith("REMOTE_PORT=") for l in lines))
-        port = int([l for l in lines if l.startswith("REMOTE_PORT=")][0].split("=")[1])
+        # The service writes no file outside its own folder: remote.sh setup puts the port in .env.
+        port = int(open(self.rs.PORT_REQUEST).read())
         self.assertTrue(20000 <= port <= 60999 and port != 41234)
         self.assertTrue(os.path.isfile(self.rs.APPLY), "remote.sh setup is asked to apply it")
         self.assertEqual(port, info.body["forwarding"]["changingTo"])

@@ -51,6 +51,6 @@ To make the page ask for a code, set `ADMIN_PIN=<code>` in `.env` and restart th
 markers shared between devices; it may write only `data/share/`), `fieldmap-firewall.timer` (the server's
 own firewall, refreshed every five minutes; installed by every install, also without remote access, through
 `scripts/firewall.sh install`; `fieldmap-firewall.service` also runs once before Docker at every start),
-`fieldmap-remote-update.timer` (the weekly update of the gateway, and of NetBird's client where it runs) and
+`fieldmap-remote-update.timer` (once a week, keeps the gateway, and NetBird's client where it runs, on the pinned images of the compose file) and
 `fieldmap-netbird.path` (starts or removes NetBird's container when the Remote Access page asks for it). The
 service reads `REMOTE_*` from `.env`; run `./scripts/remote.sh setup` again after changing them.

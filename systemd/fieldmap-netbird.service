@@ -5,6 +5,7 @@
 Description=fieldmap-server starts or removes NetBird
 After=network-online.target docker.service
 Wants=network-online.target
+RequiresMountsFor=/opt/fieldmap-server/data
 
 [Service]
 Type=oneshot
