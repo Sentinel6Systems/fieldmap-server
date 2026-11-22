@@ -19,6 +19,26 @@ build_setting() {
 # Inside the tool container it is mounted at /work/data (reexec_in_tools).
 DATA_DIR="$(build_setting FIELDMAP_DATA "$REPO_DIR/data")"
 
+# One build at a time on a data folder: every script that uses this file holds
+# data/admin/build.lock while it runs (the scripts it starts, and its tool container,
+# share the lock). The Map Builder takes it too, for a build and for Free Up Storage,
+# so neither deletes or rewrites files that a build started here is using.
+if [ -z "${IN_TOOLS:-}" ] && [ -z "${FIELDMAP_BUILD_LOCKED:-}" ]; then
+    mkdir -p "$DATA_DIR/admin" 2>/dev/null || true
+    # Reading is enough to lock: the file may belong to the user the Map Builder runs as.
+    if { exec 9>>"$DATA_DIR/admin/build.lock"; } 2>/dev/null || { exec 9<"$DATA_DIR/admin/build.lock"; } 2>/dev/null; then
+        chmod 666 "$DATA_DIR/admin/build.lock" 2>/dev/null || true
+        if ! flock -n 9; then
+            echo "Error: another build, or Free Up Storage in the Map Builder, is using $DATA_DIR." >&2
+            echo "Wait until it has finished, then run this again." >&2
+            exit 1
+        fi
+        export FIELDMAP_BUILD_LOCKED=1
+    else
+        echo "Warning: cannot open $DATA_DIR/admin/build.lock; running without the build lock." >&2
+    fi
+fi
+
 # Pi mode: a machine with less than 8 GB of RAM (8 GB machines report a little under 8 GiB, so
 # the line is drawn at 7 GiB, as in mem-limit.sh), or PI_MODE=yes / no in .env. In Pi mode:
 #   - every container a build starts stays within BUILD_MEMORY (default 2560m: 2.5 GB, safe on a 4 GB Pi), swap included;

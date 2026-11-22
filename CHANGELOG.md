@@ -4,7 +4,12 @@
 
 - **Map Builder: Free Up Storage.** Under step 4, a card shows how much space the downloads and build files take
   (`data/sources`, `cache`, `tmp`, `incoming`), and **Delete Downloads and Build Files** deletes them, for servers
-  with little storage. The maps don't change; the next build downloads its data again. Not while a build runs.
+  with little storage. The maps don't change; the next build downloads its data again. The server deletes them in
+  the background, so a slow SD card does not time out the page. The card names the World Overview's planet data when
+  it is there. A build whose finished steps were deleted offers **Start Again** instead of **Resume Build**.
+- **One build at a time.** Every build script holds `data/admin/build.lock` while it runs, and so do builds from the
+  Map Builder and Free Up Storage: a second build stops at once with a message, and the Map Builder neither starts a
+  build nor deletes files while a build from the command line runs.
 
 - **Map Builder: the size of the finished maps.** Step 3 says how much space the finished maps take, and the
   downloaded source data kept for later builds; **Storage Breakdown** ends with a Total row (final size and time).

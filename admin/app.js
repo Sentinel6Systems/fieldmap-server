@@ -481,8 +481,8 @@ async function refresh() {
   const e = estimate, share = (e.need_gb + e.reserve_gb) / Math.max(e.free_gb, 0.1);
   const cls = !e.space_ok ? "over" : share > 0.8 ? "tight" : "ok";
   // Finished maps, and the downloads (OpenStreetMap extracts, elevation cells) kept for the next build.
-  const source = e.items.filter(i => i.key === "osm" || i.key === "dem").reduce((t, i) => t + i.kept_gb, 0);
-  const maps = Math.max(e.kept_gb - source, 0);
+  const sum = items => items.reduce((t, i) => t + i.kept_gb, 0), isSource = i => i.key === "osm" || i.key === "dem";
+  const source = sum(e.items.filter(isSource)), maps = sum(e.items.filter(i => !isSource(i)));
   const keep = e.reserve_gb ? `, plus ${gb(e.reserve_gb)} that stays free for the system` : "";
   $("space").hidden = false; $("space-empty").hidden = true;
   $("meter").className = `meter ${cls}`;
@@ -510,7 +510,7 @@ async function refresh() {
   body.replaceChildren();
   for (const i of e.items) body.append(el("tr", {}, el("td", { textContent: i.label }), el("td", { textContent: gb(i.kept_gb) }),
     el("td", { textContent: i.temp_gb ? gb(i.temp_gb) : "–" }), el("td", { textContent: hours(i.hours) })));
-  $("space-total").textContent = gb(e.kept_gb);
+  $("space-total").textContent = gb(maps + source);
   $("time-total").textContent = hours(e.hours);
   $("start").disabled = !e.ok;
   $("start-why").textContent = e.ok ? "" : e.memory_problem ? "Not enough RAM on this server for this build." : "Not enough free storage for this build.";
@@ -598,7 +598,8 @@ $("clear").onclick = () => {
 // finished: the same regions and settings (scripts/build-region.sh --staged).
 function carriesOn(sel) {
   const job = status.job;
-  if (!job || !["failed", "cancelled"].includes(job.state)) return false;
+  // Free Up Storage deletes the finished steps: nothing to carry on with then.
+  if (!job || !["failed", "cancelled"].includes(job.state) || !status.staged) return false;
   const key = (regions, o) => JSON.stringify([[...regions].sort(), o.terrain, o.units, o.language || "", !!o.world,
     o.terrain === "1m" && o.detail ? [o.detail.km, +o.detail.lon.toFixed(5), +o.detail.lat.toFixed(5)] : null]);
   return key(sel.regions, sel.options) === key(job.request.regions, job.request.options);
@@ -634,9 +635,11 @@ function drawJob() {
     : job.finished ? `Finished ${ago(job.finished)}.` : "";
   $("cancel").hidden = !running;
   $("again").hidden = $("repeat").hidden = running;
-  $("repeat").textContent = job.state === "done" ? "Rebuild" : "Resume Build";
+  // Resume only while the finished steps are kept (Free Up Storage deletes them).
+  $("repeat").textContent = job.state === "done" ? "Rebuild" : status.staged ? "Resume Build" : "Start Again";
   $("repeat").title = job.state === "done" ? "Uses the same regions, layers, and options. Asks before the build starts."
-    : "Uses the same regions, layers, and options. The build continues from where it stopped.";
+    : status.staged ? "Uses the same regions, layers, and options. The build continues from where it stopped."
+    : "Uses the same regions, layers, and options. The build starts from the beginning.";
   // Beside the map when this page is /mapadmin/ on the web front; else on its own port.
   const base = location.pathname.startsWith("/mapadmin") ? location.origin
     : `${location.protocol}//${location.hostname}${status.web_port === 80 ? "" : ":" + status.web_port}`;
@@ -688,31 +691,41 @@ function drawDisk() {
 }
 
 // Free Up Storage: the downloads and working files builds keep (data/sources, cache, tmp, incoming).
-let cleanup = null;
+// The server deletes them on its own thread: while it runs, this asks again every 2 seconds.
+let cleanup = null, cleanupAsked = false;
 async function loadCleanup() {
   try { cleanup = await api("api/cleanup"); } catch { return; }
-  $("cleanup").hidden = cleanup.gb < 0.05;
+  const run = $("cleanup-run");
+  run.disabled = cleanup.running;
+  run.textContent = cleanup.running ? "Deleting…" : "Delete Downloads and Build Files";
+  if (cleanup.running) {
+    $("cleanup").hidden = false;
+    setTimeout(loadCleanup, 2000);
+    return;
+  }
+  if (cleanupAsked) {
+    cleanupAsked = false;
+    if (cleanup.failed.length) $("cleanup-error").textContent = `The server could not delete: ${cleanup.failed.join(", ")}. Check the owner of these files in the data folder.`;
+    poll();
+    refresh();
+  }
+  $("cleanup").hidden = cleanup.gb < 0.05 && !$("cleanup-error").textContent;
   $("cleanup-text").textContent = `Downloads and build files on the server: about ${gb(cleanup.gb)}. The server keeps them so that ` +
     "the next build does not download the same data again. On a server with little storage, delete them after each build. " +
-    "The maps do not change." + (cleanup.parts.incoming >= 0.05 ? " This also deletes the finished steps of the build that did not complete." : "");
+    "The maps do not change." + (cleanup.parts.incoming >= 0.05 ? " This also deletes the finished steps of the build that did not complete." : "") +
+    (cleanup.planet_gb ? ` This includes the planet data for the World Overview (${gb(cleanup.planet_gb)}): a new World Overview, for example in another label language, then downloads the whole OpenStreetMap planet again, which takes many hours.` : "");
 }
 $("cleanup-run").onclick = async () => {
   if (!confirm(`Delete about ${gb(cleanup.gb)} of downloads and build files? The maps do not change. The next build downloads its data again` +
     (cleanup.parts.incoming >= 0.05 ? " and starts from the beginning." : "."))) return;
   $("cleanup-error").textContent = "";
-  $("cleanup-run").disabled = true;
-  $("cleanup-run").textContent = "Deleting…";
   try {
-    const r = await api("api/cleanup", {});
-    if (r.failed.length) $("cleanup-error").textContent = `The server could not delete: ${r.failed.join(", ")}. Check the owner of these files in the data folder.`;
+    await api("api/cleanup", {});
+    cleanupAsked = true;
   } catch (err) {
     $("cleanup-error").textContent = err.message;
   }
-  $("cleanup-run").disabled = false;
-  $("cleanup-run").textContent = "Delete Downloads and Build Files";
-  await loadCleanup();
-  poll();
-  refresh();
+  loadCleanup();
 };
 
 let wasRunning = false;
@@ -723,8 +736,9 @@ async function poll() {
   drawJob();
   const running = !!(status.job && status.job.state === "running");
   if (wasRunning && !running) { refresh(); loadCleanup(); }   // free space and what is on the device have changed
-  // Space freed or taken on the device by something else: the estimate follows.
-  else if (!running && estimate && Math.abs(status.free_gb - estimate.free_gb) >= 1) refresh();
+  // Space freed or taken on the device by something else (a build from the command line): the
+  // estimate and Free Up Storage follow.
+  else if (!running && estimate && Math.abs(status.free_gb - estimate.free_gb) >= 1) { refresh(); if (cleanup && !cleanup.running) loadCleanup(); }
   wasRunning = running;
 }
 

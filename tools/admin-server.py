@@ -33,6 +33,7 @@ replaces the maps; ADMIN_PIN=<code> makes it ask for that code first, and ADMIN_
 keeps it to the device itself. Requests only choose from the bundled region list and fixed
 options: nothing a browser sends reaches a command line as text.
 """
+import fcntl
 import glob
 import hashlib
 import importlib.util
@@ -82,6 +83,8 @@ REGION_FILE = os.path.join(ADMIN, "region.env")
 # Written by Stop. The build looks for it as soon as it can be stopped, so that a Stop pressed
 # while the build is still starting is not lost.
 CANCEL = os.path.join(ADMIN, "cancel")
+# Held by every build script (scripts/lib.sh), by a build from this page and by Free Up Storage.
+BUILD_LOCK = os.path.join(ADMIN, "build.lock")
 SOCKET = os.path.join(ADMIN, "admin.sock")
 # build-region.sh's "=== step ===" and "=== step finished in N min ===", after any colour codes
 # the step before left on the line.
@@ -386,17 +389,64 @@ def folder_gb(path):
 # temporary files and the finished steps of a build that did not finish. Free Up Storage on the
 # page deletes them; the maps do not change, and the next build downloads its data again.
 CLEANUP = ("sources", "cache", "tmp", "incoming")
+# The planet filtered for the world layer (build-world.sh): deleted too, but making it again
+# means downloading the whole planet. The page says so.
+PLANET = os.path.join("sources", "planet-z0-8.osm.pbf")
+# Free Up Storage runs on its own thread (it can take minutes on an SD card): its state.
+CLEANING = {"running": False, "failed": []}
+
+
+def build_lock():
+    """The build lock, taken: an open file to close when done. None while a build (from this page
+    or the command line) or Free Up Storage holds it."""
+    os.makedirs(ADMIN, exist_ok=True)
+    try:
+        f = os.fdopen(os.open(BUILD_LOCK, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o666), "a")
+    except PermissionError:
+        f = open(BUILD_LOCK)                 # made by another user (sudo): reading is enough to lock
+    try:
+        os.fchmod(f.fileno(), 0o666)         # the scripts may run as another user than this server
+    except OSError:
+        pass
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        f.close()
+        return None
+    return f
+
+
+def build_locked():
+    f = build_lock()
+    if f is None:
+        return True
+    f.close()
+    return False
+
+
+def staged():
+    """True when data/incoming holds finished steps of a build that did not finish."""
+    try:
+        with os.scandir(os.path.join(DATA, "incoming")) as entries:
+            return any(True for _ in entries)
+    except OSError:
+        return False
 
 
 def cleanup_status():
+    if CLEANING["running"]:
+        return {"running": True}
     parts = {k: folder_gb(os.path.join(DATA, k)) for k in CLEANUP}
-    return {"gb": round(sum(parts.values()), 3), "parts": {k: round(v, 3) for k, v in parts.items()}}
+    planet = os.path.join(DATA, PLANET)
+    return {"running": False, "gb": round(sum(parts.values()), 3), "parts": {k: round(v, 3) for k, v in parts.items()},
+            "planet_gb": round(os.path.getsize(planet) / 1024 ** 3, 3) if os.path.isfile(planet) else 0,
+            "failed": CLEANING["failed"]}
 
 
 def clean_up():
     """Deletes what is in the CLEANUP folders (the folders stay: a folder can be a link to another
-    drive). Returns the GB freed and the names it could not delete."""
-    before, failed = cleanup_status()["gb"], []
+    drive). Returns the names it could not delete."""
+    failed = []
     for k in CLEANUP:
         folder = os.path.join(DATA, k)
         try:
@@ -412,7 +462,29 @@ def clean_up():
                     os.remove(path)
             except OSError:
                 failed.append(f"{k}/{name}")
-    return {"freed_gb": round(before - cleanup_status()["gb"], 3), "failed": failed}
+    return failed
+
+
+def start_cleanup():
+    """Free Up Storage, on its own thread with the build lock held. Call with LOCK held."""
+    job = job_status()
+    if (job and job["state"] == "running") or CLEANING["running"]:
+        raise BadRequest("A build is in progress. Delete the downloaded data when it is complete.")
+    lock = build_lock()
+    if lock is None:
+        raise BadRequest("A build started on the server's command line is in progress. "
+                         "Delete the downloaded data when it is complete.")
+    CLEANING.update(running=True, failed=[])
+
+    def run():
+        failed = []
+        try:
+            failed = clean_up()
+        finally:
+            lock.close()
+            CLEANING.update(running=False, failed=failed)
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def on_hand(regions, layers, options):
@@ -746,6 +818,12 @@ def run_job():
         sys.exit(0)
 
     print(f"Map Builder: {', '.join(request['names'])}; steps: {' '.join(steps)}", flush=True)
+    # The build lock first, before anything in data/ changes: build-region.sh shares it (the
+    # environment and the open file below), and a build from the command line cannot start meanwhile.
+    lock = build_lock()
+    if lock is None:
+        finish("failed", "The build did not start: another build, started on the server's command line, "
+                         "is in progress. The current maps did not change. Start this build when it is complete.")
     if pi_mode():
         print(f"Pi mode: at most {build_memory_gb():g} GB of RAM for the build, 30 m elevation data.", flush=True)
     pause = pause_list()
@@ -771,7 +849,7 @@ def run_job():
         if os.path.basename(old) != name + ".osm.pbf":
             os.remove(old)
             print(f"Removed {os.path.basename(old)}, the merged map data of an earlier selection.", flush=True)
-    env = dict(os.environ)
+    env = dict(os.environ, FIELDMAP_BUILD_LOCKED="1")
     env.pop("LANGUAGE", None)          # a locale setting, not the label language of a build
     if request["options"].get("fresh"):
         env["OSM_REFRESH"] = "yes"     # download the OpenStreetMap extracts again (merge-osm.sh)
@@ -779,7 +857,8 @@ def run_job():
     # low CPU weight, scripts/lib.sh): the page, the tile server and the rest come first.
     os.nice(10)
     child = subprocess.Popen([os.path.join(ROOT, "scripts", "build-region.sh"), "--staged",
-                              os.path.relpath(REGION_FILE, ROOT), *steps], cwd=ROOT, env=env, start_new_session=True)
+                              os.path.relpath(REGION_FILE, ROOT), *steps], cwd=ROOT, env=env, start_new_session=True,
+                             pass_fds=(lock.fileno(),))
     code = child.wait()
     if code == 0:
         swapped.append(True)
@@ -850,7 +929,7 @@ def status():
             "languages": LANGUAGES, "web_port": web_port(), "detail_km": DETAIL_KM,
             "osm_ages": osm_ages(), "osm_refresh_days": OSM_REFRESH_DAYS,
             "pi": pi_mode(), "ram_gb": round(ram_gb(), 1), "memory_gb": build_memory_gb(), "reserve_gb": reserve_gb(),
-            "sd_card": on_sd_card(base), "pause": pause_list(),
+            "sd_card": on_sd_card(base), "pause": pause_list(), "staged": staged(),
             "world_files": sorted(os.path.basename(p) for p in glob.glob(os.path.join(DATA, "world-z0-8*.mbtiles")))}
 
 
@@ -972,10 +1051,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {"ok": True})
             if url.path == "/api/cleanup":
                 with LOCK:
-                    job = job_status()
-                    if job and job["state"] == "running":
-                        raise BadRequest("A build is in progress. Delete the downloaded data when it is complete.")
-                    return self.send(200, clean_up())
+                    start_cleanup()
+                return self.send(200, {"ok": True})
             if url.path in ("/api/estimate", "/api/build"):
                 regions, layers, options = check_selection(body)
                 est = estimate(regions, layers, options)
@@ -985,6 +1062,11 @@ class Handler(BaseHTTPRequestHandler):
                     job = job_status()
                     if job and job["state"] == "running":
                         raise BadRequest("A build is already in progress.")
+                    if CLEANING["running"]:
+                        raise BadRequest("Free Up Storage is deleting files. Start the build when it has finished.")
+                    if build_locked():
+                        raise BadRequest("A build started on the server's command line is in progress. "
+                                         "Start this build when it is complete.")
                     if not shutil.which("docker"):
                         raise BadRequest("Docker is not installed on the server. The build requires Docker.")
                     check_build(est, body)

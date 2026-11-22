@@ -138,7 +138,15 @@ From a six-state build (about 64 square degrees):
 | Hillshade | ~0.5 GB as PNG; about a quarter as lossy WebP (the default) | under 4 GB (checked as 0.03 GB per cell with land) |
 | Elevation (zoom 12) | ~0.05-0.15 GB | the elevation downloads only |
 
-Finished downloads are kept in `data/sources` and `data/cache` and reused.
+Finished downloads are kept in `data/sources` and `data/cache` and reused. **Free Up Storage** in the Map Builder
+deletes what is in `data/sources`, `data/cache`, `data/tmp` and `data/incoming` (the finished steps of a build that
+did not finish); the maps stay. That includes `data/sources/planet-z0-8.osm.pbf`: a new world layer then needs the
+whole planet again.
+
+One build at a time: every build script holds `data/admin/build.lock` while it runs (the scripts it starts share
+it), and so do a build from the Map Builder and Free Up Storage. A script started while another build holds the lock
+stops at once with a message; the Map Builder refuses to start a build or to delete files while a build from the
+command line runs.
 
 ## Repository layout
 

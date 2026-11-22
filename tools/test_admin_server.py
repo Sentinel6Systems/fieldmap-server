@@ -5,7 +5,10 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -281,14 +284,51 @@ class AdminServerTest(unittest.TestCase):
         before = self.m.cleanup_status()
         self.assertAlmostEqual(0.684, before["gb"], places=3)
         self.assertAlmostEqual(0.293, before["parts"]["sources"], places=3)
-        result = self.m.clean_up()
-        self.assertEqual([], result["failed"])
-        self.assertAlmostEqual(0.684, result["freed_gb"], places=3)
+        self.assertEqual(0, before["planet_gb"])
+        self.assertTrue(self.m.staged())
+        self.assertEqual([], self.m.clean_up())
         self.assertEqual(0, self.m.cleanup_status()["gb"])
+        self.assertFalse(self.m.staged())
         for k in self.m.CLEANUP:
             self.assertEqual([], os.listdir(os.path.join(self.data, k)))      # the folders themselves stay
         self.assertTrue(all(os.path.exists(p) for p in maps))
         self.assertTrue(os.path.isdir(elsewhere))                              # a link is removed, not followed
+
+    def test_cleanup_names_the_world_planet(self):
+        self.put("sources/planet-z0-8.osm.pbf", 512 * 1024 ** 2)
+        self.assertEqual(0.5, self.m.cleanup_status()["planet_gb"])
+
+    def wait_cleanup(self):
+        for _ in range(500):
+            if not self.m.CLEANING["running"]:
+                return
+            time.sleep(0.01)
+        self.fail("Free Up Storage did not finish")
+
+    def test_cleanup_runs_in_the_background_with_the_build_lock(self):
+        path = self.put("sources/extracts/delaware-latest.osm.pbf", 10)
+        deleting = threading.Event()
+        release = threading.Event()
+
+        def slow():
+            deleting.set()
+            release.wait(5)
+            return []
+
+        with mock.patch.object(self.m, "clean_up", side_effect=slow):
+            self.assertEqual((200, {"ok": True}), self.post("/api/cleanup"))
+            deleting.wait(5)
+            self.assertEqual({"running": True}, self.m.cleanup_status())
+            self.assertTrue(self.m.build_locked())                 # a build from the command line waits
+            code, data = self.post("/api/cleanup")
+            self.assertEqual(400, code)
+            release.set()
+            self.wait_cleanup()
+        self.assertFalse(self.m.build_locked())
+        self.assertTrue(os.path.exists(path))                      # clean_up was replaced above
+        self.assertEqual((200, {"ok": True}), self.post("/api/cleanup"))
+        self.wait_cleanup()
+        self.assertFalse(os.path.exists(path))
 
     def test_cleanup_waits_for_a_running_build(self):
         path = self.put("sources/extracts/delaware-latest.osm.pbf", 10)
@@ -296,11 +336,31 @@ class AdminServerTest(unittest.TestCase):
             code, data = self.post("/api/cleanup")
         self.assertEqual(400, code)
         self.assertIn("build is in progress", data["error"])
-        self.assertTrue(os.path.exists(path))
-        with mock.patch.object(self.m, "job_status", return_value={"state": "done"}):
+        # A build started on the command line holds the lock (scripts/lib.sh).
+        lock = self.m.build_lock()
+        try:
             code, data = self.post("/api/cleanup")
-        self.assertEqual(200, code)
-        self.assertFalse(os.path.exists(path))
+            self.assertEqual(400, code)
+            self.assertIn("command line", data["error"])
+        finally:
+            lock.close()
+        self.assertTrue(os.path.exists(path))
+
+    def test_the_build_lock_is_shared_with_the_scripts(self):
+        lib = os.path.join(os.path.dirname(HERE), "scripts", "lib.sh")
+        script = f'set -euo pipefail; REPO_DIR="{os.path.dirname(HERE)}"; source "{lib}"; echo locked'
+        env = dict(os.environ, FIELDMAP_DATA=self.data)
+        env.pop("FIELDMAP_BUILD_LOCKED", None)
+        run = lambda e: subprocess.run(["bash", "-c", script], env=e, capture_output=True, text=True)
+        self.assertEqual("locked", run(env).stdout.strip())
+        lock = self.m.build_lock()                                  # a build from this page
+        try:
+            r = run(env)
+            self.assertEqual(1, r.returncode)
+            self.assertIn("another build", r.stderr)
+            self.assertEqual(0, run(dict(env, FIELDMAP_BUILD_LOCKED="1")).returncode)   # build-region.sh's own steps
+        finally:
+            lock.close()
 
 
 if __name__ == "__main__":
