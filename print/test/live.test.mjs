@@ -171,6 +171,8 @@ test("a route and the shapes go to the server and come back the same", () => {
 test("routes: legs along roads from the router, straight and dashed where it has none", async () => {
   const route = { id: "r1", color: "#6f2dbd", label: "R1", routing: "driving", speedMph: 25,
     points: [{ lng: 10, lat: 45 }, { lng: 10.01, lat: 45 }, { lng: 10.02, lat: 45 }] };
+  // A tapped point has many more decimals than the server takes (12 characters a number).
+  route.points[0] = { lng: 9.999999987654321, lat: -45.00000012345678 };
   const asked = [];
   const answer = { type: "FeatureCollection", features: [{ type: "Feature", properties: { "track-length": "1500" },
     geometry: { type: "LineString", coordinates: [[10, 45, 100], [10.005, 45.002, 101], [10.01, 45, 102]] } }] };
@@ -185,7 +187,9 @@ test("routes: legs along roads from the router, straight and dashed where it has
   router.want([route]);
   await finished;
   assert.equal(asked.length, 2, "one request per leg, each leg asked once");
-  assert.match(asked[0], /^\/routing\/route\?lonlats=10,45%7C10\.01,45&profile=car-vario&format=geojson$/);
+  assert.match(asked[0], /^\/routing\/route\?lonlats=10,-45%7C10\.01,45&profile=car-vario&format=geojson$/);
+  const SERVER = /^-?[0-9.]{1,12},-?[0-9.]{1,12}((\||%7[Cc])-?[0-9.]{1,12},-?[0-9.]{1,12}){1,29}$/;   // web/nginx.conf
+  assert.match(new URL(asked[0], "http://x").searchParams.get("lonlats").replace("|", "%7C"), SERVER);
   const legs = routeLegs(route, router);
   assert.deepEqual(legs.map((l) => l.routed), [true, false]);
   assert.equal(legs[0].line.length, 3);

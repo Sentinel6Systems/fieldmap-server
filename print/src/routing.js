@@ -34,7 +34,9 @@ export function createRouter(onChange, fetchFn = (u) => fetch(u)) {
     running++;
     let got = null;
     try {
-      const r = await fetchFn(`${ROUTER}?lonlats=${a.lng},${a.lat}%7C${b.lng},${b.lat}&profile=${profile}&format=geojson`);
+      // Six decimals (about 10 cm): the server takes at most 12 characters a number.
+      const at = (p) => `${r6(p.lng)},${r6(p.lat)}`;
+      const r = await fetchFn(`${ROUTER}?lonlats=${at(a)}%7C${at(b)}&profile=${profile}&format=geojson`);
       if (r.ok) got = readLeg(await r.json());
     } catch { /* no answer: straight for now */ }
     legs.set(key, got || { failed: Date.now() });
