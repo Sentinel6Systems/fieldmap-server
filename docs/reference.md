@@ -281,8 +281,8 @@ Large areas need more memory: `PLANETILER_MEMORY=8g ./scripts/build-vector.sh ge
 
 The three terrain builds take an optional `--areas "<geofabrik paths>"` before the box (`build-region.sh` passes the
 region file's `GEOFABRIK_AREAS`). They then cover only the areas' outlines inside the box: the Geofabrik `.poly`
-files, merged when there are several, downloaded once to `data/cache/outlines`. Without `--areas`, or when an outline
-cannot be downloaded, they cover the whole box. In detail (`tools/region-outline.py`):
+files, merged when there are several, downloaded once to `data/cache/outlines`. Without `--areas` they cover the whole
+box. When an outline cannot be downloaded, the build stops: run it again later. In detail (`tools/region-outline.py`):
 
 - Only the 1° Copernicus cells that touch the outline are downloaded and processed; everything outside the outline
   is masked (no contour lines, transparent hillshade, no-data elevation).

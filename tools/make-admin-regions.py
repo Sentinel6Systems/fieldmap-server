@@ -56,6 +56,15 @@ UA = {"User-Agent": "fieldmap-server region list"}
 GROUPS = {"us-midwest", "us-northeast", "us-pacific", "us-south", "us-west", "dach", "alps", "britain-and-ireland"}
 
 
+def plain_path(path):
+    """The plain Geofabrik path (north-america/us/alaska) of one in the folder form of its current
+    download addresses (north-america/us/alaska/alaska): region files and the build scripts use it."""
+    parts = path.split("/")
+    if len(parts) > 1 and parts[-1] == parts[-2]:
+        parts.pop()
+    return "/".join(parts)
+
+
 def fetch(url):
     for attempt in range(4):
         try:
@@ -187,7 +196,7 @@ def main():
         simple = g.SimplifyPreserveTopology(max(0.02, math.hypot(e - w, n_ - s) * 0.003))
         regions.append({
             "id": p["id"], "name": clean_name(p["name"]), "parent": p.get("parent"),
-            "path": pbf.split("download.geofabrik.de/", 1)[1].removesuffix("-latest.osm.pbf"),
+            "path": plain_path(pbf.split("download.geofabrik.de/", 1)[1].removesuffix("-latest.osm.pbf")),
             "osm_mb": pbf, "cells": cells, "land_km2": round(km2),
             "bbox": [round(west, 3), round(s, 3), round(east, 3), round(n_, 3)],
             "geom": rings(simple)})

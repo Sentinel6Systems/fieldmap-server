@@ -12,11 +12,11 @@ The first three take --usgs-dir DIR when the build uses the USGS 3DEP 1/3 arc-se
 Copernicus cell underneath where the tile has gaps.
 
 prepare: the outline is the union of the Geofabrik .poly files of the areas (downloaded once
-into --poly-cache), cut to the box. Without areas, or when any area has no outline, it is the
-box alone. A box whose min-lon is larger than its max-lon crosses the 180° line. An outline
-that spans more than 180° of longitude (Alaska's Aleutians reach past 180°) is split into a
-west part (-180..0) and an east part (0..180), and each part is processed on its own, so no
-mosaic spans the whole globe. Writes, in --out:
+into --poly-cache), cut to the box. Without areas, it is the box alone; an area whose outline
+cannot be downloaded stops the build. A box whose min-lon is larger than its max-lon crosses
+the 180° line. An outline that spans more than 180° of longitude (Alaska's Aleutians reach
+past 180°) is split into a west part (-180..0) and an east part (0..180), and each part is
+processed on its own, so no mosaic spans the whole globe. Writes, in --out:
   outline.geojson       the whole outline (EPSG:4326)
   part-N.geojson        the outline of part N
   parts.txt             "N min-lon min-lat max-lon max-lat" for each part
@@ -86,16 +86,32 @@ def parse_poly(path):
     return g
 
 
+def plain_path(area):
+    """A Geofabrik path in its plain form: north-america/us/alaska, also when it is given in the
+    folder form of Geofabrik's current addresses (north-america/us/alaska/alaska)."""
+    parts = area.strip("/").split("/")
+    if len(parts) > 1 and parts[-1] == parts[-2]:
+        parts.pop()
+    return "/".join(parts)
+
+
 def fetch_poly(area, cache):
     os.makedirs(cache, exist_ok=True)
-    path = os.path.join(cache, area.strip("/").replace("/", "_") + ".poly")
+    area = plain_path(area)
+    path = os.path.join(cache, area.replace("/", "_") + ".poly")
     if not os.path.exists(path) or os.path.getsize(path) == 0:
-        url = f"{GEOFABRIK}/{area.strip('/')}.poly"
-        try:
-            with urllib.request.urlopen(url, timeout=60) as r:
-                data = r.read()
-        except Exception as e:                # noqa: BLE001 (any failure means: no outline)
-            print(f"  no outline for {area} ({e})", file=sys.stderr)
+        # Geofabrik keeps each area in a folder of its own (north-america/us/alaska/alaska.poly);
+        # its old addresses (north-america/us/alaska.poly) lead nowhere since November 2026.
+        data = None
+        for url in (f"{GEOFABRIK}/{area}/{area.rsplit('/', 1)[-1]}.poly", f"{GEOFABRIK}/{area}.poly"):
+            try:
+                with urllib.request.urlopen(url, timeout=60) as r:
+                    data = r.read()
+                break
+            except Exception as e:            # noqa: BLE001 (any failure means: try the next address)
+                error = e
+        if data is None:
+            print(f"  no outline for {area} ({error})", file=sys.stderr)
             return None
         with open(path + ".part", "wb") as f:
             f.write(data)
@@ -134,7 +150,13 @@ def prepare(a):
     outline, source = None, "the box (no Geofabrik areas given)"
     if a.areas:
         polys = [fetch_poly(x, a.poly_cache) for x in a.areas]
-        if all(p is not None for p in polys):
+        # Without an outline the build would cover the whole box: for areas far apart (Alaska
+        # and Maine) that is many times the land asked for. Better to stop and try again later.
+        missing = [x for x, p in zip(a.areas, polys) if p is None]
+        if missing:
+            sys.exit(f"Error: could not download the outline of {', '.join(missing)} from {GEOFABRIK}.\n"
+                     "Check the internet connection, then run the same build again.")
+        if polys:
             outline = polys[0]
             for p in polys[1:]:
                 outline = outline.Union(p)
@@ -142,8 +164,6 @@ def prepare(a):
             source = f"Geofabrik outline{'s' if len(polys) > 1 else ''} of {', '.join(a.areas)}, cut to the box"
             if outline.IsEmpty():
                 sys.exit("Error: the areas' outline and BBOX do not overlap.")
-        else:
-            source = "the box (an area's outline could not be loaded)"
     if outline is None:
         outline = clip
     os.makedirs(a.out, exist_ok=True)

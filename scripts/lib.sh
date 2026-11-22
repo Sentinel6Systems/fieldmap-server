@@ -390,12 +390,14 @@ fetch_shared_sources() {
 }
 
 # OpenStreetMap extract mirrors: "<name> <url template>". In the template,
-# {path} is the Geofabrik path (north-america/us/new-jersey) and {path_} is
-# the same path with "-" turned into "_" in its first part
-# (north_america/us/new-jersey). Movisda accepts Geofabrik paths and
-# redirects them to its own file names.
+# {path} is the Geofabrik path (north-america/us/new-jersey), {name} its last
+# part (new-jersey) and {path_} the path with "-" turned into "_" in its first
+# part (north_america/us/new-jersey). Geofabrik keeps each extract in a folder
+# of its own (north-america/us/new-jersey/new-jersey-latest.osm.pbf; its old
+# addresses lead nowhere since November 2026). Movisda accepts Geofabrik paths
+# and redirects them to its own file names.
 OSM_MIRRORS=(
-    "geofabrik https://download.geofabrik.de/{path}-latest.osm.pbf"
+    "geofabrik https://download.geofabrik.de/{path}/{name}-latest.osm.pbf"
     "movisda https://osm.download.movisda.io/{path}-latest.osm.pbf"
     "geo2day https://geo2day.com/{path_}.pbf"
 )
@@ -415,14 +417,20 @@ OSM_REFRESH_DAYS="${OSM_REFRESH_DAYS:-30}"
 # Size of the speed test download from each mirror.
 OSM_SPEED_TEST_BYTES=2097152
 
-# URL of one extract on one mirror.
+# URL of one extract on one mirror. A path in Geofabrik's folder form
+# (north-america/us/new-jersey/new-jersey) is taken as the plain path.
 # Arguments: TEMPLATE GEOFABRIK_PATH
 osm_mirror_url() {
     local template="$1" path="$2"
+    local name="${path##*/}"
+    case "$path" in
+        "$name/$name" | */"$name/$name") path="${path%/*}" ;;
+    esac
     local first="${path%%/*}" rest=""
     [ "$path" != "$first" ] && rest="/${path#*/}"
     local path_="${first//-/_}$rest"
     template="${template//\{path_\}/$path_}"
+    template="${template//\{name\}/$name}"
     echo "${template//\{path\}/$path}"
 }
 
@@ -585,7 +593,7 @@ terrain_default_zoom() {
 
 # Region outline for the terrain builds (contours, hillshade, elevation): the union of
 # the Geofabrik .poly outlines of the areas, cut to the box, or the box alone when there
-# are no areas or an outline cannot be loaded. Writes WORK_DIR/outline (see
+# are no areas; stops when an outline cannot be downloaded. Writes WORK_DIR/outline (see
 # tools/region-outline.py) and prints the outline and cell counts.
 # Arguments: WORK_DIR MIN_LON MIN_LAT MAX_LON MAX_LAT [AREA ...]
 terrain_outline() {

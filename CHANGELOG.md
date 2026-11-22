@@ -2,6 +2,14 @@
 
 ## Since v1.0.0
 
+- **Builds follow Geofabrik's new download addresses.** Geofabrik now keeps each area in a folder of its own
+  (`north-america/us/alaska/alaska.poly`), and its old addresses lead nowhere. The terrain outlines could not be
+  downloaded, so contours, hillshade and elevation covered the whole box round all regions instead: for Alaska and the
+  East Coast states that was most of Canada as well, and the contour step stopped for lack of disk space (about 600 GB
+  asked for, where the page said 147 GB). The outlines and the Geofabrik mirror of the OpenStreetMap downloads now use
+  the new addresses, with the old ones as a second try; region files keep the plain paths (`north-america/us/alaska`).
+  When an outline still cannot be downloaded, the build stops with a plain message instead of building the whole box.
+
 - **The Map Builder runs on a Raspberry Pi.** On a machine with less than 8 GB of RAM (or `PI_MODE=yes` in `.env`) it
   builds in Pi mode: every build container within `BUILD_MEMORY` (2.5 GB, swap included), Planetiler's node locations
   and working data in memory-mapped files on disk with a heap of two thirds of the cap, contour lines one cell at a

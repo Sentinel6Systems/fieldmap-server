@@ -56,7 +56,11 @@ area = sys.argv[1]
 for f in json.load(sys.stdin)["features"]:
     p = f["properties"]
     if p["id"] == area:
-        print(p["urls"]["pbf"].split("download.geofabrik.de/", 1)[1].removesuffix("-latest.osm.pbf"))
+        # The plain path: north-america/us/alaska, not the folder form north-america/us/alaska/alaska.
+        path = p["urls"]["pbf"].split("download.geofabrik.de/", 1)[1].removesuffix("-latest.osm.pbf").split("/")
+        if len(path) > 1 and path[-1] == path[-2]:
+            path.pop()
+        print("/".join(path))
         break
 ' "$AREA")" || AREA_PATH=""
     if [ -z "$AREA_PATH" ]; then
