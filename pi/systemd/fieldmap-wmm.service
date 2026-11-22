@@ -1,5 +1,5 @@
 # fieldmap-server: the World Magnetic Model update service (tools/wmm-update.py serve).
-# install-pi.sh fills in the repository path, the data folder and the user. Listens on
+# install-nginx.sh fills in the repository path, the data folder and the user. Listens on
 # localhost only; nginx passes /map/wmm-api/ to it.
 [Unit]
 Description=fieldmap-server magnetic model updates

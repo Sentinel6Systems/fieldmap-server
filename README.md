@@ -17,7 +17,7 @@ internet.
 - **Remote access** for paired devices, through a port on your router or through NetBird, disabled until you enable
   it. The server has its own firewall.
 
-It runs on a laptop, a home server, or a Raspberry Pi 4 behind Internet-in-a-Box. There are no CDN calls, web fonts
+It runs on a laptop, a home server, or a Raspberry Pi 4 or 5 (64-bit), with the same installer. There are no CDN calls, web fonts
 or online services anywhere in the stack.
 
 ## Install
@@ -33,9 +33,10 @@ cp .env.example .env          # optional: ports and other settings
 ./scripts/install.sh
 ```
 
-The installer starts everything, keeps it running across reboots and prints the page addresses. On a Raspberry
-Pi behind Internet-in-a-Box, or a machine whose own nginx serves port 80 (another installer may call it as one step),
-use `sudo ./scripts/install-pi.sh` instead (see [pi/README.md](pi/README.md)).
+Run it as yourself, without sudo. It installs what is missing (Docker, on Debian 13, Ubuntu 24.04 or Raspberry Pi
+OS), starts everything, keeps it running across reboots, checks the pages and prints their addresses. On a Raspberry
+Pi, see [pi/README.md](pi/README.md) first. A machine whose own nginx already serves port 80 (another installer may
+call it as one step) uses `sudo ./scripts/install-nginx.sh` instead (also in [pi/README.md](pi/README.md)).
 
 ## First steps
 
@@ -52,7 +53,7 @@ use `sudo ./scripts/install-pi.sh` instead (see [pi/README.md](pi/README.md)).
 - [Reference](docs/reference.md): pages and addresses, install options, build scripts and region files, styles,
   data files, tile addresses, firewall, remote access options.
 - [How it works](docs/how-it-works.md): design and security notes, the terrain model, test results.
-- [Raspberry Pi behind Internet-in-a-Box](pi/README.md) and [start at boot with systemd](systemd/README.md).
+- [Raspberry Pi, and installing beside a machine's own nginx](pi/README.md); [systemd units](systemd/README.md).
 - [Changelog](CHANGELOG.md).
 - The [Fieldmap Android app](https://github.com/Sentinel6Systems/fieldmap-android).
 
@@ -61,7 +62,7 @@ use `sudo ./scripts/install-pi.sh` instead (see [pi/README.md](pi/README.md)).
 ```bash
 cd <repo-dir>
 git pull
-./scripts/install.sh          # on a Raspberry Pi: sudo ./scripts/install-pi.sh
+./scripts/install.sh          # beside the machine's own nginx: sudo ./scripts/install-nginx.sh
 ```
 
 ## Attribution and licenses

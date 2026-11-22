@@ -10,7 +10,7 @@
 # Existing files are never touched.
 #
 # Usage: ./scripts/data-placeholders.sh
-# The files are in data/, or in FIELDMAP_DATA (in .env, see scripts/install-pi.sh).
+# The files are in data/, or in FIELDMAP_DATA (in .env, see scripts/install-nginx.sh).
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DATA="$(grep -E '^FIELDMAP_DATA=' "$REPO_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- || true)"

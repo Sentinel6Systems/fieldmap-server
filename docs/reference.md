@@ -10,7 +10,7 @@ The scripts, files, options and addresses of fieldmap-server. For step-by-step i
 ./scripts/install.sh                  # install or update everything (asks for sudo for the services)
 ./scripts/install.sh --no-builder     # leave the Map Builder out (removes its service if it was installed)
 ./scripts/install.sh --no-remote      # leave remote access and sharing out; the firewall is still put up
-sudo ./scripts/install-pi.sh          # Raspberry Pi behind Internet-in-a-Box, or beside a machine's own nginx (see pi/README.md)
+sudo FIELDMAP_NGINX_DIR=<folder> ./scripts/install-nginx.sh   # beside a machine's own nginx on port 80 (see pi/README.md)
 ```
 
 Settings go in `.env` (copy `.env.example`): ports, the config file, the tile server image, and the `ADMIN_*`,
@@ -23,7 +23,7 @@ and `./scripts/admin.sh` for the Map Builder. To start everything at boot withou
 [systemd/README.md](../systemd/README.md).
 
 The web front (nginx) serves the print tool at `/mapprinter/` and proxies everything else to TileServer GL, so the print
-tool finds its tiles on the same host automatically. It also looks under `/maps/` (the Internet-in-a-Box layout) and on
+tool finds its tiles on the same host automatically. It also looks under `/maps/` (the layout beside a machine's own nginx) and on
 port 8080, or you can point it anywhere with `?tiles=http://host:8080`.
 
 Builds use all the CPU that is free, at low priority: the tile server, the print tool and anything else on the
@@ -34,7 +34,7 @@ machine come first when they need it (the build containers get a CPU weight of 1
 
 | Tab | Page | Address | Source |
 |---|---|---|---|
-| Maps | Maps | `/` (`/maps/` behind Internet-in-a-Box) | `ui/maps.tmpl` (TileServer GL's `frontPage`) |
+| Maps | Maps | `/` (`/maps/` beside a machine's own nginx) | `ui/maps.tmpl` (TileServer GL's `frontPage`) |
 | Print Map | Print Map | `/mapprinter/` | `print/` |
 | User Guide | User Guide | `/guide/` | `guide/index.html` |
 | Admin | Remote Access | `/phones/remote.html` | `phones/`, served by `tools/remote-server.py` |
@@ -116,7 +116,7 @@ Finished downloads are kept in `data/sources` and `data/cache` and reused.
 | `admin/`, `scripts/admin.sh` | The optional Map Builder page: choose regions and layers on a map, check the disk space, start the build |
 | `print/` | The print tool: `src/`, `public/`, `build.mjs` (esbuild). Built inside the `web` image |
 | `web/` | nginx config and the Dockerfile that builds and serves the print tool |
-| `pi/` | Raspberry Pi + Internet-in-a-Box deployment: compose file, nginx snippets, notes |
+| `pi/` | Install beside a machine's own nginx (`scripts/install-nginx.sh`): compose file, nginx snippets, notes; and the Raspberry Pi notes |
 | `systemd/` | Start the compose stack, and optionally the Map Builder page, at boot |
 | `phones/`, `scripts/remote.sh`, `scripts/firewall.sh`, `tools/remote-server.py`, `tools/portmap.py`, `tools/netbird-run.sh`, `tools/netbird_isolation.py` | Remote access for the Android app: the Devices page, pairing, the router's port, NetBird and its network isolation, the gateway, the server's firewall |
 | `tools/share-server.py` | Sharing positions and markers between devices with the Android app |
@@ -200,7 +200,7 @@ spot heights chosen by prominence (needs a hilltop set derived from the elevatio
 - The contour interval and data date in the margin come from `print/public/config.json`: set `contourMinor`,
   `contourMajor` and `contourUnit` to match your `build-contours.sh` run (the defaults are 40 and 200 ft), and
   `dataDate` to the date of your OpenStreetMap extract, for example `"OSM 2026-01"` (empty by default). Then rebuild
-  the print tool (`docker compose up -d --build`, or `install-pi.sh` on a Pi). The credit line names OpenMapTiles
+  the print tool (`docker compose up -d --build`, or `install-nginx.sh` beside a machine's own nginx). The credit line names OpenMapTiles
   and OpenStreetMap plus every other data set the style reads (from each tile set's attribution; empty files add
   nothing).
 - Print scale bands: the generator also writes `topo-usgs-12k`, `-24k`, `-50k` and `-100k`, with every line width
@@ -422,7 +422,7 @@ that the OpenMapTiles base map leaves out but that matter on a paper map. The la
 
 `build-region.sh` (its `extras` step, on by default) and `build-vector.sh` (unless `NO_EXTRAS=1`) run it for you
 after the base map. Without it `data/extras.mbtiles` is an empty placeholder (written by
-`scripts/data-placeholders.sh`, which the build scripts and `install-pi.sh` call): the tile server needs every file
+`scripts/data-placeholders.sh`, which the build scripts and the installers call): the tile server needs every file
 `config.json` lists, and the layers are simply blank. The OpenMapTiles base map has no power lines, pipelines,
 fences or gates, so a map built before this step was on by default shows none: run
 `./scripts/build-region.sh <region-file> extras` once and copy `data/extras.mbtiles` to the server.
@@ -632,7 +632,7 @@ Add a map source in ATAK/WinTAK/iTAK with this URL pattern:
 http://<server-host>:8080/styles/topo-light/{z}/{x}/{y}.jpg
 ```
 
-On a Raspberry Pi installed with `scripts/install-pi.sh`, the tile server sits behind nginx at `/maps/` instead:
+On a server installed with `scripts/install-nginx.sh`, the tile server sits behind nginx at `/maps/` instead:
 
 ```
 http://<pi-host>/maps/styles/topo-light/{z}/{x}/{y}.jpg
@@ -681,8 +681,8 @@ at all. It does not rely on the router, over IPv4 and IPv6: some routers let IPv
   `.env` and run `sudo ./scripts/firewall.sh apply`. `REMOTE_FIREWALL=off` leaves the firewall out (for a machine
   that serves other things to the internet).
 - `sudo ./scripts/firewall.sh show` lists the rules, with a count of what was dropped.
-- **A machine with a firewall of its own** that drops everything from outside (not Internet-in-a-Box's, which the
-  script opens itself): this firewall cannot open anything through that one. With `FIELDMAP_PORTS_FILE` (see
+- **A machine with a firewall of its own** that drops everything from outside (one that does not use iptables,
+  which the script opens itself): this firewall cannot open anything through that one. With `FIELDMAP_PORTS_FILE` (see
   [pi/README.md](../pi/README.md)), every apply writes what remote access needs from outside, now, to that file, for
   the other firewall to open, and rewrites it only when that changes (a `.path` unit can watch it):
   `wan tcp <port>` while the router's port is the way in (the gateway, from anywhere; and each
@@ -727,7 +727,7 @@ Put them in `.env` and run `./scripts/remote.sh setup` again. To forward a port 
 ./scripts/remote.sh remove <id>     # lock one out, at once
 ./scripts/remote.sh netbird-forget  # take NetBird off the server: the container, the setup key, the server's NetBird identity
 ./scripts/remote.sh off             # remove it (the services, the gateway, the Devices page); the paired devices and the firewall are kept
-./scripts/install.sh --no-remote    # install without it (on a Pi: sudo REMOTE=no ./scripts/install-pi.sh); the firewall is still put up
+./scripts/install.sh --no-remote    # install without it (beside a machine's own nginx: sudo REMOTE=no ./scripts/install-nginx.sh); the firewall is still put up
 ```
 
 ## Sharing interface

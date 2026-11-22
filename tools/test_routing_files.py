@@ -168,7 +168,7 @@ class RouteService(unittest.TestCase):
         for path in ("docker-compose.yml", "pi/tileserver/docker-compose.pi.yml"):
             text = open(os.path.join(self.REPO, path)).read()
             service = text.split("  brouter:\n", 1)[1].split("\n\n", 1)[0]
-            # The Pi's compose file reads the data folder from FIELDMAP_DATA (scripts/install-pi.sh).
+            # The Pi's compose file reads the data folder from FIELDMAP_DATA (scripts/install-nginx.sh).
             self.assertRegex(service, r"build: \./brouter|build:\n      context: \./brouter")
             self.assertRegex(service, r"- (\./data|\$\{FIELDMAP_DATA:-\./data\})/routing:/segments:ro")
             self.assertNotIn("ports:", service)          # not reachable but through the web server

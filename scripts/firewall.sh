@@ -19,14 +19,13 @@
 #   sudo ./scripts/firewall.sh show       the rules as they are now
 #   sudo ./scripts/firewall.sh off        remove them (until the next apply: the timer brings them back)
 #
-# It is its own nftables table, beside whatever else the machine has (Internet-in-a-Box's
-# firewall, Docker's, ufw). The one opening it makes elsewhere: while remote access is on, the
+# It is its own nftables table, beside whatever else the machine has (Docker's rules, ufw). The one opening it makes elsewhere: while remote access is on, the
 # gateway's port in iptables (see below).
 # Settings in .env: REMOTE_FIREWALL=off (no firewall: for a machine that serves other things to
 # the internet; the rule for NetBird's interface stays, it belongs to NetBird), REMOTE_PORT (written by scripts/remote.sh setup), REMOTE_FIREWALL_ALLOW (ports
 # open from outside besides the gateway: none by default; 22 to reach SSH from outside).
 #
-# A machine with a firewall of its own that drops everything from outside (install-pi.sh's
+# A machine with a firewall of its own that drops everything from outside (install-nginx.sh's
 # FIELDMAP_PORTS_FILE): this table cannot open anything through that one. So "apply" also writes
 # what remote access needs from outside, now, to that file, for that firewall to open; rewritten
 # only when it changes (a .path unit of that firewall can watch it):
@@ -49,11 +48,11 @@ setting() {
     echo "$line"
 }
 [ "$(id -u)" -eq 0 ] || { echo "Run as root (sudo)." >&2; exit 1; }
-# The data folder: data/ here, or FIELDMAP_DATA (install-pi.sh keeps it in .env).
+# The data folder: data/ here, or FIELDMAP_DATA (install-nginx.sh keeps it in .env).
 DATA="$(setting FIELDMAP_DATA "")"
 DATA="${FIELDMAP_DATA:-${DATA:-$REPO_DIR/data}}"
 PORTS_FILE="$(setting FIELDMAP_PORTS_FILE "")"
-# What this run changed, for install-pi.sh's summary (FIELDMAP_CHANGES: a file it reads).
+# What this run changed, for install-nginx.sh's summary (FIELDMAP_CHANGES: a file it reads).
 changed() {
     echo "Changed: $1"
     if [ -n "${FIELDMAP_CHANGES:-}" ]; then echo "$1" >> "$FIELDMAP_CHANGES"; fi
@@ -70,11 +69,10 @@ apply_rules() {
     changed "the firewall rules (nftables table $TABLE)"
 }
 
-# Another firewall on the machine (Internet-in-a-Box's iiab-gen-iptables, ufw) may drop new
-# connections from the home network, which for a box plugged into a home router is its "WAN"
-# side. Then the gateway's port is let through it as well, by one rule of ours (marked with a
-# comment so that it can be found and taken out again), and only while remote access is on.
-# Re-applied with the rest every five minutes: Internet-in-a-Box rewrites its rules now and then.
+# Another firewall on the machine that uses iptables (ufw, for example) may drop new connections
+# from outside. Then the gateway's port is let through it as well, by one rule of ours (marked
+# with a comment so that it can be found and taken out again), and only while remote access is
+# on. Re-applied with the rest every five minutes, in case that firewall rewrote its rules.
 MARK="fieldmap-remote"
 NB_IF="nb-fieldmap"             # NetBird's interface on this box (tools/netbird-run.sh)
 iptables_close() {
@@ -168,7 +166,7 @@ except Exception:
 # Remote access taken off the box (remote.sh off, install.sh --no-remote): no gateway listens, and
 # an open port with nothing behind it would answer "closed".
 if [ -e "$DATA/remote/run/no-remote" ] || [ -z "$PORT" ]; then ON=no; DIRECT=no; NETBIRD=no; fi
-# A machine with a ports file has a firewall that reads it (below), not Internet-in-a-Box's.
+# A machine with a ports file has a firewall that reads it (below) instead.
 if [ -n "$PORTS_FILE" ]; then iptables_close
 elif [ "$DIRECT" = yes ]; then iptables_open "$PORT" all
 elif [ "$NETBIRD" = yes ]; then iptables_open "$PORT" netbird
@@ -213,7 +211,7 @@ if [ "$(setting REMOTE_FIREWALL on)" = off ] && [ "$NETBIRD" = no ]; then
 fi
 if ! command -v nft >/dev/null; then
     if command -v apt-get >/dev/null; then
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nftables >/dev/null
+        DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq nftables >/dev/null
     elif command -v dnf >/dev/null; then
         dnf install -y -q nftables >/dev/null
     fi

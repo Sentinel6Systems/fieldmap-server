@@ -2,19 +2,28 @@
 
 ## Since v1.0.0
 
-- `install-pi.sh` installs without Internet-in-a-Box too: on Raspberry Pi OS Lite 64-bit, Debian 13 or Ubuntu 24.04
-  whose own nginx serves port 80, as one step of another installer. `FIELDMAP_DATA` puts the data folder outside the
-  repository (every container and service reads it directly), `FIELDMAP_NGINX_DIR` the nginx snippets into a folder
+- **One installer for a PC and a Raspberry Pi**, and no more Internet-in-a-Box: `./scripts/install.sh` (as yourself,
+  without sudo) installs Docker with Compose v2 where it is missing (Debian 13, Ubuntu 24.04, Raspberry Pi OS 64-bit),
+  adds you to the docker group, turns on a Raspberry Pi's memory cgroup for the tile server's cap (from the next
+  reboot), builds the web front and the route service only when their sources changed, restarts only what changed,
+  ends with checks of the pages and a list of what it changed, and stops with the reason when another program holds
+  port 80 or 8080. It also takes away the containers, service and nginx snippets of an earlier install beside nginx in
+  the same folder. See [pi/README.md](pi/README.md), also for moving a server off Internet-in-a-Box (keep `data/` and
+  `.env`). The tile server image is pinned by digest on every machine now.
+- `install-pi.sh` is now `scripts/install-nginx.sh`: for a machine whose own nginx serves port 80 (another
+  installer's), and it needs `FIELDMAP_NGINX_DIR`; the old name still runs it. It installs on Raspberry Pi OS Lite
+  64-bit, Debian 13 or Ubuntu 24.04 whose own nginx serves port 80, as one step of another installer.
+  `FIELDMAP_DATA` puts the data folder outside the repository (every container and service reads it directly), `FIELDMAP_NGINX_DIR` the nginx snippets into a folder
   included inside the server block (rolled back if `nginx -t` fails), `FIELDMAP_PORTS_FILE` tells the machine's own
   firewall what remote access needs from outside; the services then run as their own user `fieldmap`, and only once
   the data folder is mounted. The script installs Docker (and Docker Compose v2 on Ubuntu too) and Node.js where
   they are missing, never asks anything, ends with checks through nginx and a list of what it changed, and a second
-  run changes and restarts nothing. Without the new settings it works as before. See [pi/README.md](pi/README.md).
+  run changes and restarts nothing. See [pi/README.md](pi/README.md).
 - The remote gateway's nginx image, NetBird's client and the route service's Java base image are pinned by their
   digests, like the tile server: a newer one comes with an update of this repository, not with the weekly pull.
 - **New Random Port** on the Remote Access page works again: the service asks for the port, and `remote.sh setup`
   (run as root) writes it to `.env`, which the service, shut in by systemd, cannot write.
-- With `install-pi.sh`, the route service's image builds: Docker there has no network of its own, so the build
+- With `install-nginx.sh`, the route service's image builds: Docker there has no network of its own, so the build
   uses the machine's.
 
 - NetBird **Network Isolation** on Admin › Remote Access, for several servers in one NetBird account: each server

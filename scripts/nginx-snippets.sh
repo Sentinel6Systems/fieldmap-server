@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Puts fieldmap-server's nginx snippets (location blocks, made from pi/nginx/ by install-pi.sh and
+# Puts fieldmap-server's nginx snippets (location blocks, made from pi/nginx/ by install-nginx.sh and
 # scripts/remote.sh) into the folder that the web server's server block includes, and reloads
 # nginx, all or nothing: only files that differ are written; if `nginx -t` then fails, every one
 # of them is put back as it was, nginx is not reloaded, and this exits with an error.

@@ -135,8 +135,8 @@ choice per scale in the print tool.
   pictures the tile server draws, not the print tool, not the Map Builder, nothing else. It limits connections per visitor. Its nginx image is pinned by its digest; nginx's security fixes come with an update of this repository.
 - **A firewall on the server itself** (see [Firewall](reference.md#firewall) in the reference) lets nothing in from outside the local network
   and VPNs but the gateway, and answers nothing else. Devices at home, and the server's own connections out, are not
-  affected. Where the machine has a firewall already (Internet-in-a-Box's drops everything from the
-  home network but its own ports), the gateway's port is let through it too, only while remote access is on.
+  affected. Where the machine has an iptables firewall already (ufw, for example), the gateway's port is let
+  through it too, only while remote access is on; a firewall that reads a ports file is told instead.
 - **Nothing gives the server away.** The names in its certificates are random letters.
 
 ### Security notes and tests

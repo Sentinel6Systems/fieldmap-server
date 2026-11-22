@@ -1,7 +1,7 @@
-# Raspberry Pi (arm64): full image, so TAK clients get rendered raster tiles too.
-# Host networking, bound to localhost; the machine's nginx (Internet-in-a-Box's, or its own)
-# proxies it at /maps. scripts/install-pi.sh copies this file to the repository root.
-# The data folder is data/ there, or FIELDMAP_DATA from .env (install-pi.sh writes it there).
+# Beside the machine's own nginx (scripts/install-nginx.sh; arm64 or amd64): full image, so TAK
+# clients get rendered raster tiles too. Host networking, bound to localhost; the machine's own
+# nginx proxies it at /maps. scripts/install-nginx.sh copies this file to the repository root.
+# The data folder is data/ there, or FIELDMAP_DATA from .env (install-nginx.sh writes it there).
 services:
   tileserver:
     image: maptiler/tileserver-gl@sha256:24d0364e1d40da0ae3fb3269f617c26e36a883ad4b7454e5c4064a8795bfc807  # v5.7.0
@@ -19,7 +19,7 @@ services:
 
   # Lines along roads and trails for the map in the browser (brouter/): the same engine and
   # profiles as the app, on the routing data; on localhost (127.0.0.1:17777), for nginx
-  # (/routing/route). Built here by install-pi.sh (docker build --network host); Docker on the Pi
+  # (/routing/route). Built here by install-nginx.sh (docker build --network host); Docker on the Pi
   # has no network of its own (pi/docker/daemon.json), so the build uses the machine's.
   brouter:
     build:

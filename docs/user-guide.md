@@ -350,7 +350,7 @@ git pull
 ./scripts/install.sh
 ```
 
-On a Raspberry Pi behind Internet-in-a-Box, run `sudo ./scripts/install-pi.sh` instead of `install.sh`. If you
+On a server installed beside the machine's own nginx, run `sudo ./scripts/install-nginx.sh` instead. If you
 edited files on the server, run `git stash -u` before `git pull` and `git stash drop` after.
 
 **Maps built on another machine:** copy the `.mbtiles` files into the server's `data/` folder and restart the tile
@@ -358,7 +358,7 @@ server:
 
 ```bash
 scp data/<name>.mbtiles <user>@<server-host>:<repo-dir>/data/
-ssh <user>@<server-host> 'cd <repo-dir> && sudo ./scripts/install-pi.sh'     # or: docker restart tileserver
+ssh <user>@<server-host> 'cd <repo-dir> && ./scripts/install.sh'     # or: docker restart tileserver
 ```
 
 **The app:** the installer fetches the newest published release of the Fieldmap app when the server has internet.

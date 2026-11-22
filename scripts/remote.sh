@@ -2,7 +2,7 @@
 # Remote access for the Fieldmap Android app: a phone paired on this box's own network can use
 # the maps from anywhere afterwards, and nobody else can. And live sharing between the apps:
 # positions and shared markers, for the phones at home and the paired ones outside. install.sh
-# and install-pi.sh run "setup" for you; nothing here needs an account or an outside service.
+# and install-nginx.sh run "setup" for you; nothing here needs an account or an outside service.
 #
 # Usage:
 #   ./scripts/remote.sh setup          set it up, or bring it up to date (run by the installers)
@@ -15,8 +15,8 @@
 #                                      firewall stays, closed to everything from outside)
 #                                      (to switch remote access off and on: Admin, Remote access; sharing: Admin, Devices)
 #
-# Where install-pi.sh installed it (a Raspberry Pi behind Internet-in-a-Box, or a machine whose
-# own nginx serves the pages), run it with sudo, like install-pi.sh.
+# Where install-nginx.sh installed it (beside the machine's own nginx), run it with sudo, like
+# install-nginx.sh.
 # Elsewhere run it as the owner of this folder; it asks for sudo where it needs it.
 #
 # What "setup" does:
@@ -47,7 +47,7 @@
 #   NETBIRD_IMAGE          NetBird's container image (default: the version the compose file names)
 #   REMOTE_RELAY=tailscale also make the gateway reachable through Tailscale Funnel (needs the box
 #                          signed in to a Tailscale account: sudo tailscale up)
-# and the ones install-pi.sh keeps there: FIELDMAP_DATA (the data folder, when it is not data/
+# and the ones install-nginx.sh keeps there: FIELDMAP_DATA (the data folder, when it is not data/
 # here), FIELDMAP_USER (the user the services run as), FIELDMAP_NGINX_DIR (where the nginx
 # snippet goes).
 set -euo pipefail
@@ -63,10 +63,10 @@ setting() {
     echo "${value:-$2}"
 }
 
-# The data folder: data/ here, or FIELDMAP_DATA (install-pi.sh keeps it in .env).
+# The data folder: data/ here, or FIELDMAP_DATA (install-nginx.sh keeps it in .env).
 DATA="${FIELDMAP_DATA:-$(setting FIELDMAP_DATA "$REPO_DIR/data")}"
 REPO_OWNER="$(stat -c %U "$REPO_DIR")"
-# The services run as FIELDMAP_USER (install-pi.sh sets it beside FIELDMAP_DATA), or as the
+# The services run as FIELDMAP_USER (install-nginx.sh sets it beside FIELDMAP_DATA), or as the
 # owner of this folder. Their files belong to that user, whoever runs the script; .env stays
 # the folder owner's.
 OWNER="$(setting FIELDMAP_USER "$REPO_OWNER")"
@@ -77,14 +77,14 @@ as_owner() { as_user "$OWNER" "$@"; }
 DIRS=(REMOTE_DIR="$DATA/remote" SHARE_DIR="$DATA/share" APP_DIR="$DATA/app")
 NGINX_DIR="$(setting FIELDMAP_NGINX_DIR /etc/nginx/conf.d)"
 
-# What this run changed, for install-pi.sh's summary (FIELDMAP_CHANGES: a file it reads).
+# What this run changed, for install-nginx.sh's summary (FIELDMAP_CHANGES: a file it reads).
 changed() {
     echo "Changed: $1"
     if [ -n "${FIELDMAP_CHANGES:-}" ]; then echo "$1" >> "$FIELDMAP_CHANGES"; fi
 }
 # A sum of what is in these files and folders (missing ones count as empty).
 sum_of() { { { find "$@" -type f -print0 2>/dev/null || true; } | sort -z | xargs -0r sha256sum; } | sha256sum | cut -c1-64; }
-# The last run's sums (install-pi.sh's folder, made here when this script runs alone).
+# The last run's sums (install-nginx.sh's folder, made here when this script runs alone).
 STATE=/var/lib/fieldmap-server
 stamp() { $SUDO cat "$STATE/$1" 2>/dev/null || true; }
 stamp_save() { $SUDO mkdir -p "$STATE" && echo "$2" | $SUDO tee "$STATE/$1" >/dev/null; }
@@ -95,9 +95,9 @@ REMOTE_PORT="$(setting REMOTE_PORT "")"
 SERVICE_PORT="$(setting REMOTE_SERVICE_PORT 8092)"
 SHARE_PORT="$(setting SHARE_SERVICE_PORT 8093)"
 RELAY="$(setting REMOTE_RELAY "")"
-# A Raspberry Pi behind Internet-in-a-Box (install-pi.sh copied this file here): the tile
-# server is on this machine's port 8080, the web server shows it at /maps/, and the gateway
-# shares the machine's network.
+# Beside the machine's own nginx (install-nginx.sh copied this file here): the tile server is on
+# this machine's port 8080, the web server shows it at /maps/, and the gateway shares the
+# machine's network.
 if [ -f docker-compose.pi.yml ]; then
     PI=yes; COMPOSE=(docker compose -f docker-compose.pi.yml)
     INIT=(--prefix /maps/ --upstream http://127.0.0.1:8080/ --listen "$REMOTE_PORT" --ipv6)
@@ -261,7 +261,7 @@ for _ in range(200):
     if [ "$PI" = yes ]; then
         snippets="$(mktemp -d)"
         sed -e "s#127.0.0.1:8092#127.0.0.1:$SERVICE_PORT#" -e "s#127.0.0.1:8093#127.0.0.1:$SHARE_PORT#" pi/nginx/mapremote-nginx.conf > "$snippets/mapremote-nginx.conf"
-        $SUDO ./scripts/nginx-snippets.sh "$snippets" "$NGINX_DIR" || { rm -rf "$snippets"; exit 1; }
+        $SUDO env FIELDMAP_CHANGES="${FIELDMAP_CHANGES:-}" ./scripts/nginx-snippets.sh "$snippets" "$NGINX_DIR" || { rm -rf "$snippets"; exit 1; }
         rm -rf "$snippets"
     fi
     install_unit fieldmap-remote-update.service
@@ -287,7 +287,7 @@ for _ in range(200):
 
     echo "== The firewall on this box"
     # The gateway's port is open only while remote access is switched on.
-    $SUDO ./scripts/firewall.sh install
+    $SUDO env FIELDMAP_CHANGES="${FIELDMAP_CHANGES:-}" ./scripts/firewall.sh install
 
     [ -z "${FIELDMAP_CHANGES:-}" ] || [ ! -s "$FIELDMAP_CHANGES" ] || sleep 3
     if ! curl -fs -m 5 "$LOCAL" | grep -q fieldmap-remote; then

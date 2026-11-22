@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The Fieldmap Android app, kept on the box: devices on its network download it from the Devices
-# page and install it from there, without an app store. install.sh and install-pi.sh run "fetch".
+# page and install it from there, without an app store. install.sh and install-nginx.sh run "fetch".
 #
 # Usage:
 #   ./scripts/app.sh fetch                     the newest published release, from GitHub, when it is newer
@@ -23,7 +23,7 @@ setting() {
     echo "${value:-$2}"
 }
 
-# The files belong to the user the services run as (FIELDMAP_USER, which install-pi.sh may set),
+# The files belong to the user the services run as (FIELDMAP_USER, which install-nginx.sh may set),
 # or to the owner of this folder, whoever runs the script. They are in data/app, or in app/ of
 # FIELDMAP_DATA.
 OWNER="$(setting FIELDMAP_USER "$(stat -c %U "$REPO_DIR")")"

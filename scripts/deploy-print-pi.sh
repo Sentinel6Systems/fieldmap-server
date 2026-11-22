@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the map (print/) on this workstation and copy it to a Pi installed with install-pi.sh,
+# Build the map (print/) on this workstation and copy it to a Pi installed with install-nginx.sh,
 # which serves it from <repo-dir>/print/dist. Run from the repository root:
 #   ./scripts/deploy-print-pi.sh <user>@<pi-host> <repo-dir>
 set -euo pipefail
