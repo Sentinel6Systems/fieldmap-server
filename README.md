@@ -46,7 +46,9 @@ call it as one step) uses `sudo ./scripts/install-nginx.sh` instead (also in [pi
 2. Go to **Admin** › **Map Builder**, choose a small region, and build it to check that everything works. Then
    build the regions you need.
 3. Open **Map** to view them, draw and plan routes; its **Print** tab prints.
-4. To use the Fieldmap app, open **Admin** › **Devices** on the device and install it from there.
+4. To use the Fieldmap app, open **Admin** › **Devices** and follow its steps: install the app on the device,
+   then enable **Location Sharing and Messages**. **Remote Connectivity** is only for use away from the local
+   network.
 
 ## Documentation
 

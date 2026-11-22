@@ -2,6 +2,11 @@
 
 ## Since v1.0.0
 
+- **Admin › Devices sets up devices step by step**, and Admin opens on it: 1. Android App, 2. Location Sharing and
+  Messages (the sharing switch, moved up: messages need it), 3. Remote Connectivity (optional; its switch moved
+  here from Remote Access, with pairing and the connectivity status), 4. Paired Devices. Remote Access keeps the
+  connection method, port forwarding, NetBird VPN and auto-disable. A **Messages** tab that is unavailable says
+  which switch to enable.
 - **One installer for a PC and a Raspberry Pi**, and no more Internet-in-a-Box: `./scripts/install.sh` (as yourself,
   without sudo) installs Docker with Compose v2 where it is missing (Debian 13, Ubuntu 24.04, Raspberry Pi OS 64-bit),
   adds you to the docker group, turns on a Raspberry Pi's memory cgroup for the tile server's cap (from the next

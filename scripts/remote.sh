@@ -320,13 +320,13 @@ for _ in range(200):
     echo
     if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("enabled") is True else 1)' \
         "$DATA/remote/settings.json" 2>/dev/null; then
-        echo "Remote connectivity is enabled. To pair another device, open Admin > Devices on the local network."
-        echo "To disable it: Admin > Remote Access."
+        echo "Remote connectivity is enabled. To pair another device or to disable it, open Admin > Devices"
+        echo "on the local network (step 3)."
     else
-        echo "Remote connectivity is disabled. To enable it, open Admin > Remote Access on the local network and"
-        echo "click Enable. Pairing mode then starts for 10 minutes: in the Fieldmap app, tap Menu > Server > Pair Device."
+        echo "Remote connectivity is disabled. To enable it, open Admin > Devices on the local network and"
+        echo "click Enable in step 3. Pairing mode then starts for 10 minutes: in the Fieldmap app, tap Menu > Server > Pair Device."
     fi
-    echo "Location sharing is enabled separately under Admin > Devices (disabled by default)."
+    echo "Location sharing and messages are enabled separately under Admin > Devices, step 2 (disabled by default)."
     ;;
 
 status)

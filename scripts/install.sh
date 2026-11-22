@@ -27,9 +27,10 @@
 #      gets in, or gets an answer (scripts/firewall.sh; REMOTE_FIREWALL=off in .env leaves it out);
 #   7. sets up remote access for the Fieldmap Android app (scripts/remote.sh setup): devices
 #      paired on this network can then use the maps from anywhere, and the devices can share
-#      positions and markers with each other. Both are off until switched on (Admin, Remote
-#      Access; and Admin, Devices). Devices on this network can install the app from the Devices
-#      page (scripts/app.sh fetch puts it on the server). --no-remote leaves all of it out;
+#      positions, markers and messages with each other. Both are off until switched on (Admin,
+#      Devices: step 2 for sharing and messages, step 3 for remote connectivity). Devices on this
+#      network can install the app from the Devices page, step 1 (scripts/app.sh fetch puts it on
+#      the server). --no-remote leaves all of it out;
 #   8. checks the pages through the web front, and lists what it changed.
 # Then build your maps: on the map builder page, or with build-region.sh.
 #

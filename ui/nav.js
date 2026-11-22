@@ -6,8 +6,9 @@
 // The Map (printing is one of its tabs), Messages and the User Guide are for everyone. Messages
 // is a view of the map's own page (/map/?messages): the map switches between the two in place
 // (it sets data-page and calls window.fmNavRedraw()); from other pages it is a link. What not everyone
-// needs is under the Admin tab: remote access, the devices and the map builder now, more
-// later. On those pages a second row under the header names them (when there is more than one).
+// needs is under the Admin tab: the devices (setting them up, step by step), remote access and the
+// map builder now, more later. On those pages a second row under the header names them (when there
+// is more than one).
 //
 // Where the other pages are is found out, not configured, on this page's own host:
 //   the map           /map/          (its config.json answers)
@@ -28,8 +29,9 @@
   const onMap = here === "map" || here === "messages";
   if (here === "map" && new URLSearchParams(location.search).has("messages")) bar.dataset.page = here = "messages";
   const PAGES = [["map", "Map", "Map"], ["messages", "Messages", "Messages"], ["guide", "User Guide", "Guide"], ["admin", "Admin", "Admin"]];
-  // Under Admin, in this order. The Admin tab opens the first one that is running.
-  const ADMIN = [["access", "Remote Access"], ["phones", "Devices"], ["builder", "Map Builder"]];
+  // Under Admin, in this order. The Admin tab opens the first one that is running: Devices, where
+  // a new owner starts.
+  const ADMIN = [["phones", "Devices"], ["access", "Remote Access"], ["builder", "Map Builder"]];
   const inAdmin = ADMIN.some(([key]) => key === here);
   const CACHE = "fieldmap.nav";
 
@@ -60,7 +62,10 @@
         current = inAdmin;
         href = inAdmin ? place(found, here) : running[0] || (ADMIN.some(([k]) => found[k] === "off") ? "off" : null);
       }
-      if (!current && href === "off") nav.append(el("span", { className: "fm-off", title: `${long} is unavailable on this server.` }, ...text, el("small", { textContent: "Unavailable" })));
+      // Messages are off with the server's sharing switch: say where it is.
+      const why = key === "messages" ? "Messages are disabled on this server. Enable Location Sharing and Messages in Admin > Devices (step 2)."
+        : `${long} is unavailable on this server.`;
+      if (!current && href === "off") nav.append(el("span", { className: "fm-off", title: why }, ...text, el("small", { textContent: "Unavailable" })));
       else if (current || href) {
         const a = el("a", { href, ariaLabel: long }, ...text);
         a.dataset.page = key;

@@ -230,13 +230,22 @@ Profile Page** to add the point-to-point profile as an extra page.
 The [Fieldmap Android app](https://github.com/Sentinel6Systems/fieldmap-android) shows the server's maps and keeps
 offline areas on the device for use with no network. Its own user guide covers the app in detail.
 
+**Admin** › **Devices** sets up devices in numbered steps, in this order:
+
+1. **Android App:** install the app on each device.
+2. **Location Sharing and Messages:** enable it for locations, shared markers and [messages](#messages).
+3. **Remote Connectivity** (optional): only for using the server away from its local network. Pairing is here too.
+4. **Paired Devices:** the devices paired for remote use.
+
+Steps 1 and 2 are all that devices on the local network need.
+
 ### Get the app from the server
 
 No app store or account is needed.
 
 1. Connect the device to the local network.
 2. In the device's browser, open the server and go to **Admin** › **Devices**.
-3. Under **Android App**, press **Download App**, open the file, and allow the browser to install apps when Android
+3. Under **Android App** (step 1), press **Download App**, open the file, and allow the browser to install apps when Android
    asks.
 
 To update the app, download it again and install it over the old one. Offline areas and markers stay.
@@ -250,9 +259,8 @@ Open the app, go to **Menu** › **Server**, and press **Find Server**, or type 
 
 Pairing is only needed for [remote access](#remote-access). Pair each device once, on the local network:
 
-1. Make sure **Remote Connectivity** is **Enabled** (Admin › Remote Access).
-2. On the **Devices** page, under **Device Pairing**, press **Start Pairing**. Pairing mode stays active for 10
-   minutes.
+1. On the **Devices** page, under **Remote Connectivity** (step 3), press **Enable**. This also starts pairing mode
+   for 10 minutes. If it is already enabled, press **Start Pairing** under **Device Pairing**.
 3. In the app, go to **Menu** › **Server** and press **Pair Device**.
 
 The device then shows under **Paired Devices**. Press **Remove** beside a device to lock it out at once, for
@@ -264,8 +272,8 @@ Devices and browsers on the server can see each other's locations on the map and
 shapes. Location sharing is disabled until the server owner enables it, and then each person takes part from their
 own app or browser.
 
-1. **On the server:** **Admin** › **Devices**, then **Enable** under **Location Sharing**. **Active Devices** lists
-   who is sharing now.
+1. **On the server:** **Admin** › **Devices**, then **Enable** under **Location Sharing and Messages** (step 2).
+   **Active Devices** lists who is sharing now.
 2. **In the app:** **Menu** › **Location Sharing**, enter a **Display Name**, and press **Start Sharing**.
 3. **In a browser:** open **Messages**, enter a **Display Name**, then press **Set My Location** on the map's tool
    bar and tap where you are (drag the diamond to move it). **Stop Sharing** on the Messages page takes it off.
@@ -280,8 +288,8 @@ enabled. The server does not store locations: a location disappears about two mi
 sending. Shared items stay on the server until someone deletes them.
 
 **Mesh radio channel.** Devices with a Meshtastic radio can keep sharing locations, markers and messages over the
-radio when they can't reach the server. The server gives them a private channel: under **Location Sharing** on the
-Devices page, **Mesh Radio Channel** shows when its key was created. Devices pick it up when they connect to the
+radio when they can't reach the server. The server gives them a private channel: under **Location Sharing and
+Messages** on the Devices page, **Mesh Radio Channel** shows when its key was created. Devices pick it up when they connect to the
 server. If a radio is lost, press **New Channel Key**; each device then has to connect to the server once to get
 the new key before it can share over the mesh again.
 
@@ -290,8 +298,8 @@ the new key before it can share over the mesh again.
 
 ## Messages
 
-Short text messages between the devices and browsers on this server. They need location sharing enabled on the
-server.
+Short text messages between the devices and browsers on this server. They need **Location Sharing and Messages**
+enabled on the server (Admin › Devices, step 2). Nobody has to share their own location to send messages.
 
 1. Open **Messages** in the header. Enter a **Display Name** the first time.
 2. Choose the conversation: **Group (Private)** goes to everybody on this server; or pick one active device for a
@@ -315,10 +323,10 @@ a time:
 
 ### Enable remote connectivity
 
-1. On the local network, open **Admin** › **Remote Access**.
-2. Under **Remote Connectivity**, press **Enable**. This also starts pairing mode for 10 minutes.
-3. Under **Remote Connectivity Method**, keep **Port Forwarding**.
-4. Read **Connectivity Status**: it says whether devices can reach the server from the internet, and if not, why.
+1. On the local network, open **Admin** › **Devices**.
+2. Under **Remote Connectivity** (step 3), press **Enable**. This also starts pairing mode for 10 minutes.
+3. Open **Admin** › **Remote Access**. Under **Remote Connectivity Method**, keep **Port Forwarding**.
+4. Read **Connectivity Status** (the Devices page shows it too): it says whether devices can reach the server from the internet, and if not, why.
    **Retry Port Mapping** asks the router again.
 5. [Pair](#pair-a-device) each device.
 
@@ -330,8 +338,8 @@ settings. Enter the router's **Public IP Address**, or press **Detect**, then **
 the server a different port.
 
 **Auto-disable after 90 days without a remote connection** (on by default) switches remote connectivity off by
-itself if no device has connected from the internet for 90 days. To switch it off yourself, press **Disable**: the
-router's port is closed, and paired devices stay on the list for next time.
+itself if no device has connected from the internet for 90 days; it is on the Remote Access page. To switch remote
+connectivity off yourself, press **Disable** in step 3 of the Devices page: the router's port is closed, and paired devices stay on the list for next time.
 
 ### Use NetBird VPN
 
@@ -455,6 +463,7 @@ Also keep `.env`, and keep the server's address and any Access Code on paper.
 | The server's pages don't open. | Check the device is on the local network, the address is right, and the server is on. After a restart, wait a few minutes. |
 | The map is empty or gray. | Move to a region the server has. A new server has no maps: build some first. |
 | A tab shows **Unavailable**. | That service is stopped. Restart the server. If it stays, check `systemctl status fieldmap-admin` (Map Builder) or `fieldmap-remote` (Remote Access, Devices). |
+| **Messages** shows **Unavailable**, or the app can't send messages. | Enable **Location Sharing and Messages** (Admin › Devices, step 2). |
 | **Remote Access** or **Devices** won't open. | These pages only open from the local network. |
 | **Print** does nothing. | The browser blocked the print window. Use **Download PDF** and print the file. |
 | An atlas stops or the browser closes. | Use a laptop or desktop, a smaller atlas, or **Standard** quality. |
@@ -462,7 +471,7 @@ Also keep `.env`, and keep the server's address and any Access Code on paper.
 | A route has dashed straight legs. | No way was found for those legs. Check the server has **Routing Data** for the area, and add points closer together (see [Routes](#routes)). |
 | **Messages** says the server has no messages, or sharing is disabled. | Run the installer again after an update, and enable Location Sharing on the Devices page. |
 | A build stops with a disk space message. | Free some space, or select fewer regions or layers. Starting the same build again resumes it. |
-| The app can't pair. | Enable Remote Connectivity, press **Start Pairing**, then pair within 10 minutes. |
+| The app can't pair. | Enable Remote Connectivity (Admin › Devices, step 3), press **Start Pairing**, then pair within 10 minutes. |
 | A paired device can't connect from the internet. | Check Remote Connectivity is enabled and read **Connectivity Status**. Bring the device to the local network once so it learns the server's current address and connectivity method. |
 | **Connectivity Status** says the router did not open a port. | Turn on UPnP or NAT-PMP in the router, or use **Manual Port Forwarding**. With two routers in a row, forward on both or put the first in bridge mode. |
 | **Connectivity Status** mentions a shared address (Starlink, mobile internet). | The router can't be reached from the internet. Use NetBird VPN. |

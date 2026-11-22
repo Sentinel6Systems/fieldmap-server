@@ -192,7 +192,7 @@ export function startLive(onChange) {
       live.info = r.body;
       if (!r.body.enabled) {
         live.state = null;
-        if (set("disabled", "Location sharing is disabled on the server. Enable it in Admin > Devices.")) onChange(live);
+        if (set("disabled", "Location sharing and messages are disabled on the server. Enable them in Admin > Devices (step 2).")) onChange(live);
         return INFO_EVERY;
       }
       changed = set("on") || changed;

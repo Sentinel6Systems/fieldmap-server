@@ -12,8 +12,8 @@ How it works:
     requests from the local network are answered (see lan()), and only while pairing is
     open: for ten minutes after someone switches remote access on, or presses "Pair a
     device", on the box's Devices page (phones/, at /phones/).
-  * Off by default: until someone switches it on on the Remote access page (Admin, at
-    /phones/remote.html: the same file as the Devices page), nothing outside can
+  * Off by default: until someone switches it on on the Devices page (Admin, step 3;
+    its settings on the Remote access page, /phones/remote.html: the same file), nothing outside can
     reach the box, the router is not asked for anything, and no phone can pair
     (set_enabled). Switched off again, it is all closed, and the paired phones are kept.
   * The app itself is kept on the box (scripts/app.sh, tools/app-file.py: data/app/), and devices
@@ -1447,7 +1447,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200 if remove(str(body.get("id", ""))) else 404, {"devices": len(load_devices())})
         # /enrol
         if not enabled():
-            return self.send(403, {"error": "Remote connectivity is disabled on the server. Enable it under Admin > Remote Access.", "closed": True})
+            return self.send(403, {"error": "Remote connectivity is disabled on the server. Enable it under Admin > Devices.", "closed": True})
         if pairing_left() <= 0:
             return self.send(403, {"error": "Pairing mode is not active. Click Start Pairing on the server's Devices page, then try "
                                             "again within 10 minutes.", "closed": True})
@@ -1520,7 +1520,7 @@ def serve(host, port):
         print(f"...and on http://{host}:{port}/", flush=True)
     # systemd stops the service with SIGTERM: leave through `finally`, which writes down who came in.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    print("Remote access is " + ("on." if enabled() else "off: switch it on on the Remote access page (Admin)."), flush=True)
+    print("Remote access is " + ("on." if enabled() else "off: switch it on on the Devices page (Admin, step 3)."), flush=True)
     if load_settings().get("netbird", False) is not netbird_wanted():     # the firewall follows this file
         save_settings(netbird=netbird_wanted())
     threading.Thread(target=keep_up, daemon=True).start()

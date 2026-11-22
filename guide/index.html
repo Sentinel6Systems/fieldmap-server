@@ -78,7 +78,7 @@
       <li><a href="#other-apps">Use the maps in ATAK and other apps</a></li>
       <li><a href="#app">The Fieldmap app</a></li>
       <li><a href="#admin">Admin: Map Builder</a></li>
-      <li><a href="#optional">Optional: remote access, location sharing and messages</a></li>
+      <li><a href="#optional">Set up devices: location sharing, messages and remote access</a></li>
       <li><a href="#care">Care and backup</a></li>
       <li><a href="#problems">Troubleshooting</a></li>
       <li><a href="#words">Glossary</a></li>
@@ -275,7 +275,7 @@
     <ol>
       <li>Connect the device to the local network.</li>
       <li>In the device's browser, open this server and go to <b>Admin</b>, <b>Devices</b>.</li>
-      <li>Under <b>Android App</b>, press <b>Download App</b> and follow the steps.</li>
+      <li>Under <b>Android App</b> (step 1), press <b>Download App</b> and follow the steps.</li>
     </ol>
     <p>No app store or account is needed. If there is no app on the Devices page, the server owner has to add it.</p>
 
@@ -348,28 +348,46 @@
 
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="optional">
-    <h2>11. Optional: remote access, location sharing and messages</h2>
-    <p>The server and the app work without these features. Both are disabled until you enable them.</p>
-    <ul>
-      <li><b>Remote access</b> lets paired devices use the server over the internet. The <b>Remote Connectivity
-        Method</b> is <b>Port Forwarding</b> (a port on your router) or <b>NetBird VPN</b>, one at a time.</li>
-      <li><b>Location sharing</b> lets devices and browsers see each other's locations, share markers, arrows,
-        routes and shapes, and send messages. It also works without remote access, on the local network only.</li>
-    </ul>
+    <h2>11. Set up devices: location sharing, messages and remote access</h2>
+    <p><b>Admin</b>, <b>Devices</b> sets up devices in numbered steps, in this order:</p>
+    <ol>
+      <li><b>Android App</b>: install the app on each device (<a href="#app">section 9</a>).</li>
+      <li><b>Location Sharing and Messages</b>: lets devices and browsers see each other's locations, share
+        markers, arrows, routes and shapes, and send messages. Disabled until you enable it.</li>
+      <li><b>Remote Connectivity</b> (optional): lets paired devices use the server over the internet, with
+        pairing. Disabled until you enable it. The <b>Remote Connectivity Method</b>, <b>Port Forwarding</b> (a port
+        on your router) or <b>NetBird VPN</b>, is set on <b>Admin</b>, <b>Remote Access</b>.</li>
+      <li><b>Paired Devices</b>: the devices paired for remote use.</li>
+    </ol>
+    <p>Steps 1 and 2 are all that devices on the local network need.</p>
+
+    <h3 id="admin-share">Enable location sharing and messages</h3>
+    <p>Press <b>Admin</b>, <b>Devices</b>, then <b>Enable</b> under <b>Location Sharing and Messages</b> (step 2).
+      Messages work at once; nobody has to share their own location to send them. <b>Active Devices</b>
+      lists who is sharing. <b>Disable</b> stops it for everyone.</p>
+    <p>Under it, <b>Mesh Radio Channel</b> is the private channel that devices with Meshtastic radios use when they
+      can't reach the server. If a radio is lost, press <b>New Channel Key</b>. Each device then has to connect to the
+      server once to get the new key before it can share over the mesh again.</p>
+    <div class="caution"><b>Caution</b>There is no sign-in. Don't enable location sharing on a network that strangers
+      can join: everyone on the local network can see the shared locations.</div>
+
 
     <h3 id="remote">Enable remote access</h3>
     <ol>
-      <li>Press <b>Admin</b>, <b>Remote Access</b>.</li>
-      <li>Under <b>Remote Connectivity</b>, press <b>Enable</b>. This also starts pairing mode for 10 minutes.</li>
-      <li>Under <b>Remote Connectivity Method</b>, keep <b>Port Forwarding</b>.</li>
+      <li>Press <b>Admin</b>, <b>Devices</b>.</li>
+      <li>Under <b>Remote Connectivity</b> (step 3), press <b>Enable</b>. This also starts pairing mode for 10
+        minutes.</li>
+      <li>Press <b>Admin</b>, <b>Remote Access</b>. Under <b>Remote Connectivity Method</b>, keep <b>Port
+        Forwarding</b>.</li>
       <li>Read <b>Connectivity Status</b>. It says whether devices can reach the server from the internet.
         <b>Retry Port Mapping</b> asks the router again.</li>
     </ol>
     <p>If the router doesn't open the port by itself, tick <b>Manual Port Forwarding</b> and add the rule the page
       shows in your router's settings. Enter the <b>Public IP Address</b>, or press <b>Detect</b>, then
       <b>Save</b>. <b>Generate New Port</b> picks a different port.</p>
-    <p>To switch it off, press <b>Disable</b>. The router's port is closed and paired devices stay on the list.
-      <b>Auto-disable after 90 days without a remote connection</b> does this by itself.</p>
+    <p>To switch it off, press <b>Disable</b> in step 3 of the Devices page. The router's port is closed and paired
+      devices stay on the list. <b>Auto-disable after 90 days without a remote connection</b>, on the Remote Access
+      page, does this by itself.</p>
     <div class="caution"><b>Caution</b>Disable remote access when nobody needs it. Then nothing outside the local
       network can reach the server.</div>
     <p>Some internet connections, such as Starlink or mobile internet, can't open a port. <b>Connectivity Status</b>
@@ -438,22 +456,13 @@
 
     <h3 id="pair">Pair a device</h3>
     <ol>
-      <li>Make sure Remote Connectivity is enabled.</li>
       <li>Connect the device to the local network and open the Fieldmap app.</li>
-      <li>On <b>Admin</b>, <b>Devices</b>, under <b>Device Pairing</b>, press <b>Start Pairing</b>.</li>
+      <li>On <b>Admin</b>, <b>Devices</b>, under <b>Remote Connectivity</b> (step 3), press <b>Enable</b>, which
+        starts pairing. If it is already enabled, press <b>Start Pairing</b> under <b>Device Pairing</b>.</li>
       <li>Within 10 minutes, in the app, press <b>Menu</b>, <b>Server</b>, <b>Pair Device</b>.</li>
     </ol>
     <p>The device then shows under <b>Paired Devices</b>. Press <b>Remove</b> to lock it out at once, for example if
       it is lost. Away from the local network, the app connects through the internet by itself.</p>
-
-    <h3 id="admin-share">Enable location sharing</h3>
-    <p>Press <b>Admin</b>, <b>Devices</b>, then <b>Enable</b> under <b>Location Sharing</b>. <b>Active Devices</b>
-      lists who is sharing. <b>Disable</b> stops it for everyone.</p>
-    <p>Under it, <b>Mesh Radio Channel</b> is the private channel that devices with Meshtastic radios use when they
-      can't reach the server. If a radio is lost, press <b>New Channel Key</b>. Each device then has to connect to the
-      server once to get the new key before it can share over the mesh again.</p>
-    <div class="caution"><b>Caution</b>There is no sign-in. Don't enable location sharing on a network that strangers
-      can join: everyone on the local network can see the shared locations.</div>
 
     <h3 id="share">Share your location</h3>
     <p>In the app:</p>
@@ -483,13 +492,14 @@
       <li>Type up to 140 characters in <b>Message</b> and press <b>Send</b> or Enter.</li>
     </ol>
     <p>Each message shows <b>Waiting</b>, <b>Sent (Server)</b> or <b>Delivered</b>. The server keeps a message until
-      it is delivered, and a group message for a week. Messages need location sharing enabled on the server.</p>
+      it is delivered, and a group message for a week. Messages need <b>Location Sharing and Messages</b> enabled on
+      the server (<b>Admin</b>, <b>Devices</b>, step 2).</p>
 
     <h3>If remote access or location sharing doesn't work</h3>
     <table>
       <tr><th>Problem</th><th>What to do</th></tr>
-      <tr><td>The app can't pair.</td><td>Enable Remote Connectivity, press <b>Start Pairing</b>, and pair within
-        10 minutes.</td></tr>
+      <tr><td>The app can't pair.</td><td>Enable Remote Connectivity (<b>Admin</b>, <b>Devices</b>, step 3), press
+        <b>Start Pairing</b>, and pair within 10 minutes.</td></tr>
       <tr><td>A paired device can't connect from the internet.</td><td>Check that Remote Connectivity is enabled and
         read <b>Connectivity Status</b>. Bring the device to the local network once: it then learns the server's
         current address and connectivity method.</td></tr>
@@ -529,6 +539,8 @@
         server is on. After switching it on, wait a few minutes.</td></tr>
       <tr><td>The map is empty or gray.</td><td>Move to a region the server has. If the page says <b>No Maps
         Installed</b>, build maps with the Map Builder.</td></tr>
+      <tr><td><b>Messages</b> shows <b>Unavailable</b>.</td><td>Enable <b>Location Sharing and Messages</b>
+        (<b>Admin</b>, <b>Devices</b>, step 2).</td></tr>
       <tr><td>A tab shows <b>Unavailable</b>.</td><td>That part of the server isn't running. Restart the server. If
         that doesn't help, tell whoever set it up.</td></tr>
       <tr><td><b>Devices</b> or <b>Remote Access</b> won't open.</td><td>These pages only open on the local

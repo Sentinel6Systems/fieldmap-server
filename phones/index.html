@@ -1,13 +1,15 @@
 <!doctype html>
 <html lang="en">
 <!-- Two pages in one file, served by tools/remote-server.py on the box's own network only:
-     /phones/             Admin, Devices: get the app, pair a device, the paired devices, and sharing
-                          positions and markers between them (another service, tools/share-server.py,
-                          asked beside this page at /mapshare/admin);
-     /phones/remote.html  Admin, Remote access: the switch, the way in (the port on the router, or
-                          NetBird for a box whose router cannot open a port: one at a time), whether
-                          devices can reach the box from outside, port forwarding, and NetBird's
-                          setup key. Not something everyone needs.
+     /phones/             Admin, Devices: setting up devices, as numbered steps in the order a new
+                          owner takes them: 1. get the app; 2. location sharing and messages (another
+                          service, tools/share-server.py, asked beside this page at /mapshare/admin);
+                          3. remote connectivity, its switch and pairing (optional: only for use away
+                          from the box's network); 4. the paired devices;
+     /phones/remote.html  Admin, Remote access: how devices come in from outside, once remote
+                          connectivity is switched on: the way in (the port on the router, or NetBird
+                          for a box whose router cannot open a port: one at a time), whether devices
+                          can reach the box, port forwarding, and NetBird's setup key.
      Each section says which of the two it belongs to (data-for). The look and the header are
      ui/fieldmap.css and ui/nav.js, which the service serves beside this page. -->
 <head>
@@ -71,6 +73,11 @@
   .check input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
   ol { margin: 8px 0; padding-left: 1.3em; }
   li { margin: 4px 0; }
+  /* The numbered steps of the Devices page. A hidden step (no sharing service) takes no number. */
+  main { counter-reset: step; }
+  .step h2::before { counter-increment: step; content: counter(step); display: inline-block; min-width: 1.6em;
+    margin-right: 8px; padding: 0 4px; border: 1px solid var(--sig); color: var(--sig); font: 600 16px/1.5 var(--mono); text-align: center; }
+  .opt { font: 12.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-left: 6px; }
 </style>
 </head>
 <body class="fm-plate">
@@ -88,11 +95,12 @@
 
 <header class="top" data-for="devices">
   <h1>Devices</h1>
-  <p class="lead">Install the Fieldmap Android app, pair devices for remote use, and manage location sharing.</p>
+  <p class="lead">Set up devices in this order. Steps 1 and 2 are all that devices on this server's local network
+    need. Step 3 is only for using the server away from it.</p>
 </header>
 <header class="top" data-for="access">
   <h1>Remote Access</h1>
-  <p class="lead">Let paired devices use the server's maps from the internet. Devices that are not paired cannot
+  <p class="lead">How paired devices reach the server from the internet. Devices that are not paired cannot
     connect.</p>
 </header>
 
@@ -108,10 +116,9 @@
   <section class="card" data-for="access">
     <div class="switch">
       <h2>Remote Connectivity</h2>
-      <span class="state" id="state"></span>
-      <button id="toggle" type="button"></button>
+      <span class="state" id="access-state"></span>
     </div>
-    <p class="quiet" id="switch-text"></p>
+    <p class="quiet" id="access-text"></p>
     <label class="check"><input type="checkbox" id="auto-off"> <span id="auto-off-text"></span></label>
   </section>
 
@@ -201,7 +208,7 @@
     </div>
   </section>
 
-  <section class="card" id="app-card" data-for="devices">
+  <section class="card step" id="app-card" data-for="devices">
     <h2>Android App</h2>
     <div id="app-there" hidden>
       <p>Fieldmap <b id="app-version"></b> for Android phones and tablets (<span id="app-size"></span>), served by this
@@ -222,32 +229,14 @@
       <span class="mono">./scripts/app.sh add &lt;file.apk&gt;</span>.</p>
   </section>
 
-  <section class="card" id="pair-card" data-for="devices">
-    <h2>Device Pairing</h2>
-    <p class="quiet" id="pair-off" hidden>Enable remote connectivity first: <a href="remote.html">Remote Access</a>.</p>
-    <ol>
-      <li>Connect the device to the server's local network and open the Fieldmap app.</li>
-      <li>Click <b>Start Pairing</b> below.</li>
-      <li>Within 10 minutes, in the app tap <b>Menu</b> &gt; <b>Server</b> &gt; <b>Pair Device</b>.</li>
-    </ol>
-    <div class="row">
-      <button id="pair" type="button" class="primary">Start Pairing</button>
-      <button id="pair-stop" type="button" hidden>Stop Pairing</button>
-      <span class="left" id="pair-left"></span>
-    </div>
-  </section>
-
-  <section class="card" data-for="devices">
-    <h2>Paired Devices</h2>
-    <div id="phones"></div>
-  </section>
-
-  <section class="card" id="share-card" data-for="devices" hidden>
+  <section class="card step" id="share-card" data-for="devices" hidden>
     <div class="switch">
-      <h2>Location Sharing</h2>
+      <h2>Location Sharing and Messages</h2>
       <span class="state" id="share-state"></span>
       <button id="share-toggle" type="button"></button>
     </div>
+    <p>Devices share their locations, markers and messages with each other and with the server's map.
+      <b>Messages need this.</b></p>
     <p class="quiet" id="share-text"></p>
     <div id="share-now" hidden>
       <h3>Active Devices</h3>
@@ -257,6 +246,34 @@
       <p class="quiet" id="mesh-text"></p>
       <div class="row"><button id="mesh-new" type="button">New Channel Key</button></div>
     </div>
+  </section>
+
+  <section class="card step" id="remote-card" data-for="devices">
+    <div class="switch">
+      <h2>Remote Connectivity <span class="opt">Optional</span></h2>
+      <span class="state" id="state"></span>
+      <button id="toggle" type="button"></button>
+    </div>
+    <p class="quiet" id="switch-text"></p>
+    <p class="reach" id="remote-reach" hidden></p>
+    <p class="quiet">Connection method, port forwarding and NetBird VPN: <a href="remote.html">Remote Access</a>.</p>
+    <h3>Device Pairing</h3>
+    <p class="quiet" id="pair-off" hidden>Pairing needs Remote Connectivity: enable it above.</p>
+    <ol>
+      <li>Connect the device to the server's local network and open the Fieldmap app.</li>
+      <li>Click <b>Start Pairing</b> below (enabling Remote Connectivity also starts it).</li>
+      <li>Within 10 minutes, in the app tap <b>Menu</b> &gt; <b>Server</b> &gt; <b>Pair Device</b>.</li>
+    </ol>
+    <div class="row">
+      <button id="pair" type="button" class="primary">Start Pairing</button>
+      <button id="pair-stop" type="button" hidden>Stop Pairing</button>
+      <span class="left" id="pair-left"></span>
+    </div>
+  </section>
+
+  <section class="card step" data-for="devices">
+    <h2>Paired Devices</h2>
+    <div id="phones"></div>
   </section>
 </main>
 
@@ -323,8 +340,16 @@
     $("toggle").textContent = on ? "Disable" : "Enable";
     $("toggle").className = on ? "danger" : "primary";
     $("switch-text").textContent = on
-      ? "Remote connectivity is enabled. Paired devices can connect from the internet."
-      : "Remote connectivity is disabled. Devices can connect on the local network only. Enabling it also starts pairing for 10 minutes.";
+      ? "Enabled. Paired devices can use the server from the internet: maps, location sharing and messages."
+      : "Disabled. Devices can use the server on its local network only. Enable it to use the server from anywhere; this also starts pairing for 10 minutes.";
+    // The Remote Access page has no switch of its own: it says where it is.
+    $("access-state").textContent = $("state").textContent;
+    $("access-state").className = $("state").className;
+    // Written only when it changes: a link made again every second can swallow a click.
+    const where = on
+      ? "Enabled. To disable it, or to pair a device, open <a href=\"./\">Devices</a> (step 3)."
+      : "Disabled. The settings below take effect after you enable it on the <a href=\"./\">Devices</a> page (step 3).";
+    if ($("access-text").dataset.on !== String(on)) { $("access-text").innerHTML = where; $("access-text").dataset.on = String(on); }
     for (const id of ["outside-card", "forward-card", "way-card", "netbird-card"]) $(id).setAttribute("aria-disabled", String(!on));
     $("pair-off").hidden = on;
     const fw = info.forwarding;
@@ -358,6 +383,10 @@
       (info.autoOff.at ? ` (next: ${new Date(info.autoOff.at * 1000).toLocaleDateString([], { dateStyle: "medium" })})` : "");
     $("reach").textContent = local(viaNetbird ? nb : info.reach);
     $("reach").className = "reach " + (viaNetbird ? nb.status : info.reach.status);
+    // The same status on the Devices page, under the switch.
+    $("remote-reach").hidden = !on;
+    $("remote-reach").textContent = $("reach").textContent;
+    $("remote-reach").className = $("reach").className;
     $("addresses").textContent = on && info.endpoints.length
       ? "Public endpoints: " + info.endpoints.map((e) => e.host + ":" + e.port).join(", ") : "";
     $("checked").textContent = info.reach.checked && !viaNetbird ? "Last port mapping attempt: " + when(info.reach.checked) : "";
@@ -429,8 +458,8 @@
     $("share-toggle").textContent = on ? "Disable" : "Enable";
     $("share-toggle").className = on ? "danger" : "primary";
     $("share-text").textContent = on
-      ? "Location sharing is enabled for local and paired remote devices. Locations are not stored; a device that stops sharing disappears after 2 minutes. Shared markers are kept on the server."
-      : "Location sharing is disabled. After enabling it, each user starts sharing in the app (Menu > Location Sharing).";
+      ? "Enabled for devices on the local network and paired remote devices. Each user shares their own location in the app (Menu > Location Sharing). Locations are not stored; a device that stops sharing disappears after 2 minutes. Shared markers are kept on the server."
+      : "Disabled: devices cannot share locations or markers, or send messages. After enabling it, messages work at once, and each user shares their own location in the app (Menu > Location Sharing).";
     $("share-now").hidden = !on;
     $("people").replaceChildren(...(share.people.length ? share.people.map((p) => {
       const row = document.createElement("div");
@@ -452,7 +481,7 @@
   };
   $("share-toggle").onclick = () => {
     const on = $("share-state").textContent === "Enabled";
-    if (on && !confirm("Disable location sharing for all devices? Shared markers are kept.")) return;
+    if (on && !confirm("Disable location sharing and messages for all devices? Shared markers are kept.")) return;
     act(SHARE, { on: !on });
   };
   $("mesh-new").onclick = () => {
