@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mergeState, mergeMessages, conversations, partnerOf, ageLook, ageText, newUid, cleanText, newMessageId, statusText } from "../src/live.js";
 import { describe, sharedFC, peopleFC, kindText, itemFromFeature, featureFromItem, itemKey } from "../src/shared.js";
 import { shapeRing } from "../src/shapes.js";
-import { createRouter, readLeg, routeLegs, routeStats, routesFC, durationText, legKey, nearestRoadPoints } from "../src/routing.js";
+import { createRouter, readLeg, routeLegs, routeStats, routesFC, durationText, legKey, nearestRoadPoints, ends } from "../src/routing.js";
 
 const ME = "web-0011223344556677";
 const point = (id, lon, lat, extra = {}) => ({ type: "Feature", id, geometry: { type: "Point", coordinates: [lon, lat] },
@@ -172,7 +172,7 @@ test("routes: legs along roads from the router, straight and dashed where it has
   const route = { id: "r1", color: "#6f2dbd", label: "R1", routing: "driving", speedMph: 25,
     points: [{ lng: 10, lat: 45 }, { lng: 10.01, lat: 45 }, { lng: 10.02, lat: 45 }] };
   // A tapped point has many more decimals than the server takes (12 characters a number).
-  route.points[0] = { lng: 9.999999987654321, lat: -45.00000012345678 };
+  route.points[0] = { lng: 9.999999987654321, lat: 45.00000012345678 };
   const asked = [];
   const answer = { type: "FeatureCollection", features: [{ type: "Feature", properties: { "track-length": "1500" },
     geometry: { type: "LineString", coordinates: [[10, 45, 100], [10.005, 45.002, 101], [10.01, 45, 102]] } }] };
@@ -187,7 +187,7 @@ test("routes: legs along roads from the router, straight and dashed where it has
   router.want([route]);
   await finished;
   assert.equal(asked.length, 2, "one request per leg, each leg asked once");
-  assert.match(asked[0], /^\/routing\/route\?lonlats=10,-45%7C10\.01,45&profile=car-vario&format=geojson$/);
+  assert.match(asked[0], /^\/routing\/route\?lonlats=10,45%7C10\.01,45&profile=car-vario&format=geojson$/);
   const SERVER = /^-?[0-9.]{1,12},-?[0-9.]{1,12}((\||%7[Cc])-?[0-9.]{1,12},-?[0-9.]{1,12}){1,29}$/;   // web/nginx.conf
   assert.match(new URL(asked[0], "http://x").searchParams.get("lonlats").replace("|", "%7C"), SERVER);
   const legs = routeLegs(route, router);
@@ -241,4 +241,14 @@ test("routes: a leg that ends off the road goes along the road to the nearest on
   assert.ok(Math.abs(leg.meters - 6400 - 995) < 10, "the road, and the straight part to the point");
   assert.deepEqual(routesFC([route], router).features.map((f) => f.properties.part), ["line", "dashed", "vertex", "vertex", "label"]);
   assert.deepEqual([routeStats(route, router).offRoad, routeStats(route, router).straightLegs], [1, 0]);
+});
+
+test("routes: a line the router ends on the road short of its point gets a dashed piece to it", () => {
+  const a = { lng: 10, lat: 45 }, b = { lng: 10.08, lat: 45.009 };
+  const line = [[10, 45], [10.05, 45], [10.08, 45]];          // the router stopped at the road, 1 km short of b
+  const got = ends({ line, meters: 6400 }, a, b);
+  assert.equal(got.head, null, "the start is on the line");
+  assert.deepEqual(got.tail, [[10.08, 45], [10.08, 45.009]]);
+  assert.equal(ends({ line: [[10, 45], [10.0805, 45.009]], meters: 1 }, a, b).tail, null, "within 100 m: no dashed piece");
+  assert.equal(ends({ line: [[10, 45], [10.08, 45.2]], meters: 1 }, a, { lng: 10.08, lat: 45.4 }), null, "more than 15 km off: no way");
 });
