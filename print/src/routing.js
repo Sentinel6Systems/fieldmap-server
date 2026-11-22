@@ -5,9 +5,10 @@
 // router at all.
 //
 // A point away from any road: the router itself starts or ends the line on the nearest road it can
-// use (BRouter's dynamic range), so a line that ends more than END_GAP from its point gets the rest,
-// from the road to the point, straight and dashed, as the app draws it; one that ends more than
-// NEAR away counts as no way. When the router finds no way at all (a road it cannot reach), the
+// use (BRouter's dynamic range), so a line that ends away from its point gets the rest, from the
+// road to the point, straight and dashed (the app moves a point within END_GAP onto the road; the
+// map leaves it where it was put, so it dashes any gap past GAP); one that ends more than NEAR
+// away counts as no way. When the router finds no way at all (a road it cannot reach), the
 // map looks for the roads nearest that point (in its own tiles: nearRoads) and routes to the
 // nearest one it can reach, dashed from there. The same for a start off the road.
 import { inverse } from "./geo.js";
@@ -28,7 +29,8 @@ export const ROAD_CLASSES = {
 const NEAR = 15000;            // roads farther than this from a point are not tried (m)
 const SPREAD = 500;            // the roads tried for one point are at least this far apart (m)
 const TRIES = 3;               // roads tried at each end of a leg
-const END_GAP = 100;           // a line ending farther than this from its point gets a dashed piece to it (m), as in the app
+const END_GAP = 100;           // a line ending farther than this from its point "ends off road" (m), as in the app
+const GAP = 3;                 // a line ending farther than this from its point gets a dashed piece to it (m)
 
 /** The points on these lines ([[lon, lat], ...] each) nearest p, nearest first: at most `count`,
  *  each at least `spread` m from the others, none farther than `most` m. [{ lng, lat, meters }] */
@@ -129,13 +131,15 @@ export function createRouter(onChange, fetchFn = (u) => fetch(u), nearRoads = nu
 }
 
 /** A line from the router for a leg from a to b, with a dashed piece from a to its start and from
- *  its end to b where it starts or ends more than END_GAP away; null (no way) when more than NEAR. */
+ *  its end to b where it starts or ends more than GAP away (offRoad: more than END_GAP); null (no
+ *  way) when more than NEAR. */
 export function ends(got, a, b) {
   if (!got) return null;
   const first = got.line[0], last = got.line[got.line.length - 1];
   const gapA = straight(a, { lng: first[0], lat: first[1] }), gapB = straight(b, { lng: last[0], lat: last[1] });
   if (gapA > NEAR || gapB > NEAR) return null;
-  return { ...got, head: gapA > END_GAP ? [[a.lng, a.lat], first] : null, tail: gapB > END_GAP ? [last, [b.lng, b.lat]] : null };
+  return { ...got, head: gapA > GAP ? [[a.lng, a.lat], first] : null, tail: gapB > GAP ? [last, [b.lng, b.lat]] : null,
+    offRoad: gapA > END_GAP || gapB > END_GAP };
 }
 
 /** A route's legs: [{ a, b, line, meters, routed, head, tail }]; line is the router's when it has
@@ -152,7 +156,7 @@ export function routeLegs(route, router) {
     const head = got.head || null, tail = got.tail || null;
     let meters = got.meters;
     if (meters === null) meters = got.line.reduce((t, c, j) => (j ? t + straight(ll(got.line[j - 1]), ll(c)) : 0), 0);
-    out.push({ a, b, line: got.line, meters: meters + length(head) + length(tail), routed: true, head, tail });
+    out.push({ a, b, line: got.line, meters: meters + length(head) + length(tail), routed: true, head, tail, offRoad: !!got.offRoad });
   }
   return out;
 }
@@ -165,7 +169,7 @@ export function routeStats(route, router) {
   const mph = route.speedMph || 2;
   const routed = !!profileOf(route.routing);
   return { meters, seconds: meters / (mph * 1609.344 / 3600), straightLegs: routed ? legs.filter((l) => !l.routed).length : 0,
-    offRoad: routed ? legs.filter((l) => l.head || l.tail).length : 0 };
+    offRoad: routed ? legs.filter((l) => l.offRoad).length : 0 };
 }
 
 /** "45 min", "2 h 05 min". */

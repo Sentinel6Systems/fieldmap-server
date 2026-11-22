@@ -251,6 +251,9 @@ test("routes: a line the router ends on the road short of its point gets a dashe
   const got = ends({ line, meters: 6400 }, a, b);
   assert.equal(got.head, null, "the start is on the line");
   assert.deepEqual(got.tail, [[10.08, 45], [10.08, 45.009]]);
-  assert.equal(ends({ line: [[10, 45], [10.0805, 45.009]], meters: 1 }, a, b).tail, null, "within 100 m: no dashed piece");
+  assert.equal(got.offRoad, true);
+  const close = ends({ line: [[10, 45], [10.0805, 45.009]], meters: 1 }, a, b);
+  assert.deepEqual([!!close.tail, close.offRoad], [true, false], "40 m short: a dashed piece, not off the road");
+  assert.equal(ends({ line: [[10, 45], [10.08001, 45.009]], meters: 1 }, a, b).tail, null, "a meter short: none");
   assert.equal(ends({ line: [[10, 45], [10.08, 45.2]], meters: 1 }, a, { lng: 10.08, lat: 45.4 }), null, "more than 15 km off: no way");
 });
