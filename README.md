@@ -6,14 +6,16 @@ internet.
 
 - **Maps** in the browser, in six styles (light and dark topographic, OpenStreetMap, two print styles and a
   transparent overlay), as vector tiles for web and mobile apps and raster tiles for ATAK, WinTAK and iTAK.
-- **Print Map**: exact-scale sheets (1:12k to 1:100k, Letter to Arch C) and binder-ready atlases, with an
+- **One shared map** in the browser: markers, arrows, shapes and routes along roads and trails, shared live with
+  the devices on the server, plus **Messages** between them.
+- **Print**: exact-scale sheets (1:12k to 1:100k, Letter to Arch C) and binder-ready atlases, with an
   MGRS/USNG grid, declination, markers, arrows, shapes and a legend page.
 - **Terrain tools**: viewshed and VHF/UHF radio line of sight from the server's elevation data, on screen and on paper.
 - **Map Builder**: choose regions on a world map, check the disk space and time, and build from the browser.
   OpenStreetMap, Copernicus 30 m elevation worldwide, and USGS 10 m and 1 m elevation and US federal map data
   in the United States.
-- **The Fieldmap Android app**, installed straight from the server: offline areas, GPS, markers, and location
-  sharing between devices.
+- **The Fieldmap Android app**, installed straight from the server: offline areas, GPS, markers, offline routes,
+  track recording, location sharing and messages, also over Meshtastic mesh radios.
 - **Remote access** for paired devices, through a port on your router or through NetBird, disabled until you enable
   it. The server has its own firewall.
 
@@ -43,7 +45,7 @@ call it as one step) uses `sudo ./scripts/install-nginx.sh` instead (also in [pi
 1. Open `http://<server-host>/` in a browser on the local network.
 2. Go to **Admin** › **Map Builder**, choose a small region, and build it to check that everything works. Then
    build the regions you need.
-3. Open **Maps** to view them, and **Print Map** to print.
+3. Open **Map** to view them, draw and plan routes; its **Print** tab prints.
 4. To use the Fieldmap app, open **Admin** › **Devices** on the device and install it from there.
 
 ## Documentation

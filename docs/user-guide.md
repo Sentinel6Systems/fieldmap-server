@@ -11,24 +11,26 @@ with the Fieldmap app. The **local network** is the Wi-Fi or wired network the s
 
 1. [Set up the server](#set-up-the-server)
 2. [Build maps](#build-maps)
-3. [View maps and use them in other apps](#view-maps-and-use-them-in-other-apps)
-4. [Print a map](#print-a-map)
-5. [Use the terrain tools](#use-the-terrain-tools)
-6. [Install the app and pair a device](#install-the-app-and-pair-a-device)
-7. [Location sharing](#location-sharing)
-8. [Remote access](#remote-access)
-9. [Update the server](#update-the-server)
-10. [Back up the server](#back-up-the-server)
-11. [Troubleshooting](#troubleshooting)
+3. [The map](#the-map)
+4. [Markers, arrows and shapes](#markers-arrows-and-shapes)
+5. [Routes](#routes)
+6. [Print a map](#print-a-map)
+7. [Use the terrain tools](#use-the-terrain-tools)
+8. [Install the app and pair a device](#install-the-app-and-pair-a-device)
+9. [Location sharing](#location-sharing)
+10. [Messages](#messages)
+11. [Remote access](#remote-access)
+12. [Update the server](#update-the-server)
+13. [Back up the server](#back-up-the-server)
+14. [Troubleshooting](#troubleshooting)
 
 ## Set up the server
 
-You need a Linux machine (x86-64 or ARM64) with Docker and the Compose plugin, plus `bash`, `git`, `curl` and
-`python3`. Building maps on the server itself also needs plenty of RAM and disk space (see
-[Disk space](reference.md#disk-space)). A Raspberry Pi 4 can serve maps but is too small to build them: see
-[pi/README.md](../pi/README.md).
+You need a Linux machine (x86-64 or ARM64): Debian 13, Ubuntu 24.04 or Raspberry Pi OS (64-bit). Building maps on
+the server itself also needs plenty of RAM and disk space (see [Disk space](reference.md#disk-space)). A Raspberry
+Pi can serve maps but is too small to build them: see [pi/README.md](../pi/README.md).
 
-1. Get the code and run the installer:
+1. Get the code and run the installer as yourself, without `sudo`:
 
    ```bash
    git clone https://github.com/Sentinel6Systems/fieldmap-server.git
@@ -37,16 +39,16 @@ You need a Linux machine (x86-64 or ARM64) with Docker and the Compose plugin, p
    ./scripts/install.sh
    ```
 
-   The installer asks for `sudo` to set up the services. It starts everything, keeps it running across reboots,
-   and prints the addresses of the pages at the end.
+   The installer installs Docker if it is missing, starts everything, keeps it running across reboots, checks the
+   pages, and prints their addresses at the end. It asks for your password when it needs to change the system.
 2. On any computer or device on the local network, open `http://<server-host>/` in a browser.
 
 Every page has the same header:
 
 | Tab | What it is for |
 |---|---|
-| **Maps** | View the maps. |
-| **Print Map** | Print map sheets or atlases, or save them as PDF. |
+| **Map** | The map: view, draw, plan routes, share, print. |
+| **Messages** | Short messages with the devices on this server. Shows the number of unread messages. |
 | **User Guide** | This guide, on the server. |
 | **Admin** | Pages for whoever runs the server: **Remote Access**, **Devices** and **Map Builder**. |
 
@@ -54,7 +56,7 @@ A tab marked **Unavailable** means that page is installed but its service is sto
 [Troubleshooting](#troubleshooting)). If the owner set an **Access Code** (`ADMIN_PIN` and `REMOTE_PIN`, see the
 [reference](reference.md)), the Admin pages ask for it.
 
-A new server has no maps yet, so the Maps page shows **No Maps Installed**. Build some next.
+A new server has no maps yet, so the map shows **No Maps Installed**. Build some next.
 
 ## Build maps
 
@@ -66,9 +68,9 @@ After that, the maps work with no internet.
    it; click it again to remove it. For a large region you can take all of it or only some parts. You can also use
    **Search Regions**.
 3. **Select Layers.** Each line is one layer: the base map, contour lines, hillshade, elevation data (needed for the
-   terrain tools), extra map features, and US government data for regions in the United States. Press **?** beside
-   a line to read about it. Under **Terrain Resolution**, choose **Standard (All Regions)**, or **High (United
-   States)** for the sharper USGS terrain.
+   terrain tools), extra map features, **Routing Data** (needed for routes along roads and trails), and US
+   government data for regions in the United States. Press **?** beside a line to read about it. Under **Terrain
+   Resolution**, choose **Standard (All Regions)**, or **High (United States)** for the sharper USGS terrain.
 4. **Storage and Build Time.** The page compares the space the build needs with the free space on the server. It
    won't start a build that doesn't fit.
 5. **Build.** Read **Before You Start** and press **Start Build**, then **Start Build** again in **Confirm Build**.
@@ -92,15 +94,29 @@ docker restart tileserver
 
 See [Build scripts](reference.md#build-scripts) for region files and the single-step scripts.
 
-## View maps and use them in other apps
+## The map
 
-Open **Maps**. Drag to move the map, scroll or pinch to zoom, and right-drag or turn two fingers to rotate or tilt
-it. The compass button puts north back at the top. Pick a style in **Map Style**, for example a light map for the
-day or a dark one for the night. The address in the browser keeps the place and the zoom, so you can bookmark it.
+Open **Map**. Drag to move the map, scroll or pinch to zoom, and right-drag or turn two fingers to rotate or tilt
+it. The compass button puts north back at the top. The address in the browser keeps the place and the zoom, so you
+can bookmark it.
+
+The tool bar along the map has **Add Marker**, **Add Arrow**, **New Route**, **Circle**, **Rectangle**,
+**Polygon**, **Terrain Analysis** (when the server has elevation data) and **Set My Location** (while location
+sharing is on). On a phone it shows icons only. While a tool is active, a hint above the map says what to tap next;
+Esc cancels the tool.
+
+The panel beside the map has three tabs:
+
+- **Layers**: **Map Style** (for example a light map for the day or a dark one for the night), the **Shared**
+  switches **Device Locations** and **Shared Markers**, and **Map Features**, which switches parts of the map on or
+  off (woodland, roads, contour lines, grid lines and so on). **Show All Layers** switches everything back on.
+  Changes apply on screen and on paper.
+- **Markers**: your markers, arrows, routes and shapes (next sections).
+- **Print**: print sheets and atlases (see [Print a map](#print-a-map)).
 
 **ATAK, WinTAK, iTAK and other map apps** can use the server's maps as an online tile source:
 
-1. On the Maps page, press **Tile URLs**.
+1. In **Layers**, press **Tile URLs**.
 2. Press **Copy** beside the style you want.
 3. In the other app, add a custom map source (often called "XYZ", "custom map" or "map source") and paste the
    address.
@@ -108,45 +124,71 @@ day or a dark one for the night. The address in the browser keeps the place and 
 The addresses work for devices that reach the server the same way your browser does. See
 [Tile addresses](reference.md#tile-addresses-for-tak-and-other-apps) for the address format.
 
+## Markers, arrows and shapes
+
+1. Open the **Markers** tab and pick a color in **Default Color**.
+2. Press a tool and follow the hint:
+   - **Add Marker**: tap the map. Markers are named P1, P2, and so on.
+   - **Add Arrow**: tap the start, then the end.
+   - **Circle**: tap the center, then the edge. You can type an exact **Radius** in its row later.
+   - **Rectangle**: tap one corner, then the opposite corner.
+   - **Polygon**: tap each corner. To finish, tap the first corner, press Enter, or press **Finish Shape**.
+3. Drag an item (or an arrow's end) to move it.
+
+Each item has a row in **Markers & Drawings** with its name, **Show on Map**, a delete button and **Share with All
+Devices**. **Units** switches between feet and miles or meters and kilometers. **Show Measurements** puts lengths
+and areas on the map. **Clear All** clears this browser's items; shared items stay.
+
+Items you don't share are kept only in this browser. To keep them, or move them to another computer, use **Export
+Drawings** and **Import Drawings**. The file is GeoJSON, which other map software and the Fieldmap app can also
+open. Shared items are kept on the server (see [Location sharing](#location-sharing)).
+
+## Routes
+
+A route is a line through up to 30 points, along roads and trails or straight between the points.
+
+1. Press **New Route** and tap the points of the route in order.
+2. To finish, tap the last point again, press Enter, or press **Finish Route**. The route is named R1, R2, and so on.
+3. In the route's row, choose the **Route Type** (**Driving**, **Walking** or **Straight Line**) and the **Speed**
+   used for the time estimate.
+
+Drag a point to move it. The row shows the distance and the time. Legs along roads and trails are solid lines. A
+leg with no way found is drawn straight and dashed, and the row says how many. A point away from the road gets a
+line along the road to the nearest place, then a dashed straight line to the point.
+
+Routes along roads and trails need the **Routing Data** layer (see [Build maps](#build-maps)). The server works
+out one leg at a time, from one point to the next.
+
+> **Tip: use more points, closer together.** Each leg between two points is worked out on its own, with a time
+> limit (about 30 seconds). A short leg is quick to find and follows the road you mean. A very long leg has far
+> more roads to search: it can run out of time and come out as a dashed straight line, or take a different road
+> than you intended. Put a point at each turn you care about and every few miles along the way, rather than a few
+> points far apart. The route is then quicker to work out, easier to fix by moving one point, and comes out the
+> same when another device recreates it from the shared points.
+
 ## Print a map
 
-Open **Print Map**. The panel beside the map holds the settings; the blue outline on the map is the sheet.
+Open the **Print** tab in the map's panel. The blue outline on the map is the sheet. (The old address
+`/mapprinter/` opens this tab.)
 
 ### Print one sheet
 
-1. Choose **Map Style**, **Scale**, **Paper** and **Orientation**.
-2. Drag the blue outline to the area you want, or tap the map to move the sheet there.
+1. Choose the **Map Style** (in **Layers**), then **Scale**, **Paper** and **Orientation**.
+2. Drag the blue outline to the area you want, or tap the map outside it to move the sheet there.
 3. Type a **Title** if you want one, and choose **Quality**: **Standard (200 dpi)** or **High (300 dpi)**, which is
    sharper but slower.
 4. Press **Print** and choose your printer, or press **Download PDF** to save a file.
 
 **Center Sheet Here** moves the sheet to the middle of the screen; **Fit Map to Sheet** zooms the screen to the
-sheet. **Ground Area**, **Grid** and **Center** describe the sheet. Each sheet is at exact scale, with an MGRS/USNG
-grid, scale bars and a declination diagram.
+sheet. **Ground Area** shows the size of the ground on the sheet. Each sheet is at exact scale, with an MGRS/USNG
+grid, scale bars and a declination diagram. **Include Legend Page** adds a page with the map symbols and a list of
+your items.
 
 ### Print an atlas
 
 An atlas is a set of overlapping sheets with a cover and an index page. In **Pages**, choose a size such as
 **Atlas 2 × 2**. For a ring binder, tick **Binder Margin**. Use a laptop or desktop for atlases: the browser draws
 every sheet itself and needs a lot of memory.
-
-### Choose what the map shows
-
-Open **Layers** to switch parts of the map on or off (woodland, roads, contour lines, grid lines and so on), or to
-print in black and white. Changes apply on screen and on paper. **Show All Layers** switches everything back on.
-
-### Markers and drawings
-
-1. Pick a color in **Default Color**.
-2. Press **Add Marker**, **Add Arrow**, **Circle**, **Rectangle** or **Polygon**, and follow the hint under the
-   buttons. For a polygon, tap each corner, then press **Finish Shape**.
-
-Name or remove items in the **Markers**, **Arrows** and **Shapes** lists; **Clear All** removes everything. **Units**
-switches between feet and miles or meters and kilometers. **Show Measurements** puts lengths and areas on the map.
-**Include Legend Page** adds a page with the map symbols and a list of your items.
-
-Only this browser keeps your drawings. To keep them, or move them to another computer, use **Export Drawings** and
-**Import Drawings**. The file is GeoJSON, which other map software and the Fieldmap app can also open.
 
 ### Magnetic model
 
@@ -156,8 +198,9 @@ an internet connection on the server.
 
 ## Use the terrain tools
 
-If the server has elevation data (the elevation layer in the Map Builder), **Print Map** has a **Terrain** section.
-Everything runs in the browser, with no internet.
+If the server has elevation data (the elevation layer in the Map Builder), the tool bar has **Terrain Analysis**.
+It opens in the panel; **Close** returns to the tabs, and **Analysis Overlay** shows or hides the result. Everything
+runs in the browser, with no internet.
 
 1. Under **Analysis**, choose **Viewshed** (what can be seen from a point) or **Radio Coverage** (where a VHF or UHF
    radio can probably reach).
@@ -217,20 +260,47 @@ example if it is lost.
 
 ## Location sharing
 
-Devices can see each other's locations on the map and share markers, through the server. Location sharing is
-disabled until the server owner enables it, and then each person starts sharing in their own app.
+Devices and browsers on the server can see each other's locations on the map and share markers, arrows, routes and
+shapes. Location sharing is disabled until the server owner enables it, and then each person takes part from their
+own app or browser.
 
-1. On the server: **Admin** › **Devices**, then **Enable** under **Location Sharing**. **Active Devices** lists who
-   is sharing now.
-2. In the app: **Menu** › **Location Sharing**, enter a **Display Name**, and press **Start Sharing**.
-3. To share a marker, tap it and tick **Share with All Devices**.
+1. **On the server:** **Admin** › **Devices**, then **Enable** under **Location Sharing**. **Active Devices** lists
+   who is sharing now.
+2. **In the app:** **Menu** › **Location Sharing**, enter a **Display Name**, and press **Start Sharing**.
+3. **In a browser:** open **Messages**, enter a **Display Name**, then press **Set My Location** on the map's tool
+   bar and tap where you are (drag the diamond to move it). **Stop Sharing** on the Messages page takes it off.
+4. **To share an item,** tick **Share with All Devices** in its row (on the map) or its panel (in the app). While
+   location sharing is on, new items you draw in the browser are shared straight away. Unticking takes the item
+   off all devices and keeps it in your browser; deleting a shared item removes it everywhere.
+
+In **Layers**, the **Device Locations** and **Shared Markers** switches show or hide what others share.
 
 On the local network every device can take part; from the internet, only paired devices with remote connectivity
 enabled. The server does not store locations: a location disappears about two minutes after a device stops
-sending. Shared markers stay on the server until someone deletes them.
+sending. Shared items stay on the server until someone deletes them.
+
+**Mesh radio channel.** Devices with a Meshtastic radio can keep sharing locations, markers and messages over the
+radio when they can't reach the server. The server gives them a private channel: under **Location Sharing** on the
+Devices page, **Mesh Radio Channel** shows when its key was created. Devices pick it up when they connect to the
+server. If a radio is lost, press **New Channel Key**; each device then has to connect to the server once to get
+the new key before it can share over the mesh again.
 
 > **Caution:** There is no sign-in. While location sharing is enabled, anyone on the local network can see the
 > shared locations. Don't enable it on a network that strangers can join.
+
+## Messages
+
+Short text messages between the devices and browsers on this server. They need location sharing enabled on the
+server.
+
+1. Open **Messages** in the header. Enter a **Display Name** the first time.
+2. Choose the conversation: **Group (Private)** goes to everybody on this server; or pick one active device for a
+   direct message.
+3. Type up to 140 characters in **Message** and press **Send** (or Enter).
+
+Each message shows its status: **Waiting**, **Not Sent**, **Sent (Server)**, **Delivered**, or for the group
+**Delivered to N**. The server keeps a message until it is delivered; group messages and messages that nobody
+picks up are kept for a week. In the app, messages also go over the mesh radio when the server can't be reached.
 
 ## Remote access
 
@@ -372,7 +442,8 @@ Keep a copy of these in `<repo-dir>/data/`:
 |---|---|---|
 | `*.mbtiles` | The maps | Build them again |
 | `remote/` | The server's certificates, the paired devices and the NetBird setup key | Pair every device again |
-| `share/` | Shared markers | Shared markers are gone |
+| `share/` | Shared items, waiting messages and the mesh radio channel key | Shared items and messages are gone; devices pick up a new channel key |
+| `routing/` | Routing data | Build it again |
 | `admin/` | The Map Builder's last choices | Choose again |
 
 Also keep `.env`, and keep the server's address and any Access Code on paper.
@@ -387,7 +458,9 @@ Also keep `.env`, and keep the server's address and any Access Code on paper.
 | **Remote Access** or **Devices** won't open. | These pages only open from the local network. |
 | **Print** does nothing. | The browser blocked the print window. Use **Download PDF** and print the file. |
 | An atlas stops or the browser closes. | Use a laptop or desktop, a smaller atlas, or **Standard** quality. |
-| The drawings on Print Map are gone. | Only the browser that made them keeps them. Use the same browser, or import your exported file. |
+| My drawings on the map are gone. | Items you didn't share are kept only in the browser that made them. Use the same browser, or import your exported file. |
+| A route has dashed straight legs. | No way was found for those legs. Check the server has **Routing Data** for the area, and add points closer together (see [Routes](#routes)). |
+| **Messages** says the server has no messages, or sharing is disabled. | Run the installer again after an update, and enable Location Sharing on the Devices page. |
 | A build stops with a disk space message. | Free some space, or select fewer regions or layers. Starting the same build again resumes it. |
 | The app can't pair. | Enable Remote Connectivity, press **Start Pairing**, then pair within 10 minutes. |
 | A paired device can't connect from the internet. | Check Remote Connectivity is enabled and read **Connectivity Status**. Bring the device to the local network once so it learns the server's current address and connectivity method. |
@@ -395,6 +468,6 @@ Also keep `.env`, and keep the server's address and any Access Code on paper.
 | **Connectivity Status** mentions a shared address (Starlink, mobile internet). | The router can't be reached from the internet. Use NetBird VPN. |
 | NetBird stays on "starting" for more than 10 minutes. | Check the server has internet. Press **Change Setup Key**, then **Connect**. |
 | NetBird is connected but a device can't get in. | Bring the device to the local network once with the app open. If the setup key expired, create a new one. |
-| Nobody sees my location. | Location Sharing must be enabled on the server and started in the app, and the others must start sharing too. |
+| Nobody sees my location. | Location Sharing must be enabled on the server and started in the app (or set with **Set My Location** in a browser), and the others must take part too. |
 
 `./scripts/remote.sh status` and `journalctl -u fieldmap-remote` show what the router and NetBird answered.

@@ -70,13 +70,15 @@
     <ol class="toc">
       <li><a href="#about">About the server</a></li>
       <li><a href="#open">Open the pages</a></li>
-      <li><a href="#maps">View the maps</a></li>
+      <li><a href="#maps">The map</a></li>
+      <li><a href="#drawings">Markers, arrows and shapes</a></li>
+      <li><a href="#routes">Routes</a></li>
       <li><a href="#print">Print a map</a></li>
       <li><a href="#terrain">Terrain tools</a></li>
       <li><a href="#other-apps">Use the maps in ATAK and other apps</a></li>
       <li><a href="#app">The Fieldmap app</a></li>
       <li><a href="#admin">Admin: Map Builder</a></li>
-      <li><a href="#optional">Optional: remote access and location sharing</a></li>
+      <li><a href="#optional">Optional: remote access, location sharing and messages</a></li>
       <li><a href="#care">Care and backup</a></li>
       <li><a href="#problems">Troubleshooting</a></li>
       <li><a href="#words">Glossary</a></li>
@@ -91,15 +93,15 @@
     <p>This server stores maps and serves them to the computers, phones and tablets on its local network. It does
       not need the internet to do this.</p>
     <ul>
-      <li>View the maps in a browser.</li>
+      <li>View the maps in a browser, draw on them and plan routes.</li>
       <li>Print paper maps and atlases, or save them as PDF files.</li>
       <li>Check what can be seen, or where a radio can reach, from a point.</li>
       <li>Use the maps offline in the Fieldmap app on Android phones and tablets.</li>
       <li>Use the maps in ATAK, WinTAK, iTAK and other map apps.</li>
     </ul>
     <p>Two optional features are disabled until the owner enables them: <b>remote access</b>, which lets paired
-      devices use the server over the internet, and <b>location sharing</b>, which shows the devices' locations to
-      each other. See <a href="#optional">section 9</a>.</p>
+      devices use the server over the internet, and <b>location sharing</b>, which shows everyone's locations, shared
+      markers and routes on the map and carries <b>messages</b>. See <a href="#optional">section 11</a>.</p>
     <p>In this guide, a <b>device</b> is a phone or tablet with the Fieldmap app, and the <b>local network</b> is the
       Wi-Fi or wired network the server is on. The <a href="#words">glossary</a> explains other terms.</p>
   </section>
@@ -120,8 +122,9 @@
     <p>Every page has the same header. The tab of the open page is underlined.</p>
     <table>
       <tr><th>Tab</th><th>What it is for</th></tr>
-      <tr><td><b>Maps</b></td><td>View the maps.</td></tr>
-      <tr><td><b>Print Map</b></td><td>Print map sheets and atlases, or save them as PDF.</td></tr>
+      <tr><td><b>Map</b></td><td>The map: view, draw, plan routes, share and print.</td></tr>
+      <tr><td><b>Messages</b></td><td>Short messages with the devices on this server. A number shows unread
+        messages.</td></tr>
       <tr><td><b>User Guide</b></td><td>This guide.</td></tr>
       <tr><td><b>Admin</b></td><td>Pages for whoever runs the server: <b>Remote Access</b>, <b>Devices</b> and
         <b>Map Builder</b>, in a second row under the header.</td></tr>
@@ -132,8 +135,8 @@
 
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="maps">
-    <h2>3. View the maps</h2>
-    <p>Open the <b>Maps</b> tab.</p>
+    <h2>3. The map</h2>
+    <p>Open the <b>Map</b> tab.</p>
     <table>
       <tr><th>To</th><th>With a mouse</th><th>On a touch screen</th></tr>
       <tr><td>Move the map</td><td>Drag.</td><td>Drag with one finger.</td></tr>
@@ -142,53 +145,86 @@
         down to tilt.</td></tr>
       <tr><td>North up again</td><td colspan="2">Press the compass button under <b>+</b> and <b>−</b>.</td></tr>
     </table>
-    <p>Pick a style in <b>Map Style</b> at the top left, for example a light map for the day and a dark one for the
-      night. The browser remembers your choice.</p>
-    <p>The address in the address bar keeps the place and zoom, so you can bookmark a place. <b>Print Map</b> opens
-      at the same place.</p>
+    <p>The <b>tool bar</b> along the map has <b>Add Marker</b>, <b>Add Arrow</b>, <b>New Route</b>, <b>Circle</b>,
+      <b>Rectangle</b>, <b>Polygon</b>, <b>Terrain Analysis</b> (when the server has elevation data) and <b>Set My
+      Location</b> (while location sharing is on). On a phone it shows icons only. While a tool is active, a hint
+      above the map says what to tap next. Esc cancels the tool.</p>
+    <p>The panel beside the map has three tabs. Press <b>▾</b> at the top of the panel to fold it away.</p>
+    <ul>
+      <li><b>Layers</b>: <b>Map Style</b> (for example a light map for the day and a dark one for the night), the
+        <b>Device Locations</b> and <b>Shared Markers</b> switches, and <b>Map Features</b>, which shows or hides
+        parts of the map such as contour lines or buildings. <b>Show All Layers</b> shows everything again.</li>
+      <li><b>Markers</b>: your markers, arrows, routes and shapes.</li>
+      <li><b>Print</b>: print sheets and atlases.</li>
+    </ul>
+    <p>The address in the address bar keeps the place and zoom, so you can bookmark a place.</p>
     <div class="note"><b>Note</b>The map only covers the regions this server has. Elsewhere it is empty, or shows
       only large features of the world.</div>
   </section>
 
   <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="drawings">
+    <h2>4. Markers, arrows and shapes</h2>
+    <ol>
+      <li>Open the <b>Markers</b> tab and pick a color in <b>Default Color</b>.</li>
+      <li>Press <b>Add Marker</b>, <b>Add Arrow</b>, <b>Circle</b>, <b>Rectangle</b> or <b>Polygon</b>.</li>
+      <li>Follow the hint. A marker is one tap; an arrow is its start, then its end; a circle is its center, then its
+        edge; a rectangle is two opposite corners. For a polygon, tap each corner, then tap the first corner again,
+        press Enter, or press <b>Finish Shape</b>.</li>
+    </ol>
+    <p>Drag an item to move it. Each item has a row in <b>Markers &amp; Drawings</b> with its name, <b>Show on
+      Map</b>, a delete button and <b>Share with All Devices</b>. <b>Units</b> switches between feet and miles or
+      meters and kilometers. <b>Show Measurements</b> puts lengths and areas on the map. <b>Clear All</b> clears
+      this browser's items; shared items stay.</p>
+    <div class="caution"><b>Caution</b>Items you don't share are kept only in this browser. Use <b>Export
+      Drawings</b> to save them to a file, and <b>Import Drawings</b> to open the file again, here or on another
+      computer.</div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="routes">
+    <h2>5. Routes</h2>
+    <p>A route is a line through up to 30 points, along roads and trails or straight between the points.</p>
+    <ol>
+      <li>Press <b>New Route</b> and tap the points of the route in order.</li>
+      <li>To finish, tap the last point again, press Enter, or press <b>Finish Route</b>.</li>
+      <li>In the route's row, choose the <b>Route Type</b> (<b>Driving</b>, <b>Walking</b> or <b>Straight
+        Line</b>) and the <b>Speed</b> for the time estimate.</li>
+    </ol>
+    <p>Drag a point to move it. The row shows the distance and the time. Legs along roads and trails are solid. A leg
+      with no way found is straight and dashed. A point away from the road gets a line along the road to the nearest
+      place, then a dashed straight line to the point. Routes along roads need the <b>Routing Data</b> layer on the
+      server.</p>
+    <div class="note"><b>Tip: use more points, closer together</b>Each leg between two points is worked out on its
+      own, with a time limit. A short leg is found quickly and follows the road you mean. A very long leg has far
+      more roads to search: it can run out of time and come out dashed and straight, or take a road you did not
+      intend. Put a point at each turn you care about and every few miles along the way, not a few points far apart.
+      The route is then quicker to work out, easier to fix by moving one point, and comes out the same when another
+      device recreates it from the shared points.</div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
   <section class="card" id="print">
-    <h2>4. Print a map</h2>
-    <p>Open the <b>Print Map</b> tab. The panel beside the map holds the settings, and the blue outline on the map
-      is the sheet. Press <b>▾</b> at the top of the panel to fold it away.</p>
+    <h2>6. Print a map</h2>
+    <p>Open the <b>Print</b> tab in the map's panel. The blue rectangle on the map is the sheet.</p>
 
     <h3>Print one sheet</h3>
     <ol>
-      <li>Choose <b>Map Style</b>, <b>Scale</b>, <b>Paper</b> and <b>Orientation</b>.</li>
-      <li>Drag the blue outline to the area you want, or tap the map to move the sheet there.</li>
+      <li>Choose the <b>Map Style</b> in <b>Layers</b>, then <b>Scale</b>, <b>Paper</b> and <b>Orientation</b>.</li>
+      <li>Drag the blue rectangle to the area you want, or tap the map outside it to move the sheet there.</li>
       <li>Type a <b>Title</b> if you want one.</li>
       <li>Choose <b>Quality</b>: <b>Standard (200 dpi)</b>, or <b>High (300 dpi)</b> for sharper lines (slower).</li>
       <li>Press <b>Print</b> and choose your printer, or press <b>Download PDF</b> to save a file.</li>
     </ol>
     <p><b>Center Sheet Here</b> moves the sheet to the middle of the screen. <b>Fit Map to Sheet</b> zooms the screen
-      to the sheet. <b>Ground Area</b>, <b>Grid</b> and <b>Center</b> describe the sheet.</p>
+      to the sheet. <b>Ground Area</b> shows the size of the ground on the sheet. <b>Include Legend Page</b> adds a
+      page with the map symbols and a list of your items.</p>
 
     <h3>Print an atlas</h3>
     <p>An atlas is a set of overlapping sheets with a cover and an index page. In <b>Pages</b>, choose a size such
       as <b>Atlas 2 × 2</b>. For a ring binder, tick <b>Binder Margin</b>.</p>
     <div class="caution"><b>Caution</b>Use a laptop or desktop computer for an atlas. The browser draws every sheet
       itself, and a phone or tablet can run out of memory.</div>
-
-    <h3>Choose what the map shows</h3>
-    <p>Open <b>Layers</b> to switch parts of the map on or off, such as contour lines or buildings, or to print in
-      black and white. Changes apply on screen and on paper. <b>Show All Layers</b> switches everything back on.</p>
-
-    <h3>Markers and drawings</h3>
-    <ol>
-      <li>Pick a color in <b>Default Color</b>.</li>
-      <li>Press <b>Add Marker</b>, <b>Add Arrow</b>, <b>Circle</b>, <b>Rectangle</b> or <b>Polygon</b>.</li>
-      <li>Follow the hint under the buttons. For a polygon, tap each corner, then press <b>Finish Shape</b>.</li>
-    </ol>
-    <p>Name or remove items in the <b>Markers</b>, <b>Arrows</b> and <b>Shapes</b> lists. <b>Clear All</b> removes
-      everything. <b>Units</b> switches between feet and miles or meters and kilometers. <b>Show Measurements</b>
-      puts lengths and areas on the map. <b>Include Legend Page</b> adds a page with the map symbols and a list of
-      your items.</p>
-    <div class="caution"><b>Caution</b>Only this browser keeps your drawings. Use <b>Export Drawings</b> to save them
-      to a file, and <b>Import Drawings</b> to open the file again, here or on another computer.</div>
 
     <h3>Magnetic model</h3>
     <p>Each sheet shows the angle between true, grid and magnetic north for the print date. When the magnetic model
@@ -198,8 +234,9 @@
 
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="terrain">
-    <h2>5. Terrain tools</h2>
-    <p>If the server has elevation data, <b>Print Map</b> has a <b>Terrain</b> section.</p>
+    <h2>7. Terrain tools</h2>
+    <p>If the server has elevation data, the tool bar has <b>Terrain Analysis</b>. It opens in the panel; <b>Close</b>
+      goes back, and <b>Analysis Overlay</b> shows or hides the result.</p>
     <ol>
       <li>Under <b>Analysis</b>, choose <b>Viewshed</b> (what can be seen from a point) or <b>Radio Coverage</b>
         (where a VHF or UHF radio can probably reach).</li>
@@ -218,9 +255,9 @@
 
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="other-apps">
-    <h2>6. Use the maps in ATAK and other apps</h2>
+    <h2>8. Use the maps in ATAK and other apps</h2>
     <ol>
-      <li>On the <b>Maps</b> page, press <b>Tile URLs</b>.</li>
+      <li>On the map, open <b>Layers</b> and press <b>Tile URLs</b>.</li>
       <li>Press <b>Copy</b> beside the map style you want.</li>
       <li>In the other app, add a custom map source and paste the address. Look for "map source", "custom map",
         "XYZ" or "URL" in its settings.</li>
@@ -230,9 +267,9 @@
 
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="app">
-    <h2>7. The Fieldmap app</h2>
+    <h2>9. The Fieldmap app</h2>
     <p>Fieldmap is an Android app for phones and tablets. It shows this server's maps and keeps offline areas on
-      the device for use away from the server.</p>
+      the device for use away from the server. Its own user guide covers it in detail.</p>
 
     <h3>Get the app</h3>
     <ol>
@@ -259,24 +296,35 @@
         Level</b> (lower is a smaller download with less detail).</li>
       <li>Check the size, then press <b>Download</b>. Keep the app open until it finishes.</li>
     </ol>
-    <p>When the server gets new maps, press <b>Menu</b>, <b>Offline Areas</b>, <b>Update All</b>.</p>
+    <p>The routing data for the area comes with it, so routes along roads work offline. When the server gets new
+      maps, press <b>Menu</b>, <b>Offline Areas</b>, <b>Update All</b>.</p>
 
-    <h3>Markers</h3>
+    <h3>Markers, arrows, routes and tracks</h3>
     <ul>
       <li>Touch and hold the map for 2 seconds to add a marker. Touch and hold the blue dot to mark your
-        location.</li>
-      <li>Tap a marker to change its <b>Name</b> and <b>Color</b>, or to <b>Move</b> or <b>Delete</b> it.</li>
-      <li><b>Menu</b>, <b>Markers</b>, <b>Export</b> saves them to a file, which <b>Import Drawings</b> on the
-        <b>Print Map</b> page can open. <b>Import</b> reads a file.</li>
+        location. Keep holding and drag to draw an arrow instead.</li>
+      <li>Tap an item to change its <b>Name</b> and <b>Color</b>, move it, or <b>Delete</b> it.</li>
+      <li>For a route, press <b>Menu</b>, <b>Markers</b>, <b>New Route</b>, tap the points, and press
+        <b>Done</b>. The same <a href="#routes">tip</a> applies: more points, closer together.</li>
+      <li><b>Menu</b>, <b>Track Recording</b> records the path you travel. Tracks are listed with the markers and
+        can be exported as GPX files.</li>
+      <li><b>Menu</b>, <b>Markers</b>, <b>Export</b> saves markers to a file, which <b>Import Drawings</b> on the
+        map can open. <b>Import</b> reads a file.</li>
     </ul>
 
+    <h3>Mesh radio</h3>
+    <p>With a Meshtastic radio paired in <b>Menu</b>, <b>Mesh Radio</b>, the app shares locations, markers, routes
+      and messages over the radio when it can't reach the server. It uses the server's private channel, which it
+      picks up when it connects to the server.</p>
+
     <h3>Exit the app</h3>
-    <p>Press <b>Menu</b>, <b>Exit</b> to stop the app completely.</p>
+    <p>Press <b>Menu</b>, <b>Exit</b> to stop the app completely, including sharing and messages in the
+      background.</p>
   </section>
 
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="admin">
-    <h2>8. Admin: Map Builder</h2>
+    <h2>10. Admin: Map Builder</h2>
     <p>The <b>Admin</b> pages are for whoever runs the server. If an <b>Access Code</b> is set, they ask for it
       first. Some servers don't have a Map Builder; their owner adds maps another way.</p>
     <p>The Map Builder downloads map data once. After that, the maps work without the internet.</p>
@@ -285,7 +333,8 @@
       <li><b>Select Regions.</b> Click a region on the map, such as a state, to select it. Click it again to remove
         it. You can also use <b>Search Regions</b>.</li>
       <li><b>Select Layers.</b> Each line is one layer of the map. Press <b>?</b> beside a line to read about it.
-        <b>Terrain Resolution</b> sets how detailed the terrain is.</li>
+        <b>Terrain Resolution</b> sets how detailed the terrain is. <b>Routing Data</b> is needed for routes along
+        roads and trails.</li>
       <li><b>Storage and Build Time.</b> Check that the build fits on the server.</li>
       <li><b>Build.</b> Read <b>Before You Start</b>, press <b>Start Build</b>, and confirm.</li>
     </ol>
@@ -299,13 +348,13 @@
 
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="optional">
-    <h2>9. Optional: remote access and location sharing</h2>
+    <h2>11. Optional: remote access, location sharing and messages</h2>
     <p>The server and the app work without these features. Both are disabled until you enable them.</p>
     <ul>
       <li><b>Remote access</b> lets paired devices use the server over the internet. The <b>Remote Connectivity
         Method</b> is <b>Port Forwarding</b> (a port on your router) or <b>NetBird VPN</b>, one at a time.</li>
-      <li><b>Location sharing</b> lets devices see each other's locations and share markers. It also works without
-        remote access, on the local network only.</li>
+      <li><b>Location sharing</b> lets devices and browsers see each other's locations, share markers, arrows,
+        routes and shapes, and send messages. It also works without remote access, on the local network only.</li>
     </ul>
 
     <h3 id="remote">Enable remote access</h3>
@@ -400,20 +449,41 @@
     <h3 id="admin-share">Enable location sharing</h3>
     <p>Press <b>Admin</b>, <b>Devices</b>, then <b>Enable</b> under <b>Location Sharing</b>. <b>Active Devices</b>
       lists who is sharing. <b>Disable</b> stops it for everyone.</p>
+    <p>Under it, <b>Mesh Radio Channel</b> is the private channel that devices with Meshtastic radios use when they
+      can't reach the server. If a radio is lost, press <b>New Channel Key</b>. Each device then has to connect to the
+      server once to get the new key before it can share over the mesh again.</p>
     <div class="caution"><b>Caution</b>There is no sign-in. Don't enable location sharing on a network that strangers
       can join: everyone on the local network can see the shared locations.</div>
 
     <h3 id="share">Share your location</h3>
+    <p>In the app:</p>
     <ol>
-      <li>In the app, press <b>Menu</b>, <b>Location Sharing</b>.</li>
+      <li>Press <b>Menu</b>, <b>Location Sharing</b>.</li>
       <li>Enter a <b>Display Name</b>. Others see this name.</li>
       <li>Press <b>Start Sharing</b>.</li>
     </ol>
     <p>Sharing continues in the background and with the screen off. Press <b>Stop Sharing</b>, or <b>Menu</b>,
-      <b>Exit</b>, to stop. To share a marker, tap it and tick <b>Share with All Devices</b>. Every device can then
-      change or delete it.</p>
+      <b>Exit</b>, to stop.</p>
+    <p>In a browser: open <b>Messages</b> and enter a <b>Display Name</b>. Then press <b>Set My Location</b> on the
+      map's tool bar and tap where you are. Drag the diamond to move it. <b>Stop Sharing</b> on the Messages page
+      takes it off.</p>
+
+    <h3>Share a marker, arrow, route or shape</h3>
+    <p>Tick <b>Share with All Devices</b> in the item's row on the map, or in its panel in the app. While location
+      sharing is on, new items you draw in the browser are shared straight away. Every device can then change or
+      delete a shared item. Unticking takes it off the other devices and keeps your copy.</p>
     <div class="note"><b>Note</b>The server does not store locations. A device that stops sharing leaves the others'
-      maps after about 2 minutes. Shared markers stay on the server.</div>
+      maps after about 2 minutes. Shared items stay on the server until someone deletes them.</div>
+
+    <h3 id="messages">Messages</h3>
+    <ol>
+      <li>Open the <b>Messages</b> tab (in the app: <b>Menu</b>, <b>Messages</b>).</li>
+      <li>Choose <b>Group (Private)</b> to write to everybody on this server, or one device for a direct
+        message.</li>
+      <li>Type up to 140 characters in <b>Message</b> and press <b>Send</b> or Enter.</li>
+    </ol>
+    <p>Each message shows <b>Waiting</b>, <b>Sent (Server)</b> or <b>Delivered</b>. The server keeps a message until
+      it is delivered, and a group message for a week. Messages need location sharing enabled on the server.</p>
 
     <h3>If remote access or location sharing doesn't work</h3>
     <table>
@@ -436,7 +506,7 @@
 
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="care">
-    <h2>10. Care and backup</h2>
+    <h2>12. Care and backup</h2>
     <ul>
       <li>Keep the server on while people use it.</li>
       <li>Keep it dry and cool, with air around it.</li>
@@ -452,7 +522,7 @@
 
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="problems">
-    <h2>11. Troubleshooting</h2>
+    <h2>13. Troubleshooting</h2>
     <table>
       <tr><th>Problem</th><th>What to do</th></tr>
       <tr><td>The pages don't open.</td><td>Check that you are on the local network, the address is right, and the
@@ -467,23 +537,26 @@
         print the file.</td></tr>
       <tr><td>An atlas stops, or the browser closes.</td><td>Use a laptop or desktop, a smaller atlas, or
         <b>Standard</b> quality.</td></tr>
-      <tr><td>The drawings on <b>Print Map</b> are gone.</td><td>Only the browser that made them keeps them. Use the
-        same browser, or import your exported file.</td></tr>
+      <tr><td>My drawings on the map are gone.</td><td>Items you didn't share are kept only in the browser that made
+        them. Use the same browser, or import your exported file.</td></tr>
+      <tr><td>A route has dashed straight legs.</td><td>No way was found for those legs. Check that the server has
+        <b>Routing Data</b> for the area, and add points closer together (see <a href="#routes">Routes</a>).</td></tr>
       <tr><td>The app shows <b>No Server</b>, or <b>Find Server</b> finds nothing.</td><td>Connect the device to the
         local network, then press <b>Find Server</b> or type the <b>Server Address</b>.</td></tr>
       <tr><td>The app shows <b>Offline</b>.</td><td>There is no connection to the server. The app shows only its
         offline areas. Go back to the local network.</td></tr>
       <tr><td>A page asks for an <b>Access Code</b>.</td><td>Whoever set up the server has it.</td></tr>
     </table>
-    <p>For remote access and location sharing, see <a href="#optional">section 9</a>.</p>
+    <p>For remote access and location sharing, see <a href="#optional">section 11</a>.</p>
   </section>
 
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="words">
-    <h2>12. Glossary</h2>
+    <h2>14. Glossary</h2>
     <table>
       <tr><th>Term</th><th>Meaning</th></tr>
       <tr><td>Access Code</td><td>A code the server owner can set. The Admin pages and pairing ask for it.</td></tr>
+      <tr><td>arrow</td><td>A line with a head, drawn from a start to an end point.</td></tr>
       <tr><td>atlas</td><td>A set of printed sheets that join together, with a cover and an index page.</td></tr>
       <tr><td>device</td><td>A phone or tablet with the Fieldmap app.</td></tr>
       <tr><td>GeoJSON</td><td>A file format for markers and drawings that many map apps can open.</td></tr>
@@ -492,12 +565,16 @@
       <tr><td>location sharing</td><td>Lets devices see each other's locations on the map, through the
         server.</td></tr>
       <tr><td>MGRS</td><td>A grid reference system of letters and numbers used on many field maps.</td></tr>
+      <tr><td>mesh radio</td><td>A Meshtastic radio paired with the app. Devices share over it when they can't reach
+        the server.</td></tr>
       <tr><td>NetBird VPN</td><td>A service that connects the server and the paired devices in a private network
         over the internet. Used for remote access where the router can't open a port.</td></tr>
       <tr><td>offline area</td><td>Part of the map that the app keeps on the device.</td></tr>
       <tr><td>pair</td><td>To allow a device to use the server over the internet.</td></tr>
       <tr><td>port forwarding</td><td>A router setting that passes connections from the internet to the
         server.</td></tr>
+      <tr><td>route</td><td>A line through up to 30 points, along roads and trails or straight. Each part between
+        two points is a leg.</td></tr>
       <tr><td>remote access</td><td>Using the server over the internet, away from the local network.</td></tr>
       <tr><td>setup key</td><td>A secret from the NetBird dashboard that lets the server and the paired devices join
         your NetBird network.</td></tr>
