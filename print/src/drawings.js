@@ -7,16 +7,21 @@
 // and as centre and radius in "fieldmap", for this tool. From other software:
 //   Point                       -> marker
 //   LineString of two points    -> arrow (first point to the second)
+//   LineString of 3 to 30 points -> route with straight legs (the app's routes keep their
+//                                  points and Route Type in "fieldmap", as written here)
 //   Polygon                     -> polygon (the outer ring; holes are dropped)
 // Multi* geometries are split into their parts. Anything else is skipped and counted.
 import { shapeRing } from "./shapes.js";
 
 export const FORMAT = "fieldmap-drawings";
-const KINDS = ["marker", "arrow", "circle", "rect", "polygon"];
+const KINDS = ["marker", "arrow", "circle", "rect", "polygon", "route"];
+const ROUTINGS = ["driving", "walking", "straight"];
+const SPEEDS = [2, 4, 10, 15, 25, 45, 60];
+const MAX_ROUTE_POINTS = 30;
 const MAX_LABEL = 30;                      // as the name fields in the panel
 
 /** A FeatureCollection of the items, ready for JSON.stringify. */
-export function toGeoJSON(markers, arrows, shapes, extra = {}) {
+export function toGeoJSON(markers, arrows, shapes, extra = {}, routes = []) {
   const features = [];
   const props = (it, kind, more = {}) => ({ name: it.label || "", stroke: it.color, "marker-color": it.color,
     fieldmap: { kind, label: it.label || "", color: it.color, ...more } });
@@ -26,6 +31,11 @@ export function toGeoJSON(markers, arrows, shapes, extra = {}) {
   for (const a of arrows) {
     features.push({ type: "Feature", geometry: { type: "LineString", coordinates: [[a.a.lng, a.a.lat], [a.b.lng, a.b.lat]] },
       properties: props(a, "arrow") });
+  }
+  for (const r of routes) {
+    const pts = r.points.map((p) => [p.lng, p.lat]);
+    features.push({ type: "Feature", geometry: { type: "LineString", coordinates: pts },
+      properties: props(r, "route", { waypoints: pts, routing: r.routing, speedMph: r.speedMph }) });
   }
   for (const s of shapes) {
     const more = s.type === "circle" ? { center: s.center, radius: s.radius, unit: s.unit } : { points: s.points };
@@ -44,7 +54,7 @@ const point = (p) => (p && isNum(p.lng) && isNum(p.lat) ? lngLat([p.lng, p.lat])
 const colour = (c, fallback) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : fallback);
 const text = (...vals) => String(vals.find((v) => typeof v === "string" && v.trim()) || "").trim().slice(0, MAX_LABEL);
 
-/** Parse the text of a file. Returns { markers, arrows, shapes, skipped } with items that have
+/** Parse the text of a file. Returns { markers, arrows, shapes, routes, skipped } with items that have
  *  no id yet; throws an Error with a plain message when the file cannot be read at all.
  *  defaultColor: for items from other software that carry no colour. */
 export function fromGeoJSON(textOrObject, defaultColor) {
@@ -56,7 +66,7 @@ export function fromGeoJSON(textOrObject, defaultColor) {
     : data && data.type === "Feature" ? [data]
     : data && data.type && data.coordinates ? [{ type: "Feature", geometry: data, properties: {} }] : null;
   if (!Array.isArray(feats)) throw new Error("This file is not GeoJSON. It has no map features.");
-  const out = { markers: [], arrows: [], shapes: [], skipped: 0 };
+  const out = { markers: [], arrows: [], shapes: [], routes: [], skipped: 0 };
   for (const f of feats) {
     const g = f && f.geometry, p = (f && f.properties) || {};
     const fm = p.fieldmap && typeof p.fieldmap === "object" && KINDS.includes(p.fieldmap.kind) ? p.fieldmap : null;
@@ -83,6 +93,14 @@ export function fromGeoJSON(textOrObject, defaultColor) {
       if (part.type === "Point") {
         const ll = lngLat(c);
         if (ll) out.markers.push({ ...ll, label: name, color }); else out.skipped++;
+      } else if (part.type === "LineString" && Array.isArray(c) && c.length >= 2 && ((fm && fm.kind === "route") || c.length > 2)) {
+        // A route: the app's own (its points in "fieldmap"), or a line of a few points.
+        const way = fm && fm.kind === "route" && Array.isArray(fm.waypoints) && fm.waypoints.length >= 2 ? fm.waypoints : c;
+        const pts = way.map(lngLat);
+        if (pts.length <= MAX_ROUTE_POINTS && pts.every(Boolean)) {
+          const routing = fm && ROUTINGS.includes(fm.routing) ? fm.routing : "straight";
+          out.routes.push({ points: pts, routing, speedMph: fm && SPEEDS.includes(fm.speedMph) ? fm.speedMph : 2, label: name, color });
+        } else out.skipped++;
       } else if (part.type === "LineString" && Array.isArray(c) && c.length === 2) {
         const a = lngLat(c[0]), b = lngLat(c[1]);
         if (a && b) out.arrows.push({ a, b, label: name, color }); else out.skipped++;

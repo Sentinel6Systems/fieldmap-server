@@ -106,6 +106,7 @@ ADMIN_BYTES = 1024
 MAX_PROPERTIES = 32             # entries in a marker's properties, and in an object inside them
 MAX_TEXT = 300                  # characters of a text in a marker
 MAX_ROUTE_POINTS = 30           # points of a route: as many as one mesh radio packet carries
+MAX_AREA_POINTS = 200           # points of an area's outline (the map draws a circle with 97)
 MAX_BUSY = 64                   # requests answered at the same time
 
 # Per caller, as (a second, burst): every request; changing markers (each change is written
@@ -316,15 +317,17 @@ def clean_properties(properties, inside=False):
 def clean_marker(marker_id, body):
     """A shared marker as it is kept and given out: a GeoJSON Feature with a Point (a marker), a
     LineString of two points (an arrow) or of up to MAX_ROUTE_POINTS (a route, fieldmap.kind
-    "route"), its id, and properties that are plain values; a route's points also in
-    fieldmap.waypoints. ValueError in plain words otherwise."""
+    "route"), or a Polygon of one closed ring of up to MAX_AREA_POINTS (an area: the map's
+    circles, rectangles and polygons), its id, and properties that are plain values; a route's
+    points also in fieldmap.waypoints, a circle's center in fieldmap.center, a rectangle's two
+    corners in fieldmap.points. ValueError in plain words otherwise."""
     if not isinstance(body, dict) or body.get("type") != "Feature":
         raise ValueError("A marker is a GeoJSON Feature.")
     if body.get("id") is not None and body["id"] != marker_id:
         raise ValueError("The marker's id is not the one in the address.")
     geometry = body.get("geometry")
     kind = geometry.get("type") if isinstance(geometry, dict) else None
-    raw = geometry.get("coordinates") if kind in ("Point", "LineString") else None
+    raw = geometry.get("coordinates") if kind in ("Point", "LineString", "Polygon") else None
 
     def position(p):
         if not isinstance(p, list) or len(p) not in (2, 3):
@@ -337,28 +340,45 @@ def clean_marker(marker_id, body):
     if not isinstance(properties, dict):
         raise ValueError("A marker needs properties.")
     fieldmap = properties.get("fieldmap")
-    route = isinstance(fieldmap, dict) and fieldmap.get("kind") == "route"
+    fkind = fieldmap.get("kind") if isinstance(fieldmap, dict) else None
+    route = fkind == "route"
     # A marker is a point; an arrow (the print tool's) a line from its start to its head; a route
-    # the line through its points.
+    # the line through its points; an area its outline.
     if kind == "LineString":
         most = MAX_ROUTE_POINTS if route else 2
         if not isinstance(raw, list) or not 2 <= len(raw) <= most:
             raise ValueError(f"A route is a LineString of 2 to {MAX_ROUTE_POINTS} points." if route
                              else "An arrow is a LineString of exactly two points.")
         coordinates = [position(p) for p in raw]
+    elif kind == "Polygon":
+        ring = raw[0] if isinstance(raw, list) and len(raw) == 1 else None
+        if not isinstance(ring, list) or not 4 <= len(ring) <= MAX_AREA_POINTS:
+            raise ValueError(f"An area is a Polygon of one closed ring of 4 to {MAX_AREA_POINTS} points.")
+        ring = [position(p) for p in ring]
+        if ring[0][:2] != ring[-1][:2]:
+            raise ValueError("An area's ring ends where it starts.")
+        coordinates = [ring]
     else:
         coordinates = position(raw)
-    # A route's points (the ones tapped for it) are the one list a marker may carry.
-    waypoints = None
-    if route and "waypoints" in fieldmap:
-        raw_points = fieldmap["waypoints"]
-        if kind != "LineString" or not isinstance(raw_points, list) or not 2 <= len(raw_points) <= MAX_ROUTE_POINTS:
-            raise ValueError(f"A route's waypoints are 2 to {MAX_ROUTE_POINTS} points.")
-        waypoints = [position(p) for p in raw_points]
-        properties = {**properties, "fieldmap": {k: v for k, v in fieldmap.items() if k != "waypoints"}}
+    # The lists a marker may carry in "fieldmap": a route's points (the ones tapped for it), a
+    # circle's center and a rectangle's two corners. Nothing else is a list.
+    lists = {}
+    wanted = {"route": ("LineString", "waypoints", 2, MAX_ROUTE_POINTS),
+              "circle": ("Polygon", "center", 1, 1), "rect": ("Polygon", "points", 2, 2)}.get(fkind)
+    if wanted and wanted[1] in fieldmap:
+        geometry_type, key, low, high = wanted
+        raw_points = fieldmap[key]
+        if key == "center":
+            raw_points = [raw_points]
+        if kind != geometry_type or not isinstance(raw_points, list) or not low <= len(raw_points) <= high:
+            raise ValueError(f"A route's waypoints are 2 to {MAX_ROUTE_POINTS} points." if route
+                             else "A circle's center is one point; a rectangle's points are its two corners.")
+        points = [position(p) for p in raw_points]
+        lists[key] = points[0] if key == "center" else points
+        properties = {**properties, "fieldmap": {k: v for k, v in fieldmap.items() if k != key}}
     properties = clean_properties(properties)
-    if waypoints is not None:
-        properties["fieldmap"]["waypoints"] = waypoints
+    for key, value in lists.items():
+        properties["fieldmap"][key] = value
     clean_id(properties.get("by"), "marker's \"by\"")
     clean_time(properties.get("updated"), "marker's \"updated\"")
     return {"type": "Feature", "id": marker_id, "geometry": {"type": kind, "coordinates": coordinates}, "properties": properties}

@@ -3,6 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mergeState, mergeMessages, conversations, partnerOf, ageLook, ageText, newUid, cleanText, newMessageId, statusText } from "../src/live.js";
 import { describe, sharedFC, peopleFC, kindText, itemFromFeature, featureFromItem, itemKey } from "../src/shared.js";
+import { shapeRing } from "../src/shapes.js";
+import { createRouter, readLeg, routeLegs, routeStats, routesFC, durationText, legKey } from "../src/routing.js";
 
 const ME = "web-0011223344556677";
 const point = (id, lon, lat, extra = {}) => ({ type: "Feature", id, geometry: { type: "Point", coordinates: [lon, lat] },
@@ -134,6 +136,71 @@ test("a marker and an arrow go to the server and come back the same", () => {
   const fa = featureFromItem(arrow, "arrow", ME);
   assert.deepEqual(fa.geometry, { type: "LineString", coordinates: [[10, 45], [10.01, 45.01]] });
   assert.equal(itemKey(itemFromFeature(fa).item), itemKey(arrow));
-  const route = { type: "Feature", id: "route-0001", geometry: { type: "LineString", coordinates: [[10, 45], [10.1, 45], [10.2, 45]] }, properties: { fieldmap: { kind: "route" } } };
-  assert.equal(itemFromFeature(route), null, "routes stay with the live layer");
+});
+
+test("a route and the shapes go to the server and come back the same", () => {
+  const route = { id: "lq3k2z1ghi", points: [{ lng: 10, lat: 45 }, { lng: 10.1, lat: 45 }, { lng: 10.1, lat: 45.1 }], routing: "walking", speedMph: 2, label: "R1", color: "#6f2dbd", shared: true };
+  const fr = featureFromItem(route, "route", ME);
+  assert.deepEqual(fr.geometry.coordinates, [[10, 45], [10.1, 45], [10.1, 45.1]]);
+  assert.deepEqual(fr.properties.fieldmap.waypoints, fr.geometry.coordinates, "the app's form: the line is its points");
+  assert.equal(fr.properties.fieldmap.routing, "walking");
+  const back = itemFromFeature(fr);
+  assert.equal(back.kind, "route");
+  assert.equal(itemKey(back.item), itemKey(route));
+  const shapes = [
+    { id: "lq3k2z2jkl", type: "circle", center: { lng: 10, lat: 45 }, radius: 1234.5, label: "C1", color: "#d7263d", shared: true },
+    { id: "lq3k2z3mno", type: "rect", points: [{ lng: 10, lat: 45 }, { lng: 10.2, lat: 45.1 }], label: "R1", color: "#d7263d", shared: true },
+    { id: "lq3k2z4pqr", type: "polygon", points: [{ lng: 10, lat: 45 }, { lng: 10.2, lat: 45 }, { lng: 10.1, lat: 45.1 }], label: "P1", color: "#d7263d", shared: true },
+  ];
+  for (const s of shapes) {
+    const f = featureFromItem(s, "shape", ME, new Date(), shapeRing(s));
+    assert.equal(f.geometry.type, "Polygon");
+    assert.equal(f.properties.fieldmap.kind, s.type);
+    const ring = f.geometry.coordinates[0];
+    assert.deepEqual(ring[0], ring[ring.length - 1], "a closed ring");
+    assert.ok(JSON.stringify(f).length < 8192, "fits the server's body limit");
+    const got = itemFromFeature(f);
+    assert.equal(got.kind, "shape");
+    assert.equal(itemKey(got.item), itemKey(s), s.type);
+  }
+  // An outline from elsewhere is a polygon.
+  const plain = { type: "Feature", id: "area-0001", geometry: { type: "Polygon", coordinates: [[[10, 45], [10.1, 45], [10.1, 45.1], [10, 45]]] }, properties: { name: "Zone" } };
+  assert.deepEqual(itemFromFeature(plain).item.points, [{ lng: 10, lat: 45 }, { lng: 10.1, lat: 45 }, { lng: 10.1, lat: 45.1 }]);
+});
+
+test("routes: legs along roads from the router, straight and dashed where it has none", async () => {
+  const route = { id: "r1", color: "#6f2dbd", label: "R1", routing: "driving", speedMph: 25,
+    points: [{ lng: 10, lat: 45 }, { lng: 10.01, lat: 45 }, { lng: 10.02, lat: 45 }] };
+  const asked = [];
+  const answer = { type: "FeatureCollection", features: [{ type: "Feature", properties: { "track-length": "1500" },
+    geometry: { type: "LineString", coordinates: [[10, 45, 100], [10.005, 45.002, 101], [10.01, 45, 102]] } }] };
+  let done;
+  const finished = new Promise((r) => (done = r));
+  const router = createRouter(() => { if (asked.length === 2) setTimeout(done, 0); }, async (url) => {
+    asked.push(url);
+    return asked.length === 1 ? { ok: true, json: async () => answer } : { ok: false, status: 404 };
+  });
+  assert.equal(routeLegs(route, router).filter((l) => l.routed).length, 0, "nothing known yet");
+  router.want([route]);
+  router.want([route]);
+  await finished;
+  assert.equal(asked.length, 2, "one request per leg, each leg asked once");
+  assert.match(asked[0], /^\/routing\/route\?lonlats=10,45%7C10\.01,45&profile=car-vario&format=geojson$/);
+  const legs = routeLegs(route, router);
+  assert.deepEqual(legs.map((l) => l.routed), [true, false]);
+  assert.equal(legs[0].line.length, 3);
+  assert.equal(legs[0].meters, 1500);
+  const parts = routesFC([route], router).features.map((f) => f.properties.part);
+  assert.deepEqual(parts, ["line", "dashed", "vertex", "vertex", "vertex", "label"]);
+  const st = routeStats(route, router);
+  assert.equal(st.straightLegs, 1);
+  assert.ok(st.meters > 1500 + 700 && st.meters < 1500 + 900);
+  // A Straight Line route asks for nothing and has no dashed legs.
+  const line = { ...route, routing: "straight" };
+  router.want([line]);
+  assert.equal(asked.length, 2);
+  assert.deepEqual(routesFC([line], router).features.filter((f) => f.properties.part === "dashed"), []);
+  assert.equal(legKey("car-vario", { lng: 10.0000001, lat: 45 }, { lng: 10, lat: 45 }), "car-vario|10,45|10,45");
+  assert.equal(readLeg({ features: [{ geometry: { type: "Point", coordinates: [1, 2] } }] }), null);
+  assert.deepEqual([durationText(30), durationText(45 * 60), durationText(125 * 60)], ["1 min", "45 min", "2 h 05 min"]);
 });

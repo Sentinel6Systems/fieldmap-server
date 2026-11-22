@@ -108,37 +108,77 @@ export function personImage(fill, ratio = 1) {
 // Live, gone quiet, and this browser's own location (placed by hand).
 export const PERSON_COLORS = { "live-person": "#00b4d8", "live-person-old": "#8a8f8a", "live-me": "#7a9a2e" };
 
-/* ---------- this map's markers and arrows <-> shared features ---------- */
-// A shared marker or arrow is kept in the map's own lists (main.js) with shared: true, so that
-// it is drawn, moved, renamed, colored and printed like any other; these turn one into the
-// other. The form is the app's (Drawings.feature with sharing): the server keeps "by" (the id
-// of whoever changed it last) and "updated".
+/* ---------- this map's items <-> shared features ---------- */
+// A shared marker, arrow, route or shape is kept in the map's own lists (main.js) with
+// shared: true, so that it is drawn, moved, renamed, colored and printed like any other; these
+// turn one into the other. The form is the app's (Drawings.feature with sharing): the server
+// keeps "by" (the id of whoever changed it last) and "updated". A shape is its outline (a
+// Polygon, for software that knows nothing else) with what makes it again exactly in
+// "fieldmap": a circle's center and radius, a rectangle's two corners.
 
-/** A shared feature as an item of the map's lists ({ id, lng, lat } or { id, a, b }), or null
- *  for what the lists do not hold (routes, areas). */
+/** Route Types as the app has them: its key, the router's profile, and the speed a new route of
+ *  that type is timed at (Drawings.kt RouteType). */
+export const ROUTE_TYPES_LIST = [["driving", "Driving", "car-vario", 25], ["walking", "Walking", "hiking-mountain", 2], ["straight", "Straight Line", null, 2]];
+/** The speeds a route can be timed at, mph (the app's Routes.SPEEDS). */
+export const SPEEDS = [2, 4, 10, 15, 25, 45, 60];
+export const MAX_ROUTE_POINTS = 30;
+export const MAX_AREA_POINTS = 200;
+const ll = (c) => ({ lng: c[0], lat: c[1] });
+const pos = (p) => [p.lng, p.lat];
+const r6 = (v) => Math.round(v * 1e6) / 1e6;
+
+/** A shared feature as an item of the map's lists, or null:
+ *  { kind: "marker", item: { id, lng, lat } }, { kind: "arrow", item: { id, a, b } },
+ *  { kind: "route", item: { id, points, routing, speedMph } },
+ *  { kind: "shape", item: { id, type, center, radius } | { id, type, points } }. */
 export function itemFromFeature(f) {
   const d = describe(f);
-  if (!d || (d.kind !== "marker" && d.kind !== "arrow")) return null;
+  if (!d) return null;
   const p = f.properties || {};
+  const fm = p.fieldmap && typeof p.fieldmap === "object" ? p.fieldmap : {};
   const common = { id: String(f.id), label: d.label, color: d.color, shared: true, by: typeof p.by === "string" ? p.by : "", updated: typeof p.updated === "string" ? p.updated : "" };
   const [first, second] = d.points;
-  return d.kind === "marker"
-    ? { kind: "marker", item: { ...common, lng: first[0], lat: first[1] } }
-    : { kind: "arrow", item: { ...common, a: { lng: first[0], lat: first[1] }, b: { lng: second[0], lat: second[1] } } };
+  if (d.kind === "marker") return { kind: "marker", item: { ...common, lng: first[0], lat: first[1] } };
+  if (d.kind === "arrow") return { kind: "arrow", item: { ...common, a: ll(first), b: ll(second) } };
+  if (d.kind === "route") {
+    const mph = SPEEDS.includes(fm.speedMph) ? fm.speedMph : 2;
+    return { kind: "route", item: { ...common, points: d.points.slice(0, MAX_ROUTE_POINTS).map(ll), routing: d.routing, speedMph: mph } };
+  }
+  const ok = (c) => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]);
+  if (fm.kind === "circle" && ok(fm.center) && Number.isFinite(fm.radius) && fm.radius > 0) {
+    return { kind: "shape", item: { ...common, type: "circle", center: ll(fm.center), radius: fm.radius } };
+  }
+  if (fm.kind === "rect" && Array.isArray(fm.points) && fm.points.length === 2 && fm.points.every(ok)) {
+    return { kind: "shape", item: { ...common, type: "rect", points: fm.points.map(ll) } };
+  }
+  return { kind: "shape", item: { ...common, type: "polygon", points: d.points.slice(0, -1).map(ll) } };
 }
 
-/** An item of the map's lists as the feature PUT to /mapshare/markers/<id>. */
-export function featureFromItem(it, kind, by, now = new Date()) {
+/** An item of the map's lists as the feature PUT to /mapshare/markers/<id>.
+ *  kind: marker | arrow | route | shape; ring: the shape's outline (shapes.js shapeRing). */
+export function featureFromItem(it, kind, by, now = new Date(), ring = null) {
   const label = String(it.label || "").slice(0, 30);
-  const geometry = kind === "marker"
-    ? { type: "Point", coordinates: [it.lng, it.lat] }
-    : { type: "LineString", coordinates: [[it.a.lng, it.a.lat], [it.b.lng, it.b.lat]] };
+  const fieldmap = { kind: kind === "shape" ? it.type : kind, label, color: it.color, id: it.id, shared: true };
+  let geometry;
+  if (kind === "marker") geometry = { type: "Point", coordinates: [it.lng, it.lat] };
+  else if (kind === "arrow") geometry = { type: "LineString", coordinates: [pos(it.a), pos(it.b)] };
+  else if (kind === "route") {
+    geometry = { type: "LineString", coordinates: it.points.map(pos) };
+    Object.assign(fieldmap, { waypoints: it.points.map(pos), routing: it.routing, speedMph: it.speedMph });
+  } else {
+    geometry = { type: "Polygon", coordinates: [ring.map(([x, y]) => [r6(x), r6(y)])] };
+    if (it.type === "circle") Object.assign(fieldmap, { center: pos(it.center), radius: it.radius });
+    if (it.type === "rect") fieldmap.points = it.points.map(pos);
+  }
+  const properties = { name: label, stroke: it.color, "marker-color": it.color };
+  if (kind === "shape") properties.fill = it.color;
   return { type: "Feature", id: it.id, geometry, properties: {
-    name: label, stroke: it.color, "marker-color": it.color,
-    fieldmap: { kind, label, color: it.color, id: it.id, shared: true },
-    by, updated: now.toISOString().replace(/\.\d+Z$/, "Z"),
+    ...properties, fieldmap, by, updated: now.toISOString().replace(/\.\d+Z$/, "Z"),
   } };
 }
 
 /** What of an item the server holds: a change to any of it is sent. */
-export const itemKey = (it) => JSON.stringify([it.lng, it.lat, it.a, it.b, it.label, it.color]);
+export const itemKey = (it) => JSON.stringify([it.lng, it.lat, it.a, it.b, it.label, it.color, it.type, it.center, it.radius, it.points, it.routing, it.speedMph]);
+
+/** Whether the server can keep a shape: its outline has at most MAX_AREA_POINTS points. */
+export const shareableShape = (ring) => ring.length <= MAX_AREA_POINTS;

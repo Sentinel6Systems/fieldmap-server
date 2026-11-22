@@ -6,6 +6,7 @@ import http.client
 import importlib.util
 import io
 import json
+import math
 import os
 import socket
 import tempfile
@@ -475,7 +476,7 @@ class ShareServerTest(unittest.TestCase):
         bad = [changed(type="FeatureCollection"), changed(id="another-id-0001"), changed(geometry=None),
                changed(geometry={"type": "LineString", "coordinates": [[1, 2], [3, 4], [5, 6]]}),
                changed(geometry={"type": "LineString", "coordinates": [[1, 2]]}), changed(geometry={"type": "LineString", "coordinates": [[1, 2], [181, 4]]}),
-               changed(geometry={"type": "Polygon", "coordinates": [[[1, 2], [3, 4], [5, 6], [1, 2]]]}),
+               changed(geometry={"type": "Polygon", "coordinates": [[[1, 2], [3, 4], [5, 6], [1, 3]]]}),
                changed(geometry={"type": "Point", "coordinates": [181, 0]}), changed(geometry={"type": "Point", "coordinates": [0, 91]}),
                changed(geometry={"type": "Point", "coordinates": [0]}), changed(geometry={"type": "Point", "coordinates": [0, 0, 0, 0]}),
                changed(geometry={"type": "Point", "coordinates": ["0", "0"]}), changed(geometry={"type": "Point", "coordinates": {"lon": 0}}),
@@ -547,6 +548,47 @@ class ShareServerTest(unittest.TestCase):
         self.assertEqual({}, self.ss.markers)
         # Without its waypoints a route is still taken: the line is its points.
         self.assertEqual(200, self.ask("PUT", "/markers/" + MARKER, route(line[:3])).status)
+
+    def test_an_area_is_shared_like_a_marker(self):
+        def area(kind, ring, **fieldmap):
+            body = {**marker(), "geometry": {"type": "Polygon", "coordinates": [ring]}}
+            body["properties"]["fieldmap"].update(kind=kind, **fieldmap)
+            return body
+        square = [[2.5, 1.5], [2.6, 1.5], [2.6, 1.6], [2.5, 1.6], [2.5, 1.5]]
+        circle = [[2.5 + 0.01 * math.cos(i * math.pi / 48), 1.5 + 0.01 * math.sin(i * math.pi / 48)] for i in range(96)]
+        circle.append(circle[0])
+        for body in (area("polygon", square), area("rect", square, points=[[2.5, 1.5], [2.6, 1.6]]),
+                     area("circle", circle, center=[2.5, 1.5], radius=1100.5)):
+            self.assertEqual(200, self.ask("PUT", "/markers/" + MARKER, body).status, body["properties"]["fieldmap"]["kind"])
+            got = self.ask("GET", "/state").body["markers"][0]
+            self.assertEqual(body["geometry"], got["geometry"])
+            self.assertEqual(body["properties"]["fieldmap"], got["properties"]["fieldmap"])
+        # An outline from other software, with no fieldmap kind of its own, is taken too.
+        plain = {**marker(), "geometry": {"type": "Polygon", "coordinates": [square]}}
+        del plain["properties"]["fieldmap"]
+        self.assertEqual(200, self.ask("PUT", "/markers/" + MARKER, plain).status)
+
+    def test_areas_are_checked_strictly(self):
+        def area(coordinates, kind="polygon", **fieldmap):
+            body = {**marker(), "geometry": {"type": "Polygon", "coordinates": coordinates}}
+            body["properties"]["fieldmap"].update(kind=kind, **fieldmap)
+            return body
+        square = [[2.5, 1.5], [2.6, 1.5], [2.6, 1.6], [2.5, 1.6], [2.5, 1.5]]
+        big = [[2.5 + i * 1e-4, 1.5] for i in range(200)] + [[2.5, 1.5]]
+        bad = [area([square[:3] + [square[0]]][:0]), area([square[:3]]), area([square, square]), area([big]),
+               area([square[:4] + [[2.5, 1.7]]]), area([[[2.5, 1.5], [200, 1.5], [2.6, 1.6], [2.5, 1.5]]]), area(square),
+               area([square], "circle", center=[2.5]), area([square], "circle", center=[[2.5, 1.5]]), area([square], "circle", center="2.5,1.5"),
+               area([square], "rect", points=[[2.5, 1.5]]), area([square], "rect", points=[[2.5, 1.5], [2.6, 1.6], [2.7, 1.7]]),
+               area([square], "polygon", points=square), area([square], "circle", points=[[2.5, 1.5], [2.6, 1.6]])]
+        # A circle's center or a rectangle's corners only with an area's outline.
+        point_circle = marker()
+        point_circle["properties"]["fieldmap"].update(kind="circle", center=[2.5, 1.5])
+        bad.append(point_circle)
+        for body in bad:
+            r = self.ask("PUT", "/markers/" + MARKER, body)
+            self.assertEqual(400, r.status, json.dumps(body)[:160])
+            self.assertTrue(r.body["error"])
+        self.assertEqual({}, self.ss.markers)
 
     def test_the_box_takes_only_so_many_markers(self):
         with mock.patch.object(self.ss, "MAX_MARKERS", 2):

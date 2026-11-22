@@ -13,7 +13,8 @@ import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groups
 import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
 import { initWmmNotice } from "./wmm.js";
 import { startLive, conversations, partnerOf, ageText, statusText, cleanText, MAX_NAME, BASE } from "./live.js";
-import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey } from "./shared.js";
+import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, SPEEDS, MAX_ROUTE_POINTS, shareableShape } from "./shared.js";
+import { createRouter, routesFC, routeStats, durationText } from "./routing.js";
 
 // The map at /map/: what the devices share (live.js, shared.js), drawing, terrain analysis, and
 // printing (the Print tab: the sheet on the map, render.js). Opened with ?print (the print
@@ -24,6 +25,7 @@ const LS = {
   markers: "fieldmap.print.markers",
   arrows: "fieldmap.print.arrows",
   shapes: "fieldmap.print.shapes",
+  routes: "fieldmap.print.routes",
   settings: "fieldmap.print.settings",
 };
 
@@ -42,8 +44,8 @@ state.layers = { ...LAYER_DEFAULTS, ...(state.layers || {}) };
 const PRINT_STYLES = [["topo-print", "Standard"], ["topo-usgs", "USGS Quadrangle"]];
 const printable = (id) => PRINT_STYLES.some(([p]) => p === id);
 const BAND = /-(12k|24k|50k|100k)$/;
-// Tile server base. Tried in order: ?tiles=<url>, then /maps on this host (the Pi behind
-// Internet-in-a-Box), then this host's root (the docker-compose stack, where nginx fronts
+// Tile server base. Tried in order: ?tiles=<url>, then /maps on this host (installed beside a
+// machine's own nginx, scripts/install-nginx.sh), then this host's root (the docker-compose stack, where nginx fronts
 // TileServer GL), then port 8080 on this host.
 async function findTiles() {
   const candidates = qs.get("tiles") ? [qs.get("tiles")] : [`${location.origin}/maps`, location.origin, `${location.protocol}//${location.hostname}:8080`];
@@ -103,12 +105,14 @@ const drawnStyle = () => applyLayers(rawStyle, state.layers);
 let markers = JSON.parse(localStorage.getItem(LS.markers) || "[]");
 let arrows = JSON.parse(localStorage.getItem(LS.arrows) || "[]");
 let shapes = JSON.parse(localStorage.getItem(LS.shapes) || "[]");
+let routes = JSON.parse(localStorage.getItem(LS.routes) || "[]");
 let config = {};
-// null | "marker" | "arrow-start" | "arrow-end" | "circle-center" | "circle-edge" | "rect-start" | "rect-end" | "polygon"
+// null | "marker" | "arrow-start" | "arrow-end" | "route" | "circle-center" | "circle-edge" | "rect-start" | "rect-end" | "polygon" | "me"
 let mode = null;
 let pendingArrow = null;    // {a:{lng,lat}} while placing the end
+let pendingRoute = null;    // [{lng,lat}, ...] while a route's points are tapped
 let pendingShape = null;    // {type, center | points} while a shape is being drawn
-let selected = null;        // {kind:"marker"|"arrow"|"shape", id}
+let selected = null;        // {kind:"marker"|"arrow"|"route"|"shape", id}
 let paletteOpenFor = null;  // id of the row whose swatches are open
 // The panel's tab: layers | markers | messages | print. The sheet is on the map only on the Print tab.
 let tab = qs.has("print") ? "print" : ["layers", "markers", "messages", "print"].includes(state.tab) ? state.tab : "layers";
@@ -173,14 +177,19 @@ map.addControl(new maplibregl.ScaleControl({ unit: "imperial" }), "bottom-left")
 const ICONS = {
   marker: '<circle cx="12" cy="12" r="5.5" fill="currentColor"/>',
   arrow: '<path d="M5 19 19 5M10 5h9v9" fill="none" stroke="currentColor" stroke-width="2.2"/>',
+  route: '<path d="M5 19c3-6 6 1 9-5s3-7 5-9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="0.1 4.2"/><circle cx="5" cy="19" r="2.4" fill="currentColor"/><circle cx="19" cy="5" r="2.4" fill="currentColor"/>',
   circle: '<circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2.2"/>',
   rect: '<rect x="4.5" y="6.5" width="15" height="11" fill="none" stroke="currentColor" stroke-width="2.2"/>',
   polygon: '<path d="M12 4 20 10 17 19H7L4 10Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>',
+  terrain: '<path d="M2.5 19 9 8l4 6 2.5-3.5L21.5 19Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>',
   me: '<path d="M12 3 21 12 12 21 3 12Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 8.5 15.5 12 12 15.5 8.5 12Z" fill="currentColor"/>',
 };
-// The last one places this browser's person on the map (shared like a device's location); it
-// is there only while location sharing is enabled on the server.
-const TOOLS = [["marker", "Add Marker"], ["arrow", "Add Arrow"], ["circle", "Circle"], ["rect", "Rectangle"], ["polygon", "Polygon"], ["me", "Set My Location"]];
+// Terrain Analysis opens its section of the Layers tab (only when the server has elevation
+// tiles). The last one places this browser's person on the map (shared like a device's
+// location); it is there only while location sharing is enabled on the server. On a wide
+// screen each button has its name beside the icon; on a phone, the icon only.
+const TOOLS = [["marker", "Add Marker"], ["arrow", "Add Arrow"], ["route", "New Route"], ["circle", "Circle"], ["rect", "Rectangle"], ["polygon", "Polygon"],
+  ["terrain", "Terrain Analysis"], ["me", "Set My Location"]];
 map.addControl({
   onAdd() {
     const box = document.createElement("div");
@@ -188,7 +197,7 @@ map.addControl({
     for (const [key, title] of TOOLS) {
       const b = document.createElement("button");
       b.type = "button"; b.id = `add-${key}`; b.title = title; b.ariaLabel = title;
-      b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[key]}</svg>`;
+      b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[key]}</svg><span>${title}</span>`;
       box.appendChild(b);
     }
     return box;
@@ -271,6 +280,20 @@ map.on("load", () => {
     paint: { "circle-radius": 7, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 3 },
   });
 
+  map.addSource("routes", { type: "geojson", data: emptyFC() });
+  const rpart = (...parts) => ["match", ["get", "part"], parts, true, false];
+  map.addLayer({ id: "routes-halo", type: "line", source: "routes", filter: rpart("line", "dashed"),
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#fff", "line-width": 6, "line-opacity": 0.6 } });
+  map.addLayer({ id: "routes-line", type: "line", source: "routes", filter: rpart("line"),
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3.5 } });
+  map.addLayer({ id: "routes-dashed", type: "line", source: "routes", filter: rpart("dashed"),
+    layout: { "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3, "line-dasharray": [2, 1.5] } });
+  map.addLayer({ id: "routes-vertex", type: "circle", source: "routes", filter: rpart("vertex"),
+    paint: { "circle-radius": 5, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2.5 } });
+  map.addLayer({ id: "routes-label", type: "symbol", source: "routes", filter: rpart("label"),
+    layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 13, "text-offset": [0, -1.1], "text-allow-overlap": true },
+    paint: { "text-color": "#111", "text-halo-color": "#fff", "text-halo-width": 1.5 } });
+
   map.addSource("markers", { type: "geojson", data: markersFC() });
   map.addLayer({
     id: "markers-circle", type: "circle", source: "markers",
@@ -330,6 +353,7 @@ map.on("load", () => {
   footprintCenter = visibleCenter();
   updateFootprint();
   renderLists();
+  drawRoutes();
   showSheet();
   drawLive();
   drawMe();
@@ -358,11 +382,14 @@ map.on("click", (e) => {
   if (mode === "me") { placeMe(e.lngLat); return; }
   if (mode === "arrow-start") { pendingArrow = { a: { lng: e.lngLat.lng, lat: e.lngLat.lat } }; setMode("arrow-end"); return; }
   if (mode === "arrow-end") { addArrow(pendingArrow.a, { lng: e.lngLat.lng, lat: e.lngLat.lat }); pendingArrow = null; setMode(null); return; }
+  if (mode === "route") { routeClick({ lng: e.lngLat.lng, lat: e.lngLat.lat }); return; }
   if (mode && shapeClick(e)) return;
   const hitM = map.queryRenderedFeatures(e.point, { layers: ["markers-circle"] });
   if (hitM.length) { select("marker", hitM[0].properties.id); return; }
   const hitA = map.queryRenderedFeatures(e.point, { layers: ["arrow-ends", "arrows-line"] });
   if (hitA.length) { select("arrow", hitA[0].properties.id); return; }
+  const hitR = map.queryRenderedFeatures(e.point, { layers: ["routes-vertex", "routes-line", "routes-dashed", "routes-label"] });
+  if (hitR.length) { select("route", hitR[0].properties.id); return; }
   const hitS = map.queryRenderedFeatures(e.point, { layers: ["shapes-line", "shapes-label"] });
   if (hitS.length) { select("shape", hitS[0].properties.id); return; }
   if (liveClick(e)) return;
@@ -385,6 +412,8 @@ function onDown(e) {
   if (hit.length) { dragging = { kind: "marker", id: hit[0].properties.id }; return begin(e); }
   hit = map.queryRenderedFeatures(pt, { layers: ["arrow-ends"] });
   if (hit.length) { dragging = { kind: "arrow-end", id: hit[0].properties.id, end: hit[0].properties.end }; return begin(e); }
+  hit = map.queryRenderedFeatures(pt, { layers: ["routes-vertex"] });
+  if (hit.length) { dragging = { kind: "route-point", id: hit[0].properties.id, index: hit[0].properties.index }; return begin(e); }
   hit = tab === "print" ? map.queryRenderedFeatures(pt, { layers: ["footprint-fill"] }) : [];
   if (hit.length) {
     const c = currentCenter();
@@ -400,6 +429,7 @@ function onMove(e) {
     return;
   }
   if (pendingShape) { previewShape({ lng: e.lngLat.lng, lat: e.lngLat.lat }); return; }
+  if (pendingRoute) { previewRoute({ lng: e.lngLat.lng, lat: e.lngLat.lat }); return; }
   if (!dragging) return;
   if (dragging.kind === "me") {
     state.myLocation = { lng: e.lngLat.lng, lat: e.lngLat.lat };
@@ -410,6 +440,9 @@ function onMove(e) {
   } else if (dragging.kind === "arrow-end") {
     const a = arrows.find((x) => x.id === dragging.id);
     if (a) { a[dragging.end] = { lng: e.lngLat.lng, lat: e.lngLat.lat }; map.getSource("arrows").setData(arrowsFC()); }
+  } else if (dragging.kind === "route-point") {
+    const r = routes.find((x) => x.id === dragging.id);
+    if (r && r.points[dragging.index]) { r.points[dragging.index] = { lng: e.lngLat.lng, lat: e.lngLat.lat }; drawRoutes(); }
   } else if (dragging.kind === "sheet") {
     const dx = e.point.x - dragging.startPt.x, dy = e.point.y - dragging.startPt.y;
     const ll = map.unproject([dragging.startCenterPx.x + dx, dragging.startCenterPx.y + dy]);
@@ -425,6 +458,7 @@ function onUp() {
   if (d.kind === "me") placeMe(state.myLocation);
   if (d.kind === "marker") { saveMarkers(); select("marker", d.id); }
   if (d.kind === "arrow-end") { saveArrows(); select("arrow", d.id); }
+  if (d.kind === "route-point") { saveRoutes(); select("route", d.id); }
 }
 
 /* ---------- helpers ---------- */
@@ -499,8 +533,8 @@ function arrowLabel(a) {
 }
 
 /* ---------- data: markers ---------- */
-// Shared markers and arrows (shared: true) are in the same lists, but the server keeps them, not
-// this browser; the Shared Markers switch hides them on screen and in print.
+// Shared markers, arrows, routes and shapes (shared: true) are in the same lists, but the server
+// keeps them, not this browser; the Shared Markers switch hides them on screen and in print.
 const ownOnly = (list) => list.filter((x) => !x.shared);
 const shown = (list) => (state.layers.shared === false ? ownOnly(list) : list);
 function markersFC() {
@@ -557,10 +591,77 @@ function addArrow(a, b) {
 }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 
+/* ---------- data: routes ---------- */
+// A route is its points (2 to 30, the most one mesh radio packet carries) and its Route Type, as
+// in the app. Its legs follow roads or trails where the server's router finds a way (routing.js).
+const router = createRouter(() => { drawRoutes(); refreshLists(); });
+function drawRoutes() {
+  const list = shown(routes);
+  router.want(list);
+  try { if (map.getSource("routes")) map.getSource("routes").setData(routesFC(list, router)); } catch { /* a new map style is still loading */ }
+}
+function saveRoutes() {
+  localStorage.setItem(LS.routes, JSON.stringify(ownOnly(routes)));
+  syncSoon();
+  drawRoutes();
+  renderLists();
+}
+const routeType = (key) => ROUTE_TYPES_LIST.find(([k]) => k === key) || ROUTE_TYPES_LIST[0];
+function addRoute(points) {
+  const [key, , , mph] = routeType(state.routeType || "walking");
+  const r = { id: uid(), points, routing: key, speedMph: mph, label: `R${routes.length + 1}`, color: state.color, shared: sharingOn() };
+  routes.push(r);
+  pendingRoute = null;
+  setMode(null);
+  saveRoutes();
+  select("route", r.id, true);
+}
+/** A map tap while a route's points are tapped: a new point, or (on the last one) the end. */
+function routeClick(ll) {
+  pendingRoute = pendingRoute || [];
+  const last = pendingRoute[pendingRoute.length - 1];
+  if (last && pendingRoute.length >= 2 && near(ll, last)) { finishRoute(); return; }
+  pendingRoute.push(ll);
+  if (pendingRoute.length >= MAX_ROUTE_POINTS) { finishRoute(); return; }
+  setMode("route");
+  previewRoute(ll);
+}
+function finishRoute() {
+  if (pendingRoute && pendingRoute.length >= 2) addRoute(pendingRoute);
+}
+function previewRoute(ll) {
+  const pts = [...pendingRoute, ll];
+  map.getSource("temp").setData({ type: "FeatureCollection", features: [
+    ...lineFC(pts).features,
+    ...pendingRoute.map((p) => ({ type: "Feature", geometry: { type: "Point", coordinates: [p.lng, p.lat] }, properties: {} })),
+  ] });
+}
+/** "Walking · 2.4 mi · 1 h 12 min", and how many legs are straight for want of a way. */
+function routeDetail(r) {
+  const st = routeStats(r, router);
+  const legs = st.straightLegs ? ` · ${st.straightLegs} straight leg${st.straightLegs === 1 ? "" : "s"}: no route found` : "";
+  return `${routeType(r.routing)[1]} · ${fmtLength(st.meters, state.units)} · ${durationText(st.seconds)}${legs}`;
+}
+/** Route Type and Speed of a route, as in the app. A new type comes with its own speed. */
+function routeEditor(r) {
+  const row = document.createElement("div");
+  row.className = "route-row";
+  row.innerHTML = `<span>Route Type</span><select aria-label="Route Type"></select><span>Speed</span><select aria-label="Speed"></select>`;
+  const [type, speed] = row.querySelectorAll("select");
+  for (const [key, name] of ROUTE_TYPES_LIST) type.add(new Option(name, key));
+  type.value = routeType(r.routing)[0];
+  const metric = state.units === "metric";
+  for (const mph of SPEEDS) speed.add(new Option(metric ? `${Math.round(mph * 1.609344)} km/h` : `${mph} mph`, mph));
+  speed.value = SPEEDS.includes(r.speedMph) ? r.speedMph : 2;
+  type.onchange = () => { r.routing = type.value; r.speedMph = routeType(type.value)[3]; state.routeType = type.value; saveSettings(); persist("route", true); };
+  speed.onchange = () => { r.speedMph = +speed.value; persist("route", true); };
+  return row;
+}
+
 /* ---------- data: shapes ---------- */
 function shapesFC() {
   const feats = [];
-  for (const s of shapes) {
+  for (const s of shown(shapes)) {
     const measure = state.shapeMeasure !== false;
     feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [shapeRing(s)] }, properties: { id: s.id, color: s.color } });
     const c = shapeCenter(s);
@@ -576,13 +677,15 @@ function shapesFC() {
   return { type: "FeatureCollection", features: feats };
 }
 function saveShapes() {
-  localStorage.setItem(LS.shapes, JSON.stringify(shapes));
+  localStorage.setItem(LS.shapes, JSON.stringify(ownOnly(shapes)));
+  syncSoon();
   if (map.getSource("shapes")) map.getSource("shapes").setData(shapesFC());
   renderLists();
 }
 function addShape(s) {
   const n = shapes.filter((x) => x.type === s.type).length + 1;
   const sh = { id: uid(), label: `${{ circle: "C", rect: "R", polygon: "P" }[s.type]}${n}`, color: state.color, ...s };
+  sh.shared = sharingOn() && shareableShape(shapeRing(sh));
   if (sh.type === "circle") sh.unit = defaultUnit(sh.radius, state.units);
   shapes.push(sh);
   pendingShape = null;
@@ -653,7 +756,13 @@ function renderLists() {
     const i = arrowInfo(a);
     return `${fmtDistance(i.distance)} · ${fmtBearing(i.trueBearing)} T · ${fmtBearing(i.gridBearing)} G · ${fmtBearing(i.magBearing)} M`;
   });
+  renderList($("route-list"), routes, "route", "No routes yet.", routeDetail);
   renderList($("shape-list"), shapes, "shape", "No shapes yet.", (s) => `${SHAPE_NAMES[s.type]} · ${shapeSummary(s, state.units)}`);
+}
+/** The lists again, but not while a name is being typed in them: after it. */
+function refreshLists() {
+  const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest("#tab-markers input, #tab-markers select");
+  if (typing) renderLists.pending = true; else renderLists();
 }
 /** Radius field and unit menu for a circle. The radius is kept in metres; the menu offers
  *  the units of the system chosen in Units (ft/mi or m/km). */
@@ -684,8 +793,8 @@ function renderList(list, items, kind, emptyText, detail) {
     const row = document.createElement("div");
     row.className = "item" + (selected && selected.kind === kind && selected.id === it.id ? " selected" : "");
     row.dataset.id = it.id;
-    // Markers and arrows can be shared with the devices (shapes cannot yet).
-    const shareable = kind !== "shape" && (it.shared || sharingOn());
+    // Shared with the devices, or can be (a shape whose outline is too detailed for the server cannot).
+    const shareable = it.shared || (sharingOn() && (kind !== "shape" || shareableShape(shapeRing(it))));
     row.innerHTML = `
       <div class="item-row">
         <button class="dot" title="Color" style="background:${it.color}"></button>
@@ -705,16 +814,18 @@ function renderList(list, items, kind, emptyText, detail) {
     dot.onclick = (e) => { e.stopPropagation(); paletteOpenFor = paletteOpenFor === it.id ? null : it.id; renderLists(); };
     text.oninput = () => { it.label = text.value; persist(kind); };
     text.onfocus = () => { selected = { kind, id: it.id }; };
-    go.onclick = () => { const c = kind === "marker" ? it : kind === "arrow" ? it.a : shapeCenter(it); map.flyTo({ center: [c.lng, c.lat] }); };
+    go.onclick = () => { const c = kind === "marker" ? it : kind === "arrow" ? it.a : kind === "route" ? it.points[0] : shapeCenter(it); map.flyTo({ center: [c.lng, c.lat] }); };
     del.onclick = () => {
       if (it.shared && !confirm("Delete Shared Marker?\n\nIt is removed from all devices.")) return;
       if (kind === "marker") markers = markers.filter((x) => x.id !== it.id);
       else if (kind === "arrow") arrows = arrows.filter((x) => x.id !== it.id);
+      else if (kind === "route") routes = routes.filter((x) => x.id !== it.id);
       else shapes = shapes.filter((x) => x.id !== it.id);
       if (selected && selected.id === it.id) selected = null;
       persist(kind, true);
     };
     if (kind === "shape" && it.type === "circle") row.appendChild(radiusEditor(it));
+    if (kind === "route") row.appendChild(routeEditor(it));
     if (paletteOpenFor === it.id) {
       row.appendChild(swatchRow(it.color, (hex) => { it.color = hex; paletteOpenFor = null; persist(kind, true); }));
     }
@@ -724,7 +835,8 @@ function renderList(list, items, kind, emptyText, detail) {
 function persist(kind, rerender = false) {
   if (kind === "marker") { localStorage.setItem(LS.markers, JSON.stringify(ownOnly(markers))); map.getSource("markers").setData(markersFC()); syncSoon(); }
   else if (kind === "arrow") { localStorage.setItem(LS.arrows, JSON.stringify(ownOnly(arrows))); map.getSource("arrows").setData(arrowsFC()); syncSoon(); }
-  else { localStorage.setItem(LS.shapes, JSON.stringify(shapes)); map.getSource("shapes").setData(shapesFC()); }
+  else if (kind === "route") { localStorage.setItem(LS.routes, JSON.stringify(ownOnly(routes))); drawRoutes(); syncSoon(); }
+  else { localStorage.setItem(LS.shapes, JSON.stringify(ownOnly(shapes))); map.getSource("shapes").setData(shapesFC()); syncSoon(); }
   if (rerender) renderLists();
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -734,27 +846,32 @@ const SHAPE_MODES = { circle: ["circle-center", "circle-edge"], rect: ["rect-sta
 function setMode(m) {
   mode = m;
   if (m !== "arrow-end") pendingArrow = null;
+  if (m !== "route") pendingRoute = null;
   if (!m || !Object.values(SHAPE_MODES).flat().includes(m)) pendingShape = null;
-  if (map.getSource("temp") && !pendingArrow && !pendingShape) map.getSource("temp").setData(emptyFC());
+  if (map.getSource("temp") && !pendingArrow && !pendingShape && !pendingRoute) map.getSource("temp").setData(emptyFC());
   $("add-marker").classList.toggle("active", m === "marker");
   $("add-me").classList.toggle("active", m === "me");
   $("add-arrow").classList.toggle("active", m === "arrow-start" || m === "arrow-end");
+  $("add-route").classList.toggle("active", m === "route");
   for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).classList.toggle("active", modes.includes(m));
   map.getCanvas().style.cursor = m ? "crosshair" : "";
   // Double-click zoom would swallow the taps that place corners.
   if (m) map.doubleClickZoom.disable(); else map.doubleClickZoom.enable();
   const corners = pendingShape && pendingShape.points ? pendingShape.points.length : 0;
+  const stops = pendingRoute ? pendingRoute.length : 0;
   $("mode-hint").textContent =
     m === "marker" ? "Tap the map to place the marker." :
     m === "me" ? "Tap the map where you are. Your location is shared with all devices." :
     m === "arrow-start" ? "Tap the map at the start of the arrow." :
     m === "arrow-end" ? "Tap the map at the end of the arrow." :
+    m === "route" ? (stops < 2 ? `Tap the points of the route in order. Points so far: ${stops}.` : `${stops} points (at most ${MAX_ROUTE_POINTS}). To finish the route, tap the last point again, press Enter or press Finish Route.`) :
     m === "circle-center" ? "Tap the center of the circle." :
     m === "circle-edge" ? "Tap the edge to set the radius. You can type an exact radius later." :
     m === "rect-start" ? "Tap one corner of the rectangle." :
     m === "rect-end" ? "Tap the opposite corner." :
     m === "polygon" ? (corners < 3 ? `Tap the corners of the polygon. Corners so far: ${corners}.` : `${corners} corners. To finish the shape, tap the first corner, press Enter or press Finish Shape.`) : "";
-  $("finish-shape").hidden = !(m === "polygon" && corners >= 3);
+  $("finish-shape").textContent = m === "route" ? "Finish Route" : "Finish Shape";
+  $("finish-shape").hidden = !((m === "polygon" && corners >= 3) || (m === "route" && stops >= 2));
   $("mode-bar").hidden = !m;
 }
 $("add-marker").onclick = () => setMode(mode === "marker" ? null : "marker");
@@ -764,25 +881,27 @@ $("add-me").onclick = () => {
   setMode("me");
 };
 $("add-arrow").onclick = () => setMode(mode ? null : "arrow-start");
+$("add-route").onclick = () => setMode(mode === "route" ? null : "route");
 for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).onclick = () => setMode(modes.includes(mode) ? null : modes[0]);
-$("finish-shape").onclick = finishPolygon;
+$("finish-shape").onclick = () => (mode === "route" ? finishRoute() : finishPolygon());
 // Only what is kept in this browser: shared items stay (each has its own Delete).
 $("clear-all").onclick = () => {
-  if ((ownOnly(markers).length || ownOnly(arrows).length || shapes.length) && confirm("Clear all markers, arrows and shapes in this browser?\n\nShared ones stay.")) {
-    markers = markers.filter((m) => m.shared); arrows = arrows.filter((a) => a.shared); shapes = []; saveMarkers(); saveArrows(); saveShapes();
+  if ((ownOnly(markers).length || ownOnly(arrows).length || ownOnly(routes).length || ownOnly(shapes).length) && confirm("Clear all markers, arrows, routes and shapes in this browser?\n\nShared ones stay.")) {
+    markers = markers.filter((m) => m.shared); arrows = arrows.filter((a) => a.shared); routes = routes.filter((r) => r.shared); shapes = shapes.filter((x) => x.shared);
+    saveMarkers(); saveArrows(); saveRoutes(); saveShapes();
   }
 };
 // Save to a file, and load one: GeoJSON (src/drawings.js).
 $("save-drawings").onclick = () => {
-  if (!markers.length && !arrows.length && !shapes.length) { fileHint("Nothing to export. Add a marker, arrow or shape first."); return; }
-  const data = toGeoJSON(markers, arrows, shapes, { title: state.title || "", saved: new Date().toISOString() });
+  if (!markers.length && !arrows.length && !routes.length && !shapes.length) { fileHint("Nothing to export. Add a marker, arrow, route or shape first."); return; }
+  const data = toGeoJSON(markers, arrows, shapes, { title: state.title || "", saved: new Date().toISOString() }, routes);
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/geo+json" }));
   const a = Object.assign(document.createElement("a"), { href: url, download: fileName(state.title) });
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  fileHint(`Exported ${countText(markers.length, arrows.length, shapes.length)} to ${a.download}.`);
+  fileHint(`Exported ${countText(markers.length, arrows.length, shapes.length, routes.length)} to ${a.download}.`);
 };
 $("load-drawings").onclick = () => $("load-file").click();
 $("load-file").onchange = async (e) => {
@@ -794,30 +913,31 @@ $("load-file").onchange = async (e) => {
     if (file.size > 20 * 1024 * 1024) throw new Error("This file is larger than 20 MB and cannot be imported.");
     got = fromGeoJSON(await file.text(), state.color);
   } catch (err) { fileHint(err.message, true); return; }
-  const total = got.markers.length + got.arrows.length + got.shapes.length;
+  const total = got.markers.length + got.arrows.length + got.shapes.length + got.routes.length;
   if (!total) { fileHint(`Nothing to import from ${file.name}.${got.skipped ? ` It has ${got.skipped} item${got.skipped === 1 ? "" : "s"} that this page cannot draw.` : ""}`, true); return; }
   for (const m of got.markers) markers.push({ ...m, id: uid() });
   for (const a of got.arrows) arrows.push({ ...a, id: uid() });
+  for (const r of got.routes) routes.push({ ...r, id: uid() });
   for (const s of got.shapes) {
     const sh = { ...s, id: uid() };
     if (sh.type === "circle" && !sh.unit) sh.unit = defaultUnit(sh.radius, state.units);
     if (sh.unit === undefined) delete sh.unit;
     shapes.push(sh);
   }
-  saveMarkers(); saveArrows(); saveShapes();
+  saveMarkers(); saveArrows(); saveRoutes(); saveShapes();
   // Show what was loaded.
-  const pts = [...got.markers, ...got.arrows.flatMap((a) => [a.a, a.b]),
+  const pts = [...got.markers, ...got.arrows.flatMap((a) => [a.a, a.b]), ...got.routes.flatMap((r) => r.points),
     ...got.shapes.flatMap((s) => shapeRing(s).map(([lng, lat]) => ({ lng, lat })))];
   // A loop, not Math.min(...list): a detailed outline can have more points than a call takes.
   const b = pts.reduce((r, p) => [Math.min(r[0], p.lng), Math.min(r[1], p.lat), Math.max(r[2], p.lng), Math.max(r[3], p.lat)],
     [Infinity, Infinity, -Infinity, -Infinity]);
   map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 80, maxZoom: 15, duration: 0 });
-  fileHint(`Imported ${countText(got.markers.length, got.arrows.length, got.shapes.length)} from ${file.name}` +
-    (got.skipped ? `. Skipped ${got.skipped} item${got.skipped === 1 ? "" : "s"}: only points, two-point lines and areas are supported.` : "."));
+  fileHint(`Imported ${countText(got.markers.length, got.arrows.length, got.shapes.length, got.routes.length)} from ${file.name}` +
+    (got.skipped ? `. Skipped ${got.skipped} item${got.skipped === 1 ? "" : "s"}: only points, lines of up to ${MAX_ROUTE_POINTS} points and areas are supported.` : "."));
 };
-function countText(m, a, s) {
+function countText(m, a, s, r = 0) {
   const part = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
-  return [m && part(m, "marker"), a && part(a, "arrow"), s && part(s, "shape")].filter(Boolean).join(", ");
+  return [m && part(m, "marker"), a && part(a, "arrow"), r && part(r, "route"), s && part(s, "shape")].filter(Boolean).join(", ");
 }
 const FILE_HINT = $("file-hint").textContent;
 function fileHint(text, error = false) {
@@ -827,11 +947,11 @@ function fileHint(text, error = false) {
   clearTimeout(fileHint.timer);
   fileHint.timer = setTimeout(() => { el.textContent = FILE_HINT; el.classList.remove("error"); }, 12000);
 }
-$("units").onchange = (e) => { state.units = e.target.value; saveSettings(); saveShapes(); if (terrain) terrain.refresh(); };
+$("units").onchange = (e) => { state.units = e.target.value; saveSettings(); saveShapes(); renderLists(); if (terrain) terrain.refresh(); };
 $("shape-measure").onchange = (e) => { state.shapeMeasure = e.target.checked; saveSettings(); saveShapes(); };
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { setMode(null); if (terrain) terrain.cancelPick(); }
-  if (e.key === "Enter" && mode === "polygon" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) finishPolygon();
+  if (e.key === "Enter" && (mode === "polygon" || mode === "route") && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) $("finish-shape").onclick();
 });
 
 // New-item colour swatches
@@ -844,7 +964,7 @@ renderNewColor();
 
 scaleSel.onchange = () => { state.scale = +scaleSel.value; saveSettings(); updateFootprint(); };
 // Switch the map style in place: the sheet outline, markers and arrows are carried over.
-const OWN_SOURCES = ["footprint", "shapes", "arrows", "markers", "live", "people", "me", "temp", ...TERRAIN_SOURCES];
+const OWN_SOURCES = ["footprint", "shapes", "arrows", "routes", "markers", "live", "people", "me", "temp", ...TERRAIN_SOURCES];
 function redraw(diff = true) {
   map.setStyle(drawnStyle(), {
     diff,
@@ -935,6 +1055,16 @@ $("bring").onclick = () => { footprintCenter = visibleCenter(); updateFootprint(
 $("fit").onclick = () => { const { bounds } = footprintPolygon(); map.fitBounds(bounds, { padding: panelPadding(), duration: 400 }); };
 $("panel-toggle").onclick = () => document.body.classList.toggle("panel-collapsed");
 
+// Terrain Analysis is a section of the Layers tab; the tool bar opens it.
+$("add-terrain").hidden = true;
+terrainReady.then((t) => { $("add-terrain").hidden = !t.available; });
+$("add-terrain").onclick = () => {
+  setMode(null);
+  showTab("layers");
+  $("terrain").open = true;
+  $("terrain").scrollIntoView({ block: "start", behavior: "smooth" });
+};
+
 /* ---------- the tabs ---------- */
 const TABS = [...document.querySelectorAll(".tabs [data-tab]")];
 function showTab(name) {
@@ -977,7 +1107,8 @@ map.on("styleimagemissing", (e) => {
 });
 
 /** The live layers as they are now; also every few seconds, so that locations age between answers.
- *  Shared markers and arrows are in the map's own lists; this layer has the routes and areas. */
+ *  Shared markers, arrows, routes and areas are in the map's own lists; this layer has only what
+ *  the lists cannot hold. */
 function drawLive() {
   if (!map.getSource("live")) return;
   const st = live && live.status === "on" ? live.state : null;
@@ -997,9 +1128,8 @@ function renderLiveSwitches() {
   box.replaceChildren(
     toggle("Device Locations", state.layers.people !== false, (on) => { state.layers.people = on; saveSettings(); drawLive(); }, "The devices sharing their location now. On screen only."),
     toggle("Shared Markers", state.layers.shared !== false, (on) => {
-      state.layers.shared = on; saveSettings(); drawLive();
-      map.getSource("markers").setData(markersFC()); map.getSource("arrows").setData(arrowsFC());
-    }, "Markers, arrows and routes shared with all devices, on screen and in print."),
+      state.layers.shared = on; saveSettings(); drawLive(); sharedChanged();
+    }, "Markers, arrows, routes and shapes shared with all devices, on screen and in print."),
   );
 }
 
@@ -1057,35 +1187,18 @@ function showShared(id) {
   popup([lon, lat], lines.join(""));
 }
 
-/** The shared routes (and areas) on the Markers tab, newest first: shown, deleted; edited on the devices. */
-function renderRoutes() {
-  const st = live && live.status === "on" ? live.state : null;
-  const items = st ? [...st.markers.values()].filter((f) => !itemFromFeature(f)).map((f) => [f, describe(f)]).filter(([, d]) => d)
-    .sort(([a], [b]) => String((b.properties || {}).updated || "").localeCompare(String((a.properties || {}).updated || ""))) : [];
-  $("routes-head").hidden = !items.length;
-  $("route-list").replaceChildren(...items.map(([f, d]) => {
-    const row = document.createElement("div");
-    row.className = "shared-row";
-    row.innerHTML = `<span class="shared-dot line" style="background:${d.color}"></span>
-      <span class="what">${escapeHtml(d.label || "Unnamed")}<small>${sharedDetail(f, d)}</small></span>
-      <span class="row-buttons"><button class="icon" title="Show on Map">◎</button><button class="icon danger" title="Delete">✕</button></span>`;
-    const [go, del] = row.querySelectorAll("button");
-    go.onclick = () => { const [lon, lat] = d.points[0]; map.flyTo({ center: [lon, lat] }); showShared(f.id); };
-    del.onclick = async () => {
-      if (!confirm("Delete Shared Marker?\n\nIt is removed from all devices.")) return;
-      if ((await shareRequest(String(f.id), null)) === true) { live.state.markers.delete(String(f.id)); drawLive(); renderRoutes(); }
-    };
-    return row;
-  }));
-}
-
-/* ---------- shared markers and arrows: in the map's lists, kept in step with the server ---------- */
-// A change to a shared item (added, moved, renamed, recolored, shared, deleted, no longer
-// shared) is sent shortly after it is made; what the server sends is taken in unless a change
+/* ---------- shared items: in the map's lists, kept in step with the server ---------- */
+// A change to a shared marker, arrow, route or shape (added, moved, renamed, recolored, shared,
+// deleted, no longer shared) is sent shortly after it is made; what the server sends is taken in unless a change
 // of ours to that item is still on its way, or the server's answers do not have it yet.
 const sentAs = new Map();   // id -> itemKey as the server has it (or as it was last sent)
 const holds = new Map();    // id -> the rev the server's state must reach before its copy counts again (Infinity: on its way)
 const sharingOn = () => !!(live && live.status === "on");
+const KINDS = ["marker", "arrow", "route", "shape"];
+const listOf = (kind) => ({ marker: markers, arrow: arrows, route: routes, shape: shapes }[kind]);
+function setList(kind, list) {
+  if (kind === "marker") markers = list; else if (kind === "arrow") arrows = list; else if (kind === "route") routes = list; else shapes = list;
+}
 let syncTimer = null, syncing = false, syncAgain = false;
 function syncSoon(ms = 700) { clearTimeout(syncTimer); syncTimer = setTimeout(syncOut, ms); }
 
@@ -1112,12 +1225,12 @@ async function syncOut() {
   let retry = false;
   try {
     const mine = new Map();
-    for (const [kind, list] of [["marker", markers], ["arrow", arrows]]) for (const it of list) if (it.shared) mine.set(it.id, [kind, it]);
+    for (const kind of KINDS) for (const it of listOf(kind)) if (it.shared) mine.set(it.id, [kind, it]);
     for (const [id, [kind, it]] of mine) {
       const key = itemKey(it);
       if (sentAs.get(id) === key) continue;
       sentAs.set(id, key);
-      const f = featureFromItem(it, kind, live.uid);
+      const f = featureFromItem(it, kind, live.uid, new Date(), kind === "shape" ? shapeRing(it) : null);
       it.by = live.uid; it.updated = f.properties.updated;
       const r = await shareRequest(id, f);
       if (r === true) continue;
@@ -1153,7 +1266,7 @@ function syncIn(st) {
     there.add(id);
     const hold = holds.get(id);
     if (hold !== undefined) { if (hold === Infinity || st.rev < hold) continue; holds.delete(id); }
-    const list = got.kind === "marker" ? markers : arrows;
+    const list = listOf(got.kind);
     const i = list.findIndex((x) => x.id === id);
     if (i >= 0 && !list[i].shared) continue;          // this browser's own copy, no longer shared
     if (i >= 0 && itemKey(list[i]) !== sentAs.get(id)) continue;   // a change of ours not sent yet
@@ -1161,35 +1274,36 @@ function syncIn(st) {
     sentAs.set(id, key);
     if (i >= 0 && itemKey(list[i]) === key && list[i].updated === got.item.updated) continue;
     // Changed in place: a list row being typed in keeps the same item.
-    if (i >= 0) { for (const k of ["lng", "lat", "a", "b"]) delete list[i][k]; Object.assign(list[i], got.item); } else list.push(got.item);
+    if (i >= 0) { for (const k of ["lng", "lat", "a", "b", "type", "center", "radius", "points"]) delete list[i][k]; Object.assign(list[i], got.item); } else list.push(got.item);
     changed = true;
   }
   // Removed on the server: gone here too (one not sent yet, or on its way, stays).
-  for (const kind of ["marker", "arrow"]) {
-    const list = kind === "marker" ? markers : arrows;
+  for (const kind of KINDS) {
+    const list = listOf(kind);
     const keepIt = (x) => !x.shared || there.has(x.id) || !sentAs.has(x.id) || holds.has(x.id);
     const kept = list.filter(keepIt);
     if (kept.length === list.length) continue;
     for (const x of list) if (!keepIt(x)) sentAs.delete(x.id);
-    if (kind === "marker") markers = kept; else arrows = kept;
+    setList(kind, kept);
     changed = true;
   }
   if (changed) sharedChanged();
 }
 /** Sharing ended (switched off on the server): the shared items are the server's, so they go. */
 function dropShared() {
-  if (!markers.some((m) => m.shared) && !arrows.some((a) => a.shared)) return;
-  markers = ownOnly(markers); arrows = ownOnly(arrows);
+  if (!KINDS.some((kind) => listOf(kind).some((x) => x.shared))) return;
+  for (const kind of KINDS) setList(kind, ownOnly(listOf(kind)));
   sentAs.clear(); holds.clear();
   sharedChanged();
 }
 function sharedChanged() {
-  if (map.getSource("markers")) { map.getSource("markers").setData(markersFC()); map.getSource("arrows").setData(arrowsFC()); }
-  // Not while a name is being typed in the lists: after it.
-  const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest("#tab-markers input");
-  if (typing) renderLists.pending = true; else renderLists();
+  if (map.getSource("markers")) {
+    map.getSource("markers").setData(markersFC()); map.getSource("arrows").setData(arrowsFC()); map.getSource("shapes").setData(shapesFC());
+  }
+  drawRoutes();
+  refreshLists();
 }
-$("tab-markers").addEventListener("focusout", () => setTimeout(() => { if (renderLists.pending && !document.activeElement.closest("#tab-markers input")) renderLists(); }, 0));
+$("tab-markers").addEventListener("focusout", () => setTimeout(() => { if (renderLists.pending && !document.activeElement.closest("#tab-markers input, #tab-markers select")) renderLists(); }, 0));
 
 /* ---------- messages ---------- */
 let openConversation = null;          // the partner shown, or null
@@ -1328,7 +1442,6 @@ function onLive(l) {
     drawMe();
   }
   drawLive();
-  renderRoutes();
   renderMessages();
 }
 renderLiveSwitches();

@@ -48,7 +48,22 @@ test("files from other software: points, two-point lines, polygons, multi geomet
   assert.equal(got.shapes.length, 1);
   assert.equal(got.shapes[0].points.length, 3, "the closing point is dropped");
   assert.equal(got.shapes[0].label, "Field");
-  assert.equal(got.skipped, 2, "the three-point line and the empty feature");
+  assert.equal(got.routes.length, 1, "a line of three points is a route");
+  assert.deepEqual(got.routes[0], { points: [{ lng: 10, lat: 50 }, { lng: 11, lat: 51 }, { lng: 12, lat: 52 }], routing: "straight", speedMph: 2, label: "", color: "#123456" });
+  assert.equal(got.skipped, 1, "the empty feature");
+});
+
+test("routes: written as the app writes them, read back the same", () => {
+  const route = { points: [{ lng: 10, lat: 50 }, { lng: 10.1, lat: 50 }, { lng: 10.1, lat: 50.1 }], routing: "driving", speedMph: 25, label: "R1", color: "#6f2dbd" };
+  const fc = toGeoJSON([], [], [], {}, [route]);
+  assert.equal(fc.features[0].properties.fieldmap.kind, "route");
+  assert.deepEqual(fc.features[0].properties.fieldmap.waypoints, [[10, 50], [10.1, 50], [10.1, 50.1]]);
+  assert.deepEqual(fromGeoJSON(JSON.stringify(fc), "#000000").routes[0], route);
+  // A two-point route stays a route; a line longer than a route can be is skipped.
+  const two = toGeoJSON([], [], [], {}, [{ ...route, points: route.points.slice(0, 2) }]);
+  assert.equal(fromGeoJSON(two, "#000000").routes.length, 1);
+  const long = { type: "Feature", geometry: { type: "LineString", coordinates: Array.from({ length: 31 }, (_, i) => [i / 100, 0]) }, properties: {} };
+  assert.deepEqual([fromGeoJSON(long, "#000000").routes.length, fromGeoJSON(long, "#000000").skipped], [0, 1]);
 });
 
 test("bad files give a plain message, bad values are not loaded", () => {

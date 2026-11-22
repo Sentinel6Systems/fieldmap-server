@@ -28,7 +28,14 @@ html, body { height: 100%; overflow: hidden; }
 
 /* The tool bar on the map (a MapLibre control under the zoom buttons). */
 .toolbar button { display: flex; align-items: center; justify-content: center; }
-.toolbar button svg { width: 18px; height: 18px; }
+.toolbar button svg { width: 18px; height: 18px; flex: none; }
+.toolbar button span { display: none; }
+.maplibregl-ctrl-group.toolbar button[hidden] { display: none; }
+/* A wide screen has room for each tool's name beside its icon. */
+@media (min-width: 641px) {
+  .maplibregl-ctrl-group.toolbar button { width: auto; min-width: 29px; height: 32px; justify-content: flex-start; gap: 8px; padding: 0 12px 0 6px; }
+  .toolbar button span { display: inline; font-size: 13px; font-weight: 600; white-space: nowrap; }
+}
 .toolbar button.active { background: var(--sig); color: var(--on-sig); outline: none; }
 .maplibregl-ctrl-group.toolbar button { color: #1a1e1a; }
 .maplibregl-ctrl-group.toolbar button.active { background: #4f6b1f; color: #fff; }
@@ -137,6 +144,8 @@ label.inline { flex-direction: row; align-items: center; gap: 10px; margin-top: 
 label.inline select { flex: 1; }
 .radius-row { display: grid; grid-template-columns: auto 1fr 72px; gap: 8px; align-items: center; margin: 6px 0 2px 40px; font-size: 12px; color: var(--muted); }
 .radius-row input, .radius-row select { height: 32px; min-height: 32px; padding: 0 8px; font-size: 14px; }
+.route-row { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 8px; align-items: center; margin: 6px 0 2px 40px; font-size: 12px; color: var(--muted); }
+.route-row select { height: 32px; min-height: 32px; padding: 0 8px; font-size: 14px; min-width: 0; }
 .item { padding: 5px 0; border-bottom: 1px solid var(--line); }
 .item-row { display: grid; grid-template-columns: 32px 1fr 36px 36px; gap: 8px; align-items: center; }
 .item.selected input[type=text] { border-color: var(--sig); }
