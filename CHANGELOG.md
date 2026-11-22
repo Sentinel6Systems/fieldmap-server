@@ -2,6 +2,9 @@
 
 ## Since v1.0.0
 
+- **Map Builder: the size of the finished maps.** Step 3 says how much space the finished maps take, and the
+  downloaded source data kept for later builds; **Storage Breakdown** ends with a Total row (final size and time).
+
 - **Builds follow Geofabrik's new download addresses.** Geofabrik now keeps each area in a folder of its own
   (`north-america/us/alaska/alaska.poly`), and its old addresses lead nowhere. The terrain outlines could not be
   downloaded, so contours, hillshade and elevation covered the whole box round all regions instead: for Alaska and the

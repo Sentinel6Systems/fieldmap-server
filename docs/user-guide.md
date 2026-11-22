@@ -72,7 +72,8 @@ After that, the maps work with no internet.
    government data for regions in the United States. Press **?** beside a line to read about it. Under **Terrain
    Resolution**, choose **Standard (All Regions)**, or **High (United States)** for the sharper USGS terrain.
 4. **Storage and Build Time.** The page compares the space the build needs with the free space on the server. It
-   won't start a build that doesn't fit.
+   won't start a build that doesn't fit. It also says how much space the finished maps take, and the downloaded source
+   data the server keeps for later builds; **Storage Breakdown** lists each item with a total.
 5. **Build.** Read **Before You Start** and press **Start Build**, then **Start Build** again in **Confirm Build**.
 
 ### On a Raspberry Pi

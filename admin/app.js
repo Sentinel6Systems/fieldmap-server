@@ -480,6 +480,9 @@ async function refresh() {
   drawLayers();
   const e = estimate, share = (e.need_gb + e.reserve_gb) / Math.max(e.free_gb, 0.1);
   const cls = !e.space_ok ? "over" : share > 0.8 ? "tight" : "ok";
+  // Finished maps, and the downloads (OpenStreetMap extracts, elevation cells) kept for the next build.
+  const source = e.items.filter(i => i.key === "osm" || i.key === "dem").reduce((t, i) => t + i.kept_gb, 0);
+  const maps = Math.max(e.kept_gb - source, 0);
   const keep = e.reserve_gb ? `, plus ${gb(e.reserve_gb)} that stays free for the system` : "";
   $("space").hidden = false; $("space-empty").hidden = true;
   $("meter").className = `meter ${cls}`;
@@ -491,6 +494,7 @@ async function refresh() {
   $("verdict").textContent = (cls === "over"
     ? `Not enough storage. The build needs about ${gb(e.need_gb)}${keep}, but only ${gb(e.free_gb)} is free.` + (terrain ? "" : " Select fewer or smaller regions, or fewer layers.")
     : `${cls === "tight" ? "This fits, but storage will be low" : "This fits"}. The build needs about ${gb(e.need_gb)} while it runs${keep}, and ${gb(e.free_gb)} is free. ` +
+      `The finished maps take about ${gb(maps)}` + (source >= 0.05 ? `, and the downloaded source data kept for later builds about ${gb(source)}. ` : ". ") +
       (e.more_after_gb >= 0.05 ? `After the build, about ${gb(e.more_after_gb)} more storage is in use.` : "After the build, storage use does not increase.")) +
     (terrain ? ` Most of this is for the high-resolution terrain. With Terrain Resolution set to Standard (under Advanced Options), the build needs about ${gb(e.standard_need_gb)}.` : "");
   $("space-have").textContent = e.on_hand_gb >= 0.05
@@ -506,6 +510,8 @@ async function refresh() {
   body.replaceChildren();
   for (const i of e.items) body.append(el("tr", {}, el("td", { textContent: i.label }), el("td", { textContent: gb(i.kept_gb) }),
     el("td", { textContent: i.temp_gb ? gb(i.temp_gb) : "–" }), el("td", { textContent: hours(i.hours) })));
+  $("space-total").textContent = gb(e.kept_gb);
+  $("time-total").textContent = hours(e.hours);
   $("start").disabled = !e.ok;
   $("start-why").textContent = e.ok ? "" : e.memory_problem ? "Not enough RAM on this server for this build." : "Not enough free storage for this build.";
 }
