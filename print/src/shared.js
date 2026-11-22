@@ -105,6 +105,18 @@ export function personImage(fill, ratio = 1) {
   diamond(c - 6 * ratio, fill);
   return g.getImageData(0, 0, size, size);
 }
+/** The chevron along a route that shows its direction of travel, as in the app: drawn white, to be
+ *  colored as a signed-distance image (icon-color, with a white halo). */
+export function chevronImage(ratio = 1) {
+  const size = Math.round(14 * ratio), m = 3 * ratio;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext("2d");
+  g.strokeStyle = "#fff"; g.lineWidth = 3 * ratio; g.lineCap = "round"; g.lineJoin = "round";
+  g.beginPath(); g.moveTo(m, m); g.lineTo(size - m, size / 2); g.lineTo(m, size - m); g.stroke();
+  return g.getImageData(0, 0, size, size);
+}
+export const CHEVRON = "route-chevron";
 // Live, gone quiet, and this browser's own location (placed by hand).
 export const PERSON_COLORS = { "live-person": "#00b4d8", "live-person-old": "#8a8f8a", "live-me": "#7a9a2e" };
 

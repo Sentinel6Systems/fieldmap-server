@@ -175,7 +175,8 @@ export function durationText(seconds) {
 }
 
 /** Routes as features to draw. part: line (along roads, or a Straight Line route), dashed (a leg
- *  with no way found, or still being asked for, and the part of a leg off the road), vertex (a point, draggable: index), label. */
+ *  with no way found, or still being asked for, and the part of a leg off the road), way (the
+ *  whole leg, for the direction chevrons), vertex (a point, draggable: index), label. */
 export function routesFC(routes, router) {
   const features = [];
   const add = (geometry, props) => features.push({ type: "Feature", geometry, properties: props });
@@ -185,6 +186,8 @@ export function routesFC(routes, router) {
       if (leg.head) add({ type: "LineString", coordinates: leg.head }, { ...base, part: "dashed" });
       add({ type: "LineString", coordinates: leg.line }, { ...base, part: leg.routed ? "line" : "dashed" });
       if (leg.tail) add({ type: "LineString", coordinates: leg.tail }, { ...base, part: "dashed" });
+      // The whole leg once more, for the chevrons that show the direction of travel (as in the app).
+      add({ type: "LineString", coordinates: [...(leg.head ? [leg.head[0]] : []), ...leg.line, ...(leg.tail ? [leg.tail[1]] : [])] }, { ...base, part: "way" });
     }
     route.points.forEach((p, index) => add({ type: "Point", coordinates: [p.lng, p.lat] }, { ...base, part: "vertex", index }));
     if (route.points.length) add({ type: "Point", coordinates: [route.points[0].lng, route.points[0].lat] }, { ...base, part: "label", label: route.label || "" });

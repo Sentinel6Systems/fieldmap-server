@@ -13,7 +13,7 @@ import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groups
 import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
 import { initWmmNotice } from "./wmm.js";
 import { startLive, conversations, partnerOf, ageText, statusText, cleanText, MAX_NAME, BASE } from "./live.js";
-import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, SPEEDS, MAX_ROUTE_POINTS, shareableShape } from "./shared.js";
+import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, SPEEDS, MAX_ROUTE_POINTS, shareableShape, chevronImage, CHEVRON } from "./shared.js";
 import { createRouter, routesFC, routeStats, durationText, ROAD_CLASSES } from "./routing.js";
 
 // The map at /map/: what the devices share (live.js, shared.js), drawing, terrain analysis, and
@@ -291,6 +291,10 @@ map.on("load", () => {
     layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3.5 } });
   map.addLayer({ id: "routes-dashed", type: "line", source: "routes", filter: rpart("dashed"),
     layout: { "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3, "line-dasharray": [2, 1.5] } });
+  map.addLayer({ id: "routes-way", type: "symbol", source: "routes", filter: rpart("way"),
+    layout: { "symbol-placement": "line", "symbol-spacing": 70, "icon-image": CHEVRON, "icon-allow-overlap": true, "icon-ignore-placement": true,
+      "icon-rotation-alignment": "map" },
+    paint: { "icon-color": ["get", "color"], "icon-halo-color": "#fff", "icon-halo-width": 1.5 } });
   map.addLayer({ id: "routes-vertex", type: "circle", source: "routes", filter: rpart("vertex"),
     paint: { "circle-radius": 5, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2.5 } });
   map.addLayer({ id: "routes-label", type: "symbol", source: "routes", filter: rpart("label"),
@@ -1126,6 +1130,7 @@ map.on("styleimagemissing", (e) => {
   const fill = PERSON_COLORS[e.id];
   const ratio = Math.max(1, Math.round(window.devicePixelRatio || 1));
   if (fill && !map.hasImage(e.id)) map.addImage(e.id, personImage(fill, ratio), { pixelRatio: ratio });
+  if (e.id === CHEVRON && !map.hasImage(e.id)) map.addImage(e.id, chevronImage(ratio), { pixelRatio: ratio, sdf: true });
 });
 
 /** The live layers as they are now; also every few seconds, so that locations age between answers.

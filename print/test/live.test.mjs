@@ -195,7 +195,7 @@ test("routes: legs along roads from the router, straight and dashed where it has
   assert.equal(legs[0].line.length, 3);
   assert.equal(legs[0].meters, 1500);
   const parts = routesFC([route], router).features.map((f) => f.properties.part);
-  assert.deepEqual(parts, ["line", "dashed", "vertex", "vertex", "vertex", "label"]);
+  assert.deepEqual(parts, ["line", "way", "dashed", "way", "vertex", "vertex", "vertex", "label"]);
   const st = routeStats(route, router);
   assert.equal(st.straightLegs, 1);
   assert.ok(st.meters > 1500 + 700 && st.meters < 1500 + 900);
@@ -239,7 +239,9 @@ test("routes: a leg that ends off the road goes along the road to the nearest on
   assert.deepEqual(leg.tail, [[10.08, 45], [10.08, 45.009]]);
   assert.equal(leg.head, null);
   assert.ok(Math.abs(leg.meters - 6400 - 995) < 10, "the road, and the straight part to the point");
-  assert.deepEqual(routesFC([route], router).features.map((f) => f.properties.part), ["line", "dashed", "vertex", "vertex", "label"]);
+  const fc = routesFC([route], router).features;
+  assert.deepEqual(fc.map((f) => f.properties.part), ["line", "dashed", "way", "vertex", "vertex", "label"]);
+  assert.deepEqual(fc[2].geometry.coordinates.at(-1), [10.08, 45.009], "the chevrons run on to the point off the road");
   assert.deepEqual([routeStats(route, router).offRoad, routeStats(route, router).straightLegs], [1, 0]);
 });
 
