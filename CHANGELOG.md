@@ -2,6 +2,19 @@
 
 ## Since v1.0.0
 
+- **The Map Builder runs on a Raspberry Pi.** On a machine with less than 8 GB of RAM (or `PI_MODE=yes` in `.env`) it
+  builds in Pi mode: every build container within `BUILD_MEMORY` (2.5 GB, swap included), Planetiler's node locations
+  and working data in memory-mapped files on disk with a heap of two thirds of the cap, contour lines one cell at a
+  time, the 30 m terrain only (10 m, 1 m and the world layer are refused), and 5 GB of the drive left free
+  (`BUILD_RESERVE_GB`). The estimate also checks RAM: a selection too large for the cap is refused before it starts,
+  in plain words, and the build time counts with a Pi's pace. The page warns when the maps are on an SD card.
+  `FIELDMAP_PAUSE_UNITS` in `.env` names services (systemd, or `docker:<name>`) that a build stops to free RAM and
+  starts again when it ends, fails or is canceled, and after a crash or a reboot in the middle; the page names them
+  before the build (**Stop Services and Start Build**) and while it runs. Stopping them is done by a root-owned helper
+  that one sudoers rule lets the Map Builder run with `stop` or `restore` only (`scripts/pause-setup.sh`).
+  `install-nginx.sh` installs the Map Builder (`/mapadmin/` in `FIELDMAP_NGINX_DIR`), and no longer stops when no maps
+  are there yet; `install.sh` on a Pi needs no `--no-builder`. The build scripts read `FIELDMAP_DATA`, and use the
+  machine's network when Docker has none of its own.
 - **Admin › Devices sets up devices step by step**, and Admin opens on it: 1. Android App, 2. Location Sharing and
   Messages (the sharing switch, moved up: messages need it), 3. Remote Connectivity (optional; its switch moved
   here from Remote Access, with pairing and the connectivity status), 4. Paired Devices. Remote Access keeps the

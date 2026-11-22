@@ -75,6 +75,24 @@ After that, the maps work with no internet.
    won't start a build that doesn't fit.
 5. **Build.** Read **Before You Start** and press **Start Build**, then **Start Build** again in **Confirm Build**.
 
+### On a Raspberry Pi
+
+A server with less than 8 GB of RAM, such as a Raspberry Pi, builds in **Pi mode**. Step 3 says so. In Pi mode:
+
+- A build uses at most 2.5 GB of RAM. The page refuses a selection that needs more, before the build starts, and
+  says why (for example, regions too large for the base map). Build large regions on a bigger machine and copy the
+  files over.
+- **Terrain Resolution** offers **Standard** only (30 m), and **Include World Overview** is not offered.
+- A build leaves 5 GB of storage free for the system, and the build times allow for the slower processor.
+- If the owner listed services to stop during a build (`FIELDMAP_PAUSE_UNITS`, see the
+  [reference](reference.md#builds-on-a-raspberry-pi)), step 4 names them under **Services Stopped During Build**,
+  and the button in **Confirm Build** is **Stop Services and Start Build**. Those services are unavailable until the
+  build ends, and then start again by themselves, also when the build fails or is canceled, or after a restart.
+- If the maps are on an SD card, step 3 shows **SD Card Storage**: a build writes many gigabytes, which is slow on an
+  SD card and wears it out. Use an SSD.
+
+A small region, such as a US state or a small country, takes a few hours on a Raspberry Pi 4.
+
 > **Note:** A build replaces the layers you select. If the server holds one region and you build another, it then
 > holds only the new one. Select every region you want to keep in one build.
 

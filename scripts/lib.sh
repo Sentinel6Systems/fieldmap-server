@@ -21,7 +21,7 @@ DATA_DIR="$(build_setting FIELDMAP_DATA "$REPO_DIR/data")"
 
 # Pi mode: a machine with less than 8 GB of RAM (8 GB machines report a little under 8 GiB, so
 # the line is drawn at 7 GiB, as in mem-limit.sh), or PI_MODE=yes / no in .env. In Pi mode:
-#   - every container a build starts stays within BUILD_MEMORY (default 3g), swap included;
+#   - every container a build starts stays within BUILD_MEMORY (default 2560m: 2.5 GB, safe on a 4 GB Pi), swap included;
 #   - Planetiler keeps its node locations and its other working data in files on the data
 #     drive (memory-mapped), not in its Java heap, which stays at two thirds of BUILD_MEMORY;
 #   - the contour lines are computed one elevation cell at a time (CONTOUR_JOBS=1);
@@ -39,7 +39,7 @@ case "$FIELDMAP_PI" in
        fi ;;
 esac
 if [ "$FIELDMAP_PI" = yes ]; then
-    BUILD_MEMORY="$(build_setting BUILD_MEMORY 3g)"
+    BUILD_MEMORY="$(build_setting BUILD_MEMORY 2560m)"
     BUILD_RESERVE_GB="$(build_setting BUILD_RESERVE_GB 5)"
     CONTOUR_JOBS=1
 else
@@ -93,6 +93,11 @@ BUILD_DOCKER_ARGS=(--label "$BUILD_LABEL" --cpu-shares "${BUILD_CPU_SHARES:-128}
 # time, so this is the cap of the whole build.
 if [ -n "$BUILD_MEMORY" ]; then
     BUILD_DOCKER_ARGS+=(--memory "$BUILD_MEMORY" --memory-swap "$BUILD_MEMORY")
+fi
+# Docker set up without a network of its own (pi/docker/daemon.json, install-nginx.sh): the build
+# containers use the machine's network (the tool container downloads).
+if [ -z "${IN_TOOLS:-}" ] && ! docker network inspect bridge >/dev/null 2>&1; then
+    BUILD_DOCKER_ARGS+=(--network host)
 fi
 
 # Called when a build container failed. Docker gives 137 for a container that was killed, which
@@ -518,7 +523,8 @@ reexec_in_tools() {
         return 0
     fi
     echo "Building the tool image (first run can take some minutes)..."
-    docker build -q -t "$TOOLS_IMAGE" "$REPO_DIR/tools"
+    # With the machine's network: Docker may have none of its own (pi/docker/daemon.json).
+    docker build -q --network host -t "$TOOLS_IMAGE" "$REPO_DIR/tools"
     # Under a memory cap, GDAL's block cache stays small (its default is 5 % of the machine's RAM,
     # which it reads past the cap).
     local gdal=()

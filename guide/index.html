@@ -344,6 +344,15 @@
       carries on, and the old maps work until it finishes. If it fails or you press <b>Cancel Build</b>, the maps
       don't change, and the same build resumes where it stopped. <b>Repeat Last Build</b> fills in the last
       choices; <b>Reset</b> clears them.</p>
+    <h3>On a Raspberry Pi</h3>
+    <p>A server with less than 8 GB of RAM builds in <b>Pi mode</b>; step 3 says so. A build then uses at most 2.5 GB
+      of RAM, offers the <b>Standard</b> terrain only, and leaves 5 GB of storage free. The page refuses a selection
+      that is too large for the server, and says why: build large regions on a bigger machine.</p>
+    <p>If <b>Services Stopped During Build</b> appears in step 4, the server stops the services it names (a media
+      server, for example) while it builds, to free RAM. Press <b>Stop Services and Start Build</b> to agree. They
+      are unavailable until the build ends, then start again by themselves, also if the build fails or you cancel
+      it. <b>SD Card Storage</b> in step 3 means the maps are on an SD card: a build is slow there and wears the card
+      out, so use an SSD.</p>
   </section>
 
   <!-- ------------------------------------------------------------------ -->

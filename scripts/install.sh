@@ -22,7 +22,7 @@
 #   5. installs the map builder page (scripts/admin.sh) as a systemd service. The page is then
 #      at /mapadmin/. --no-builder leaves it out, and removes the service if an earlier run
 #      installed it. On a machine with less than 8 GB of RAM (a Raspberry Pi) it builds in Pi
-#      mode: at most 3 GB of RAM, the 30 m elevation data only (see PI_MODE in .env.example).
+#      mode: at most 2.5 GB of RAM, the 30 m elevation data only (see PI_MODE in .env.example).
 #      With FIELDMAP_PAUSE_UNITS in .env it stops those services during a build to free RAM and
 #      starts them again afterwards (scripts/pause-setup.sh lets it, as root);
 #   6. puts a firewall on the machine itself: nothing from outside the local network and VPNs

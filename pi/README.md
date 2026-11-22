@@ -13,18 +13,35 @@ Internet during the install.
 sudo apt install -y git
 git clone https://github.com/Sentinel6Systems/fieldmap-server.git
 cd fieldmap-server
-cp <path>/*.mbtiles data/      # basemap, contours, hillshade (and optional extras, usdata, ...), built elsewhere
-./scripts/install.sh --no-builder
-sudo reboot                    # once, when the script asks for it (the tile server's memory cap)
+./scripts/install.sh
+sudo reboot                    # once, when the script asks for it (the memory caps)
 ```
 
 Run `install.sh` as yourself, without sudo; it asks for sudo where it needs it. It installs Docker (Debian's
 `docker.io`, `docker-compose` and `docker-buildx`) and adds you to the docker group, then installs the same containers
-and services as on a PC: the map at `http://<pi-host>/map/`, the tile server for TAK clients on port 8080, remote access
-for the Fieldmap app, and the firewall. To update: `git pull && ./scripts/install.sh --no-builder`.
+and services as on a PC: the map at `http://<pi-host>/map/`, the Map Builder at `http://<pi-host>/mapadmin/`, the tile
+server for TAK clients on port 8080, remote access for the Fieldmap app, and the firewall. To update:
+`git pull && ./scripts/install.sh`.
 
-Build the maps on a bigger machine (`scripts/build-region.sh <region-file>`, or its Map Builder page) and copy the
-`.mbtiles` files into `data/`: building wants plenty of RAM and disk. `--no-builder` leaves the Map Builder page out.
+### Building maps on the Pi
+
+The Map Builder builds on the Pi itself, in **Pi mode** (on by itself below 8 GB of RAM; see
+[Builds on a Raspberry Pi](../docs/reference.md#builds-on-a-raspberry-pi)): every build container stays within 2.5 GB
+of RAM, Planetiler keeps its working data on disk, the contour lines are computed one cell at a time, the terrain is
+the 30 m data only, and a build leaves 5 GB of the drive free. The page refuses a selection too large for that, before
+the build starts. A US state or a small country is fine; for several large states or a large country, build on a
+bigger machine (`scripts/build-region.sh <region-file>`, or its Map Builder) and copy the `.mbtiles` files into
+`data/`. `--no-builder` leaves the Map Builder out.
+
+- **Use an SSD.** A build writes many gigabytes: on an SD card it is slow and wears the card out. The page warns when
+  the maps are on one.
+- **Other services.** On a Pi that also runs other services, list the large ones in `.env` to stop them during a build
+  and free their RAM: `FIELDMAP_PAUSE_UNITS="jellyfin calibre-web docker:<container>"` (systemd services by name,
+  Docker containers as `docker:<name>`). The page names them before the build and while it runs, and they start
+  again when it ends, also when it fails, is canceled, or a reboot cut it short. The list is read at every build:
+  a change needs no new install.
+- **Access Code.** Everyone who can reach the server can open the Map Builder and replace the maps. Set
+  `ADMIN_PIN=<code>` in `.env` (then run the installer again) on a network others use, such as a hotspot.
 
 The Pi itself joins a network: a router, or the Wi-Fi of another device. fieldmap-server does not run a Wi-Fi hotspot.
 
@@ -57,6 +74,8 @@ sudo FIELDMAP_NGINX_DIR=/etc/nginx/fieldmap.d \
 | `FIELDMAP_PORTS_FILE` | For a machine whose own firewall drops everything from outside: what remote access needs from outside, now, one line each, rewritten when it changes (see [Firewall](../docs/reference.md#firewall)): `wan tcp <port>` (the gateway, while the router's port is the way in: from anywhere, on any interface but a Wi-Fi hotspot's) and `iface nb-fieldmap tcp <port>` (the gateway, while NetBird is the way in: on NetBird's interface only). Comments only: nothing. |
 | `FIELDMAP_SERVER_NAME` | The host name of that server block, for the checks at the end (default `127.0.0.1`). |
 | `FIELDMAP_USER` | The user the services run as. With `FIELDMAP_DATA` the default is a system user `fieldmap`, made by the script; otherwise the owner of the repository. |
+| `FIELDMAP_BUILD_USER` | The user the Map Builder runs as: it writes the maps into the data folder and starts the build's Docker containers, so it is added to the docker group. Default: the owner of the data folder (when that is not root). |
+| `FIELDMAP_PAUSE_UNITS` | Services the Map Builder stops during a build to free RAM, and starts again afterwards (see [Building maps on the Pi](#building-maps-on-the-pi)). |
 
 Put the repository where nginx (`www-data`) can read it, such as `/opt/fieldmap-server` owned by the admin user; not
 in a home folder, which is often closed to other users (mode 700): the script stops when nginx cannot read it. The
@@ -85,9 +104,13 @@ see [Tile addresses](../docs/reference.md#tile-addresses-for-tak-and-other-apps)
 4. **Magnetic model service.** `pi/systemd/fieldmap-wmm.service` runs `tools/wmm-update.py serve` on `127.0.0.1:8091`,
    allowed to write only `wmm/` in the data folder; nginx passes `/map/wmm-api/` to it. It backs the map's **Update
    Magnetic Model** button (see [Magnetic model updates](../docs/how-it-works.md#magnetic-model-updates)).
-5. **nginx.** `pi/nginx/maps-nginx.conf`, `mapprinter-nginx.conf` and `routing-nginx.conf` into `FIELDMAP_NGINX_DIR`,
-   then `nginx -t` and a reload.
-6. **Remote access** for the Fieldmap app (see [Remote access](../docs/user-guide.md#remote-access)): `scripts/remote.sh setup`
+5. **Map Builder.** `systemd/fieldmap-admin.service` runs `scripts/admin.sh` as `FIELDMAP_BUILD_USER`, which joins the
+   docker group; `scripts/pause-setup.sh` adds the root helper, its one sudoers rule and the boot unit that stop and
+   start the services of `FIELDMAP_PAUSE_UNITS` (see [Builds on a Raspberry Pi](../docs/reference.md#builds-on-a-raspberry-pi)).
+   Without the three `.mbtiles` files the install still runs: the map is blank until the first build.
+6. **nginx.** `pi/nginx/maps-nginx.conf`, `mapprinter-nginx.conf`, `routing-nginx.conf` and `mapadmin-nginx.conf`
+   (`/mapadmin/`) into `FIELDMAP_NGINX_DIR`, then `nginx -t` and a reload.
+7. **Remote access** for the Fieldmap app (see [Remote access](../docs/user-guide.md#remote-access)): `scripts/remote.sh setup`
    adds `pi/nginx/mapremote-nginx.conf`, the `fieldmap-remote` and `fieldmap-share` services, the gateway container, and a
    firewall table of its own (`fieldmap_guard`). `sudo REMOTE=no ./scripts/install-nginx.sh` leaves remote access out,
    and still puts up the firewall (see [Firewall](../docs/reference.md#firewall)). If strangers could join the network

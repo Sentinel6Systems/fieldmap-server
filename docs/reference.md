@@ -71,19 +71,58 @@ port.
 `install.sh` runs the Map Builder as the `fieldmap-admin` systemd service (`systemd/fieldmap-admin.service`);
 `./scripts/admin.sh` starts it by hand. It runs on the host with Python's standard library, not in a container,
 because it starts the build scripts. It has no port of its own: the web front passes `/mapadmin/` to it through a
-socket file in `data/admin`. The page needs no internet to open; the builds do. The Raspberry Pi install does not
-set it up: build on a larger machine and copy the files over.
+socket file in `data/admin` (`install-nginx.sh`: the machine's nginx, through `pi/nginx/mapadmin-nginx.conf` in
+`FIELDMAP_NGINX_DIR`, with the socket in the data folder). The page needs no internet to open; the builds do.
+On a machine with less than 8 GB of RAM it builds in Pi mode (see [Builds on a Raspberry Pi](#builds-on-a-raspberry-pi)).
 
 | Setting (`.env` or environment) | Effect |
 |---|---|
 | `ADMIN_PIN=<code>` | The page asks for this code first. Set it on any network you do not fully trust |
 | `ADMIN_PORT=<port>` | A port of its own, for a machine with no web front |
 | `ADMIN_HOST=127.0.0.1` | Keep that port to the machine itself |
+| `PI_MODE=yes` / `no` | Pi mode on or off; without it, on below 8 GB of RAM |
+| `BUILD_MEMORY=2560m` | The most RAM a build may use; 2560m (2.5 GB) in Pi mode, no cap otherwise |
+| `BUILD_RESERVE_GB=5` | Storage a build leaves free; 5 GB in Pi mode, 0 otherwise |
+| `FIELDMAP_PAUSE_UNITS="..."` | Services a build stops to free RAM and starts again afterwards |
+| `FIELDMAP_BUILD_USER=<user>` | `install-nginx.sh` only: the user the service runs as (default: the data folder's owner) |
 
 A build from the page writes `data/admin/region.env` and runs `build-region.sh --staged` with it. New files are
 written to `data/incoming` and moved into `data/` together when every step has finished; then the tile server is
 restarted. `tools/make-admin-regions.py` (run in the tool container) rewrites `admin/regions.json`,
 `admin/land.json` and `admin/places.json` to pick up new extracts and current download sizes.
+
+## Builds on a Raspberry Pi
+
+Pi mode is on by itself on a machine with less than 8 GB of RAM (`PI_MODE=yes` or `no` in `.env` chooses). The build
+scripts (`scripts/lib.sh`) and the Map Builder then:
+
+- run every build container with `docker run --memory BUILD_MEMORY --memory-swap BUILD_MEMORY` (2560m by default;
+  one container runs at a time). A container that reaches it is stopped, and the log says it ran out of memory.
+- give Planetiler a Java heap of two thirds of that (`-Xmx`), and keep its node locations and other working data in
+  memory-mapped files in `data/tmp` (`--storage=mmap --nodemap-type=sparsearray --nodemap-storage=mmap`). Its heap
+  still grows with the region: the Map Builder refuses a base map (or printed map details) whose OpenStreetMap data is
+  larger than about 2.3 GB within 2.5 GB.
+- compute the contour lines one elevation cell at a time (`CONTOUR_JOBS=1`) and keep GDAL's cache at 256 MB.
+- use the 30 m Copernicus data only: `DEM_SOURCE=usgs`, the detail step (1 m) and the world layer are refused.
+- leave `BUILD_RESERVE_GB` (5) of the drive free: every step's disk check adds it.
+- count with a pace about three times slower than a PC's for the build time.
+
+The page warns when the data folder is on an SD card (an `mmcblk` device).
+
+**Services stopped during a build.** `FIELDMAP_PAUSE_UNITS` in `.env` lists services the Map Builder stops when a build
+starts, to free RAM: systemd services by name and Docker containers as `docker:<name>`, separated by spaces, for
+example `FIELDMAP_PAUSE_UNITS="jellyfin calibre-web docker:<container>"`. The page names them before the build (the
+build starts only once that is confirmed) and while it runs. They start again when the build finishes, fails or is
+canceled; when the build process dies, the Map Builder starts them as soon as it notices; and after a reboot in the
+middle of a build, `fieldmap-build-restore.service` does it at boot. The web server, SSH, the network, Docker and
+fieldmap-server's own services are never stopped, even when named.
+
+Only root can stop a system service, and the Map Builder runs as an ordinary user. The installers run
+`scripts/pause-setup.sh <user>`, which installs a copy of `tools/pause-services.py` owned by root at
+`/usr/local/lib/fieldmap-server/pause-services`, one sudoers rule in `/etc/sudoers.d/fieldmap-pause` that lets the
+Map Builder's user run exactly that file with `stop` or `restore` and nothing else, and the boot unit. The copy reads
+the list from the repository's `.env`; what it stopped is listed in `/var/lib/fieldmap-server/paused.json` (root's),
+and `restore` starts only what that file lists.
 
 ## Disk space
 

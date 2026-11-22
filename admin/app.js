@@ -480,7 +480,7 @@ async function refresh() {
   drawLayers();
   const e = estimate, share = (e.need_gb + e.reserve_gb) / Math.max(e.free_gb, 0.1);
   const cls = !e.space_ok ? "over" : share > 0.8 ? "tight" : "ok";
-  const keep = e.reserve_gb ? `, and ${gb(e.reserve_gb)} must stay free for the system` : "";
+  const keep = e.reserve_gb ? `, plus ${gb(e.reserve_gb)} that stays free for the system` : "";
   $("space").hidden = false; $("space-empty").hidden = true;
   $("meter").className = `meter ${cls}`;
   $("meter-need").style.width = `${Math.min(100, share * 100)}%`;
