@@ -381,6 +381,40 @@ def folder_gb(path):
     return total / 1024 ** 3
 
 
+# What builds keep in data/ besides the maps: the downloads (OpenStreetMap extracts and shared
+# sources, elevation cells, outlines), the working files of the terrain steps, Planetiler's
+# temporary files and the finished steps of a build that did not finish. Free Up Storage on the
+# page deletes them; the maps do not change, and the next build downloads its data again.
+CLEANUP = ("sources", "cache", "tmp", "incoming")
+
+
+def cleanup_status():
+    parts = {k: folder_gb(os.path.join(DATA, k)) for k in CLEANUP}
+    return {"gb": round(sum(parts.values()), 3), "parts": {k: round(v, 3) for k, v in parts.items()}}
+
+
+def clean_up():
+    """Deletes what is in the CLEANUP folders (the folders stay: a folder can be a link to another
+    drive). Returns the GB freed and the names it could not delete."""
+    before, failed = cleanup_status()["gb"], []
+    for k in CLEANUP:
+        folder = os.path.join(DATA, k)
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            continue
+        for name in names:
+            path = os.path.join(folder, name)
+            try:
+                if os.path.isdir(path) and not os.path.islink(path):
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+            except OSError:
+                failed.append(f"{k}/{name}")
+    return {"freed_gb": round(before - cleanup_status()["gb"], 3), "failed": failed}
+
+
 def on_hand(regions, layers, options):
     """Space (GB) already taken on this device that a build gets back or uses again, by the part
     of the build from which on it counts ("" from the start):
@@ -888,6 +922,10 @@ class Handler(BaseHTTPRequestHandler):
             if not self.signed_in():
                 return self.send(401, {"error": "pin"})
             return self.send(200, status())
+        if url.path == "/api/cleanup":
+            if not self.signed_in():
+                return self.send(401, {"error": "pin"})
+            return self.send(200, cleanup_status())
         if url.path == "/api/log":
             if not self.signed_in():
                 return self.send(401, {"error": "pin"})
@@ -932,6 +970,12 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/cancel":
                 cancel_build()
                 return self.send(200, {"ok": True})
+            if url.path == "/api/cleanup":
+                with LOCK:
+                    job = job_status()
+                    if job and job["state"] == "running":
+                        raise BadRequest("A build is in progress. Delete the downloaded data when it is complete.")
+                    return self.send(200, clean_up())
             if url.path in ("/api/estimate", "/api/build"):
                 regions, layers, options = check_selection(body)
                 est = estimate(regions, layers, options)

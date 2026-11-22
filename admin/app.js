@@ -687,6 +687,34 @@ function drawDisk() {
     el("div", { className: "bar" }, el("i", { style: `width:${Math.round(used * 100)}%` })));
 }
 
+// Free Up Storage: the downloads and working files builds keep (data/sources, cache, tmp, incoming).
+let cleanup = null;
+async function loadCleanup() {
+  try { cleanup = await api("api/cleanup"); } catch { return; }
+  $("cleanup").hidden = cleanup.gb < 0.05;
+  $("cleanup-text").textContent = `Downloads and build files on the server: about ${gb(cleanup.gb)}. The server keeps them so that ` +
+    "the next build does not download the same data again. On a server with little storage, delete them after each build. " +
+    "The maps do not change." + (cleanup.parts.incoming >= 0.05 ? " This also deletes the finished steps of the build that did not complete." : "");
+}
+$("cleanup-run").onclick = async () => {
+  if (!confirm(`Delete about ${gb(cleanup.gb)} of downloads and build files? The maps do not change. The next build downloads its data again` +
+    (cleanup.parts.incoming >= 0.05 ? " and starts from the beginning." : "."))) return;
+  $("cleanup-error").textContent = "";
+  $("cleanup-run").disabled = true;
+  $("cleanup-run").textContent = "Deleting…";
+  try {
+    const r = await api("api/cleanup", {});
+    if (r.failed.length) $("cleanup-error").textContent = `The server could not delete: ${r.failed.join(", ")}. Check the owner of these files in the data folder.`;
+  } catch (err) {
+    $("cleanup-error").textContent = err.message;
+  }
+  $("cleanup-run").disabled = false;
+  $("cleanup-run").textContent = "Delete Downloads and Build Files";
+  await loadCleanup();
+  poll();
+  refresh();
+};
+
 let wasRunning = false;
 async function poll() {
   try { status = await api("api/status"); } catch { return; }
@@ -694,7 +722,7 @@ async function poll() {
   drawServer();
   drawJob();
   const running = !!(status.job && status.job.state === "running");
-  if (wasRunning && !running) refresh();        // free space and what is on the device have changed
+  if (wasRunning && !running) { refresh(); loadCleanup(); }   // free space and what is on the device have changed
   // Space freed or taken on the device by something else: the estimate follows.
   else if (!running && estimate && Math.abs(status.free_gb - estimate.free_gb) >= 1) refresh();
   wasRunning = running;
@@ -730,6 +758,7 @@ async function start() {
   drawJob();
   wasRunning = !!(status.job && status.job.state === "running");
   refresh();
+  loadCleanup();
 }
 
 start();

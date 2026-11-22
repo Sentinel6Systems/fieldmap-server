@@ -104,6 +104,14 @@ the build carries on. The old maps keep working until the build has finished. If
 
 Try a small region first to check that everything works.
 
+### Free up storage
+
+The server keeps the downloads (OpenStreetMap data, elevation data) and the build's work files after a build, so the
+next build does not download the same data again. **Free Up Storage**, under step 4, shows how much space they take.
+On a server with little storage, such as a Raspberry Pi, press **Delete Downloads and Build Files** after each
+build. The maps don't change; the next build downloads its data again. If a build did not finish, this also deletes
+its finished steps, so the same build then starts from the beginning. You can't delete them while a build runs.
+
 **From the command line** you can do the same with a region file:
 
 ```bash

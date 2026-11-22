@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests for tools/admin-server.py: Pi mode, the RAM check, the free-space reserve and the services a
-build stops. Run: python3 -m unittest tools/test_admin_server.py"""
+build stops, Free Up Storage. Run: python3 -m unittest tools/test_admin_server.py"""
 import importlib.util
 import io
 import json
@@ -248,6 +248,59 @@ class AdminServerTest(unittest.TestCase):
                 mock.patch("builtins.open", mock.mock_open(read_data=mountinfo)):
             self.assertTrue(self.m.on_sd_card("/srv/maps/data"))
             self.assertFalse(self.m.on_sd_card("/opt/fieldmap-server/data"))
+
+
+    # ---------- Free Up Storage ----------
+
+    def put(self, rel, size):
+        path = os.path.join(self.data, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.truncate(size)                     # sparse: the size counts, nothing is written
+        return path
+
+    def post(self, path, body=b"{}"):
+        h = self.m.Handler.__new__(self.m.Handler)
+        h.path, h.rfile = path, io.BytesIO(body)
+        h.headers = {"Content-Type": "application/json", "Content-Length": str(len(body))}
+        sent = []
+        h.send = lambda code, data, *a, **k: sent.append((code, data))
+        h.do_POST()
+        return sent[0]
+
+    def test_cleanup_deletes_downloads_and_build_files_only(self):
+        mb = 100 * 1024 ** 2
+        self.put("sources/extracts/delaware-latest.osm.pbf", 3 * mb)
+        self.put("cache/dem/Copernicus_DSM_COG_10_N38_00_W076_00_DEM.tif", 2 * mb)
+        self.put("tmp/feature.db", mb)
+        self.put("incoming/basemap.mbtiles", mb)
+        maps = [self.put("basemap.mbtiles", mb), self.put("routing/W80_N35.rd5", mb), self.put("admin/job.json", 10)]
+        elsewhere = os.path.join(self.root, "elsewhere")
+        os.makedirs(elsewhere)
+        os.symlink(elsewhere, os.path.join(self.data, "cache", "linked"))
+        before = self.m.cleanup_status()
+        self.assertAlmostEqual(0.684, before["gb"], places=3)
+        self.assertAlmostEqual(0.293, before["parts"]["sources"], places=3)
+        result = self.m.clean_up()
+        self.assertEqual([], result["failed"])
+        self.assertAlmostEqual(0.684, result["freed_gb"], places=3)
+        self.assertEqual(0, self.m.cleanup_status()["gb"])
+        for k in self.m.CLEANUP:
+            self.assertEqual([], os.listdir(os.path.join(self.data, k)))      # the folders themselves stay
+        self.assertTrue(all(os.path.exists(p) for p in maps))
+        self.assertTrue(os.path.isdir(elsewhere))                              # a link is removed, not followed
+
+    def test_cleanup_waits_for_a_running_build(self):
+        path = self.put("sources/extracts/delaware-latest.osm.pbf", 10)
+        with mock.patch.object(self.m, "job_status", return_value={"state": "running"}):
+            code, data = self.post("/api/cleanup")
+        self.assertEqual(400, code)
+        self.assertIn("build is in progress", data["error"])
+        self.assertTrue(os.path.exists(path))
+        with mock.patch.object(self.m, "job_status", return_value={"state": "done"}):
+            code, data = self.post("/api/cleanup")
+        self.assertEqual(200, code)
+        self.assertFalse(os.path.exists(path))
 
 
 if __name__ == "__main__":
