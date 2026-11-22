@@ -51,8 +51,8 @@ reexec_in_tools ${AREAS:+--areas "$AREAS"} "$@"
 MIN_LON="$1" MIN_LAT="$2" MAX_LON="$3" MAX_LAT="$4"
 MINZOOM=$(( MAXZOOM < 8 ? MAXZOOM : 8 ))
 
-WORK_DIR="$REPO_DIR/data/cache/elevation"
-trap 'disk_full_hint "$REPO_DIR/data"' ERR
+WORK_DIR="$DATA_DIR/cache/elevation"
+trap 'disk_full_hint "$DATA_DIR"' ERR
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 
@@ -68,7 +68,7 @@ CELLS="$(terrain_land_cells "$WORK_DIR")"
 # is the output (measured: 11 MB per one-degree cell of mountains at zoom 12, four times
 # that for each zoom more), with room to spare.
 NEED_GB="$(python3 -c "print(max(2, int($CELLS * 0.03 * 4 ** ($MAXZOOM - 12) + 1)))")"
-require_free_space "$REPO_DIR/data" "$NEED_GB" "elevation tiles for $CELLS one-degree cells with land"
+require_free_space "$DATA_DIR" "$NEED_GB" "elevation tiles for $CELLS one-degree cells with land"
 
 SOURCE="Copernicus GLO-30" SOURCE_DATE="2011-2015"
 ATTRIBUTION="Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved"

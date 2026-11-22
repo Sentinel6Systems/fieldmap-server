@@ -50,7 +50,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib.sh
 source "$REPO_DIR/scripts/lib.sh"
-trap 'disk_full_hint "$REPO_DIR/data"' ERR
+trap 'disk_full_hint "$DATA_DIR"' ERR
 
 usage() {
     echo "Usage: $0 [--world] [--language <code>] [--staged] <region-file> [vector] [contours] [hillshade] [detail] [elevation] [extras] [routing] [usdata]" >&2
@@ -131,7 +131,7 @@ run_vector() {
 
     # Fetch Planetiler's shared inputs here, with retries and fallback
     # mirrors, so Planetiler itself makes no network calls.
-    fetch_shared_sources "$REPO_DIR/data/sources"
+    fetch_shared_sources "$DATA_DIR/sources"
 
     echo "Planetiler: build data/basemap.mbtiles (Java heap $PLANETILER_MEMORY${LANGUAGE:+, language $LANGUAGE}$([ "$WORLD" = yes ] && echo ", world layer for zoom 0-8"))"
     # --bounds limits the output to the region box. Without it Planetiler
@@ -153,7 +153,7 @@ run_elevation() {
 }
 
 run_extras() {
-    if [ ! -s "$REPO_DIR/data/sources/$REGION_NAME.osm.pbf" ]; then
+    if [ ! -s "$DATA_DIR/sources/$REGION_NAME.osm.pbf" ]; then
         # shellcheck disable=SC2086
         "$REPO_DIR/scripts/merge-osm.sh" "$REGION_NAME" $GEOFABRIK_AREAS
     fi
@@ -177,7 +177,7 @@ if [ -n "$STAGED" ]; then
     # The build scripts read FIELDMAP_STAGE (see OUT_DIR in lib.sh).
     export FIELDMAP_STAGE="incoming"
     # shellcheck disable=SC2034
-    OUT_DIR="$REPO_DIR/data/$FIELDMAP_STAGE" OUT_SUB="$FIELDMAP_STAGE/"
+    OUT_DIR="$DATA_DIR/$FIELDMAP_STAGE" OUT_SUB="$FIELDMAP_STAGE/"
     # A staged build that stops keeps the steps it finished in data/incoming. The same build
     # (same region file and settings) run again carries on from there; any other starts
     # afresh. The key is what the files depend on.
@@ -192,8 +192,8 @@ fi
 
 echo "Region: $REGION_NAME${LANGUAGE:+ (labels: $LANGUAGE)}$([ "$WORLD" = yes ] && echo ' (world layer for zoom 0-8)')"
 echo "Steps:  ${STEPS[*]}"
-mkdir -p "$REPO_DIR/data"
-echo "Free disk space: $(free_gb "$REPO_DIR/data") GB on the drive that holds $REPO_DIR/data"
+mkdir -p "$DATA_DIR"
+echo "Free disk space: $(free_gb "$DATA_DIR") GB on the drive that holds $DATA_DIR"
 echo "Each step checks its own space needs before it starts."
 TERRAIN_STEPS=()
 for step in "${STEPS[@]}"; do
@@ -223,12 +223,12 @@ if [ -n "$STAGED" ]; then
     echo "Every step finished: putting the new files in place."
     for f in "$OUT_DIR"/*.mbtiles; do
         [ -e "$f" ] || continue
-        mv -f "$f" "$REPO_DIR/data/"
+        mv -f "$f" "$DATA_DIR/"
     done
     # The routing files go into data/routing one by one (the folder stays: the web server's
     # containers have it mounted), and the squares the new index does not list go.
     if [ -d "$OUT_DIR/routing" ]; then
-        python3 "$REPO_DIR/tools/routing-files.py" install "$OUT_DIR/routing" "$REPO_DIR/data/routing"
+        python3 "$REPO_DIR/tools/routing-files.py" install "$OUT_DIR/routing" "$DATA_DIR/routing"
     fi
     rm -f "$OUT_DIR/.key" "$OUT_DIR/.done"
     rmdir "$OUT_DIR"
@@ -241,7 +241,7 @@ fi
 
 echo
 echo "Output files:"
-ls -lh "$REPO_DIR"/data/*.mbtiles 2>/dev/null || echo "(none)"
-if [ -f "$REPO_DIR/data/routing/index.json" ]; then
-    echo "Routing data: $(du -sh "$REPO_DIR/data/routing" | cut -f1) in $REPO_DIR/data/routing/"
+ls -lh "$DATA_DIR"/*.mbtiles 2>/dev/null || echo "(none)"
+if [ -f "$DATA_DIR/routing/index.json" ]; then
+    echo "Routing data: $(du -sh "$DATA_DIR/routing" | cut -f1) in $DATA_DIR/routing/"
 fi

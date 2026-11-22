@@ -38,6 +38,10 @@
 <section class="card" id="progress" hidden>
   <h2 id="progress-title"></h2>
   <p id="progress-text"></p>
+  <div class="notice warn" id="progress-pause" hidden>
+    <h3 id="progress-pause-title">Services Stopped</h3>
+    <p id="progress-pause-text"></p>
+  </div>
   <ol class="steps" id="progress-steps"></ol>
   <p class="quiet" id="progress-note"></p>
   <div class="row">
@@ -141,11 +145,17 @@
 
 <section class="card" id="step-space">
   <h2><span class="num">3</span> Storage and Build Time</h2>
+  <div class="notice warn" id="sd-warning" hidden>
+    <h3>SD Card Storage</h3>
+    <p>The map data on this server is on an SD card. A build writes many gigabytes: on an SD card it is slow, and it wears out the card. Move the data folder to an SSD before you build large maps.</p>
+  </div>
   <div id="space-empty" class="quiet">Select a region and at least one layer to see the storage the build needs.</div>
   <div id="space" hidden>
     <div class="meter" id="meter" role="img"><div class="need" id="meter-need"></div></div>
     <p class="verdict" id="verdict"></p>
+    <p class="verdict over" id="memory-verdict" hidden></p>
     <p id="time"></p>
+    <p class="quiet" id="pi-note" hidden></p>
     <details>
       <summary>Storage Breakdown</summary>
       <table id="space-table">
@@ -168,6 +178,10 @@
       <li><b>The current maps work until the build is complete.</b> The server installs all the new maps together at the end. If the build stops early, nothing changes.</li>
       <li><b>A build can take hours or days.</b> It needs an internet connection the whole time. You can close this page; the build continues.</li>
     </ul>
+  </div>
+  <div class="notice warn" id="pause-warning" hidden>
+    <h3>Services Stopped During Build</h3>
+    <p>To free RAM for the build, the server stops these services when the build starts: <b id="pause-list"></b>. They are unavailable while the build runs, and start again automatically when the build ends, also when it fails or you cancel it.</p>
   </div>
   <p class="error" id="build-error" role="alert"></p>
   <div class="row">

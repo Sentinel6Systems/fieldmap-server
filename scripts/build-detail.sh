@@ -31,18 +31,19 @@ fi
 export DETAIL_MAX_KM2="${DETAIL_MAX_KM2:-10000}" DETAIL_MAXZOOM="${DETAIL_MAXZOOM:-17}"
 export HILLSHADE_FORMAT="${HILLSHADE_FORMAT:-webp}"
 
+refuse_in_pi_mode "The 1 m USGS hillshade (the detail step)"
 reexec_in_tools "$@"
 
-WORK_DIR="$REPO_DIR/data/cache/detail"
-DEM_DIR="$REPO_DIR/data/cache/dem-usgs1m"
-trap 'disk_full_hint "$REPO_DIR/data"' ERR
+WORK_DIR="$DATA_DIR/cache/detail"
+DEM_DIR="$DATA_DIR/cache/dem-usgs1m"
+trap 'disk_full_hint "$DATA_DIR"' ERR
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR" "$DEM_DIR"
 
 # The zooms start above the hillshade's own: the one this build has staged, else the one
 # in use.
 BASE="$OUT_DIR/hillshade.mbtiles"
-[ -s "$BASE" ] || BASE="$REPO_DIR/data/hillshade.mbtiles"
+[ -s "$BASE" ] || BASE="$DATA_DIR/hillshade.mbtiles"
 if [ ! -s "$BASE" ]; then
     echo "Error: there are no hillshade tiles yet. Build the hillshade first: the detail area goes on top of it." >&2
     exit 1
@@ -60,7 +61,7 @@ python3 "$REPO_DIR/tools/detail-area.py" find --bbox "$@" --out "$WORK_DIR" \
     --max-km2 "$DETAIL_MAX_KM2" --zoom "$DETAIL_MAXZOOM"
 TILES="$(grep -c . "$WORK_DIR/tiles.txt")"
 # Up to about 400 MB a tile to download, then the hillshade raster and the tiles.
-require_free_space "$REPO_DIR/data" "$(( TILES * 6 / 10 + 2 ))" "the 1 m detail area ($TILES elevation tiles)"
+require_free_space "$DATA_DIR" "$(( TILES * 6 / 10 + 2 ))" "the 1 m detail area ($TILES elevation tiles)"
 
 echo "Step 2/4: download them"
 fetched=0

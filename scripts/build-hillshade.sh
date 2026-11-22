@@ -48,8 +48,8 @@ reexec_in_tools ${AREAS:+--areas "$AREAS"} "$@"
 MIN_LON="$1" MIN_LAT="$2" MAX_LON="$3" MAX_LAT="$4"
 MINZOOM=$(( HILLSHADE_MAXZOOM < 6 ? HILLSHADE_MAXZOOM : 6 ))
 
-WORK_DIR="$REPO_DIR/data/cache/hillshade"
-trap 'disk_full_hint "$REPO_DIR/data"' ERR
+WORK_DIR="$DATA_DIR/cache/hillshade"
+trap 'disk_full_hint "$DATA_DIR"' ERR
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 
@@ -66,7 +66,7 @@ CELLS="$(terrain_land_cells "$WORK_DIR")"
 PER_CELL=0.03
 [ "$DEM_SOURCE" = usgs ] && PER_CELL=0.2
 NEED_GB="$(python3 -c "print(max(2, int($CELLS * $PER_CELL + 2)))")"
-require_free_space "$REPO_DIR/data" "$NEED_GB" "hillshade for $CELLS one-degree cells with land"
+require_free_space "$DATA_DIR" "$NEED_GB" "hillshade for $CELLS one-degree cells with land"
 
 terrain_mosaic "$WORK_DIR"
 echo "Step 2/3: compute the hillshade, masked to the outline"

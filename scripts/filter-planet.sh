@@ -18,7 +18,7 @@ source "$REPO_DIR/scripts/lib.sh"
 
 reexec_in_tools "$@"
 
-SOURCES="$REPO_DIR/data/sources"
+SOURCES="$DATA_DIR/sources"
 PLANET="$SOURCES/planet-latest.osm.pbf"
 OUT="$SOURCES/planet-z0-8.osm.pbf"
 mkdir -p "$SOURCES"

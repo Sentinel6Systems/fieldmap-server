@@ -30,8 +30,8 @@ fi
 ROUTING_URL="https://brouter.de/brouter/segments4/"
 TOOL="$REPO_DIR/tools/routing-files.py"
 OUT="$OUT_DIR/routing"
-LIVE="$REPO_DIR/data/routing"
-trap 'disk_full_hint "$REPO_DIR/data"' ERR
+LIVE="$DATA_DIR/routing"
+trap 'disk_full_hint "$DATA_DIR"' ERR
 
 LIST="$(python3 "$TOOL" squares "$@")"
 mapfile -t SQUARES <<< "$LIST"
@@ -47,7 +47,7 @@ for name in "${SQUARES[@]}"; do
     [ -s "$OUT/$name" ] || todo=$((todo + 1))
 done
 # Up to 240 MB a square, most far less; squares without land take nothing.
-require_free_space "$REPO_DIR/data" "$(( todo * 15 / 100 + 1 ))" "downloading up to $todo routing files"
+require_free_space "$DATA_DIR" "$(( todo * 15 / 100 + 1 ))" "downloading up to $todo routing files"
 
 # Download one square, with retries. With a copy on hand, only when the server's is newer
 # (curl -R keeps the server's date on the file, -z compares with it). Returns 1 when the

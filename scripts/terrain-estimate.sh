@@ -26,7 +26,7 @@ fi
 
 reexec_in_tools ${AREAS:+--areas "$AREAS"} "$@"
 
-WORK_DIR="$REPO_DIR/data/cache/terrain-estimate"
+WORK_DIR="$DATA_DIR/cache/terrain-estimate"
 rm -rf "$WORK_DIR"
 # shellcheck disable=SC2086
 terrain_outline "$WORK_DIR" "$1" "$2" "$3" "$4" $AREAS

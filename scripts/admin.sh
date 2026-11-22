@@ -18,6 +18,8 @@
 # ADMIN_PIN    a code the page then asks for. Without it the page is open to everyone who
 #              can reach the device, and whoever can open it can replace the maps and fill
 #              the disk: set one on a network you do not trust.
+# The build settings (PI_MODE, BUILD_MEMORY, BUILD_RESERVE_GB, FIELDMAP_PAUSE_UNITS) are read
+# from .env by the page and the build scripts themselves.
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -33,5 +35,8 @@ done
 
 command -v python3 >/dev/null || { echo "Error: python3 is not installed." >&2; exit 1; }
 command -v docker >/dev/null || echo "Warning: docker is not installed. The page will open, but a build needs it." >&2
-mkdir -p "$REPO_DIR/data/admin"
+# The data folder: data/ here, or FIELDMAP_DATA (install-nginx.sh keeps it in .env).
+DATA="$(grep -E '^FIELDMAP_DATA=' "$REPO_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+DATA="${DATA%\"}"; DATA="${DATA#\"}"; DATA="${DATA%\'}"; DATA="${DATA#\'}"
+mkdir -p "${FIELDMAP_DATA:-${DATA:-$REPO_DIR/data}}/admin"
 exec python3 "$REPO_DIR/tools/admin-server.py" serve

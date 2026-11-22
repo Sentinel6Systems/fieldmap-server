@@ -91,6 +91,7 @@ const save = () => {
 // The options of "More options"; those o leaves out get their first-visit values.
 function setOptions(o) {
   $("opt-terrain").value = o.terrain || "30m";
+  if (!$("opt-terrain").value) $("opt-terrain").value = "30m";     // a choice Pi mode does not offer
   $("opt-units").value = o.units || "ft";
   // Place names: the browser's language when the build can keep it, else every language.
   const own = navigator.language.slice(0, 2);
@@ -477,8 +478,9 @@ async function refresh() {
     return;
   }
   drawLayers();
-  const e = estimate, share = e.need_gb / Math.max(e.free_gb, 0.1);
-  const cls = !e.ok ? "over" : share > 0.8 ? "tight" : "ok";
+  const e = estimate, share = (e.need_gb + e.reserve_gb) / Math.max(e.free_gb, 0.1);
+  const cls = !e.space_ok ? "over" : share > 0.8 ? "tight" : "ok";
+  const keep = e.reserve_gb ? `, and ${gb(e.reserve_gb)} must stay free for the system` : "";
   $("space").hidden = false; $("space-empty").hidden = true;
   $("meter").className = `meter ${cls}`;
   $("meter-need").style.width = `${Math.min(100, share * 100)}%`;
@@ -487,19 +489,25 @@ async function refresh() {
   // When the sharper terrain is most of it, that is the choice to change, not the small layers.
   const terrain = e.standard_need_gb !== undefined && e.standard_need_gb < e.need_gb * 0.7 && cls !== "ok";
   $("verdict").textContent = (cls === "over"
-    ? `Not enough storage. The build needs about ${gb(e.need_gb)}, but only ${gb(e.free_gb)} is free.` + (terrain ? "" : " Select fewer or smaller regions, or fewer layers.")
-    : `${cls === "tight" ? "This fits, but storage will be low" : "This fits"}. The build needs about ${gb(e.need_gb)} while it runs, and ${gb(e.free_gb)} is free. ` +
+    ? `Not enough storage. The build needs about ${gb(e.need_gb)}${keep}, but only ${gb(e.free_gb)} is free.` + (terrain ? "" : " Select fewer or smaller regions, or fewer layers.")
+    : `${cls === "tight" ? "This fits, but storage will be low" : "This fits"}. The build needs about ${gb(e.need_gb)} while it runs${keep}, and ${gb(e.free_gb)} is free. ` +
       (e.more_after_gb >= 0.05 ? `After the build, about ${gb(e.more_after_gb)} more storage is in use.` : "After the build, storage use does not increase.")) +
     (terrain ? ` Most of this is for the high-resolution terrain. With Terrain Resolution set to Standard (under Advanced Options), the build needs about ${gb(e.standard_need_gb)}.` : "");
   $("space-have").textContent = e.on_hand_gb >= 0.05
     ? `${gb(e.on_hand_gb)} of this is already on the server (elevation data from earlier builds, or parts of an unfinished build) and is not counted again.` : "";
+  $("memory-verdict").hidden = !e.memory_problem;
+  $("memory-verdict").textContent = e.memory_problem;
   $("time").textContent = `Build time: ${hours(e.hours)} on the server, plus download time, which depends on the internet connection.`;
+  $("pi-note").hidden = !e.memory_gb;
+  $("pi-note").textContent = e.pi
+    ? `This server runs in Pi mode: a build uses at most ${gb(e.memory_gb)} of RAM and the standard terrain only, and the build time allows for its slower processor.`
+    : `A build on this server uses at most ${gb(e.memory_gb || 0)} of RAM.`;
   const body = $("space-table").tBodies[0];
   body.replaceChildren();
   for (const i of e.items) body.append(el("tr", {}, el("td", { textContent: i.label }), el("td", { textContent: gb(i.kept_gb) }),
     el("td", { textContent: i.temp_gb ? gb(i.temp_gb) : "–" }), el("td", { textContent: hours(i.hours) })));
   $("start").disabled = !e.ok;
-  $("start-why").textContent = e.ok ? "" : "Not enough free storage for this build.";
+  $("start-why").textContent = e.ok ? "" : e.memory_problem ? "Not enough RAM on this server for this build." : "Not enough free storage for this build.";
 }
 
 // ---------- step 4: start ----------
@@ -514,14 +522,19 @@ $("start").onclick = () => {
       ...(sel.options.terrain === "1m" ? [el("li", {}, el("b", { textContent: DETAIL.name }), ` — ${sel.options.detail.km} × ${sel.options.detail.km} km, on top of the hillshade`)] : [])),
     ...(sel.options.fresh ? [el("p", { textContent: "The server downloads the latest map data." })] : []),
     ...(carriesOn(sel) ? [el("p", { textContent: "This build continues from where the last build stopped and reuses its completed parts." })] : []),
-    el("p", { textContent: `The build needs about ${gb(estimate.need_gb)} of storage and takes ${hours(estimate.hours)}, plus download time. The current maps work until the build is complete.` }));
+    el("p", { textContent: `The build needs about ${gb(estimate.need_gb)} of storage and takes ${hours(estimate.hours)}, plus download time. The current maps work until the build is complete.` }),
+    ...(pausing().length ? [el("div", { className: "notice warn" }, el("h3", { textContent: "Services Stopped During Build" }),
+      el("p", {}, "The server stops ", el("b", { textContent: pausing().join(", ") }),
+        " to free RAM. They are unavailable until the build ends, then start again automatically."))] : []));
+  $("confirm-yes").textContent = pausing().length ? "Stop Services and Start Build" : "Start Build";
   $("confirm").showModal();
 };
 $("confirm-no").onclick = () => $("confirm").close();
 $("confirm-yes").onclick = async () => {
   $("confirm").close();
   try {
-    await api("api/build", selection());
+    // Pressing the button confirms that the services in the dialog are stopped (the server asks for it).
+    await api("api/build", { ...selection(), pause_ok: pausing().length > 0 });
     dismissed = null; sessionStorage.removeItem("dismissed");
     await poll();
     window.scrollTo({ top: 0 });
@@ -597,6 +610,13 @@ function drawJob() {
   const running = job.state === "running", names = job.request.names.join(", ");
   $("progress-title").textContent = { running: "Building Maps…", done: "Build Complete", failed: "Build Failed", cancelled: "Build Canceled" }[job.state];
   $("progress-text").textContent = running ? `Regions: ${names}.` : `${job.message} (Regions: ${names}.)`;
+  // Services the build stopped: while it runs, and any that did not start again after it.
+  const stopped = status.pause.stopped.length ? status.pause.stopped : running ? pausing() : [];
+  $("progress-pause").hidden = !stopped.length || (!running && !status.pause.stopped.length);
+  $("progress-pause-title").textContent = running ? "Services Stopped During Build" : "Services Not Restarted";
+  $("progress-pause-text").textContent = running
+    ? `To free RAM, the build stopped these services on this server: ${stopped.join(", ")}. They are unavailable until the build ends, then start again automatically, also if it fails or you cancel it.`
+    : `These services did not start again after the build: ${stopped.join(", ")}. Start them on the server, or restart the server.`;
   const steps = $("progress-steps");
   steps.replaceChildren();
   for (const k of job.request.layers) {
@@ -645,6 +665,16 @@ $("cancel").onclick = async () => {
 };
 $("again").onclick = () => { dismissed = String(status.job.started); sessionStorage.setItem("dismissed", dismissed); drawJob(); refresh(); };
 
+// The services a build stops to free RAM (FIELDMAP_PAUSE_UNITS on the server).
+const pausing = () => (status && status.pause ? status.pause.services : []);
+
+// Warnings that come from the server itself: services stopped during a build, data on an SD card.
+function drawServer() {
+  $("pause-warning").hidden = !pausing().length;
+  $("pause-list").textContent = pausing().join(", ");
+  $("sd-warning").hidden = !status.sd_card;
+}
+
 function drawDisk() {
   const used = 1 - status.free_gb / status.total_gb;
   $("disk").replaceChildren(el("b", { textContent: gb(status.free_gb) }), ` free of ${gb(status.total_gb)} on the server`,
@@ -655,6 +685,7 @@ let wasRunning = false;
 async function poll() {
   try { status = await api("api/status"); } catch { return; }
   drawDisk();
+  drawServer();
   drawJob();
   const running = !!(status.job && status.job.state === "running");
   if (wasRunning && !running) refresh();        // free space and what is on the device have changed
@@ -677,12 +708,19 @@ async function start() {
     for (const id of [...chosen]) if (!REG[id]) chosen.delete(id);
     const lang = { "": "All Languages (Largest)", en: "English", zh: "Chinese", hi: "Hindi", es: "Spanish", ar: "Arabic", fr: "French", bn: "Bengali", pt: "Portuguese", ru: "Russian", id: "Indonesian" };
     for (const code of ["", ...status.languages]) $("opt-language").append(el("option", { value: code, textContent: lang[code] || code }));
+    // Pi mode: the standard terrain only, and no World Overview unless one was copied here.
+    if (status.pi) {
+      for (const o of [...$("opt-terrain").options]) if (o.value !== "30m") o.remove();
+      $("h-terrain").textContent = "This server runs in Pi mode (less than 8 GB of RAM), so it builds the standard terrain only: satellite terrain data with a point about every 30 meters, including trees and buildings.";
+      if (!status.world_files.length) $("opt-world").closest(".option").hidden = true;
+    }
     setOptions(JSON.parse(localStorage.getItem("options") || "{}"));
     setInterval(poll, 3000);
   }
   draw();
   fit();
   drawDisk();
+  drawServer();
   drawJob();
   wasRunning = !!(status.job && status.job.state === "running");
   refresh();

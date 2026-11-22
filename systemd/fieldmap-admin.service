@@ -8,13 +8,16 @@
 # 3. Run: sudo systemctl daemon-reload
 # 4. Run: sudo systemctl enable --now fieldmap-admin
 #
-# The page is served at /mapadmin/ by the web front. Its optional PIN and optional own port
-# are read from .env (see .env.example).
+# The page is served at /mapadmin/ by the web front (install-nginx.sh: by the machine's own
+# nginx). Its optional PIN, its optional own port and the build settings (Pi mode,
+# BUILD_MEMORY, FIELDMAP_PAUSE_UNITS) are read from .env (see .env.example).
 
 [Unit]
 Description=fieldmap-server map builder page
 After=network-online.target docker.service
 Wants=network-online.target
+# The data folder (install-nginx.sh fills in FIELDMAP_DATA when it is elsewhere).
+RequiresMountsFor=/opt/tileserver/data
 
 [Service]
 WorkingDirectory=/opt/tileserver

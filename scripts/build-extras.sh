@@ -36,21 +36,16 @@ while [ $# -gt 0 ]; do
 done
 [ $# -eq 1 ] || usage
 OSM="$(basename "$1")"
-if [ ! -s "$REPO_DIR/data/sources/$OSM" ]; then
+if [ ! -s "$DATA_DIR/sources/$OSM" ]; then
     echo "Error: data/sources/$OSM not found. Build the base map first, or run merge-osm.sh." >&2
     exit 1
 fi
-trap 'disk_full_hint "$REPO_DIR/data"' ERR
-OSM_GB="$(du -BG "$REPO_DIR/data/sources/$OSM" | cut -f1 | tr -dc '0-9')"
-require_free_space "$REPO_DIR/data" "$(( OSM_GB * 3 + 2 ))" "the extras build"
+trap 'disk_full_hint "$DATA_DIR"' ERR
+OSM_GB="$(du -BG "$DATA_DIR/sources/$OSM" | cut -f1 | tr -dc '0-9')"
+require_free_space "$DATA_DIR" "$(( OSM_GB * 3 + 2 ))" "the extras build"
 
-echo "Planetiler: build data/extras.mbtiles from $OSM (Java heap $MEMORY)"
-docker run --rm "${BUILD_DOCKER_ARGS[@]}" \
-    --user "$(id -u):$(id -g)" \
-    -e JAVA_TOOL_OPTIONS="-Xmx$MEMORY" \
-    -v "$REPO_DIR/data":/data \
-    -v "$REPO_DIR/planetiler":/schema:ro \
-    "$PLANETILER_IMAGE" \
+echo "Planetiler: build data/extras.mbtiles from $OSM"
+planetiler "$MEMORY" -v "$REPO_DIR/planetiler":/schema:ro -- \
     generate-custom \
     --schema=/schema/extras.yml \
     --osm_path="/data/sources/$OSM" \
@@ -58,8 +53,8 @@ docker run --rm "${BUILD_DOCKER_ARGS[@]}" \
     --output=/data/extras.tmp.mbtiles \
     --force \
     "${BOUNDS[@]}"
-mv "$REPO_DIR/data/extras.tmp.mbtiles" "$OUT_DIR/extras.mbtiles"
-rm -f "$REPO_DIR/data/extras.tmp.mbtiles.layerstats.tsv.gz"
+mv "$DATA_DIR/extras.tmp.mbtiles" "$OUT_DIR/extras.mbtiles"
+rm -f "$DATA_DIR/extras.tmp.mbtiles.layerstats.tsv.gz"
 echo "Done. Output: $OUT_DIR/extras.mbtiles ($(du -h "$OUT_DIR/extras.mbtiles" | cut -f1))"
 # A staged build (the map builder) loads its files itself at the end.
 if [ -z "${FIELDMAP_STAGE:-}" ]; then

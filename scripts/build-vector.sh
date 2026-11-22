@@ -41,11 +41,11 @@ done
 [ $# -eq 1 ] || usage
 AREA="$1"
 check_language
-mkdir -p "$REPO_DIR/data"
-trap 'disk_full_hint "$REPO_DIR/data"' ERR
+mkdir -p "$DATA_DIR"
+trap 'disk_full_hint "$DATA_DIR"' ERR
 # The extract size is unknown until it is downloaded. Ask for a
 # baseline that covers a mid-sized country or a US state.
-require_free_space "$REPO_DIR/data" 15 "the base map build"
+require_free_space "$DATA_DIR" 15 "the base map build"
 
 if [[ "$AREA" != */* ]]; then
     echo "Looking up $AREA in Geofabrik's index"
@@ -74,7 +74,7 @@ NAME="$(basename "$AREA_PATH")"
 
 # Fetch Planetiler's shared inputs here, with retries and fallback
 # mirrors, so Planetiler itself makes no network calls.
-fetch_shared_sources "$REPO_DIR/data/sources"
+fetch_shared_sources "$DATA_DIR/sources"
 
 # Take the bounds from the data: some mirrors' files have none in their header,
 # and Planetiler would then build the whole world.
@@ -86,4 +86,4 @@ if [ -z "${NO_EXTRAS:-}" ]; then
     PLANETILER_MEMORY="$MEMORY" "$REPO_DIR/scripts/build-extras.sh" "$NAME.osm.pbf"
 fi
 "$REPO_DIR/scripts/data-placeholders.sh"
-echo "Done. Output: $REPO_DIR/data/basemap.mbtiles"
+echo "Done. Output: $DATA_DIR/basemap.mbtiles"

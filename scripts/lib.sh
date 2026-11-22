@@ -4,10 +4,79 @@
 
 TOOLS_IMAGE="tileserver-tools"
 
+# A setting from the environment, else from .env (as Docker Compose and admin.sh read it), else
+# the default. Arguments: NAME DEFAULT
+build_setting() {
+    local value="${!1:-}"
+    if [ -z "$value" ] && [ -f "$REPO_DIR/.env" ]; then
+        value="$(grep -E "^$1=" "$REPO_DIR/.env" | tail -1 | cut -d= -f2- || true)"
+        value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
+    fi
+    echo "${value:-$2}"
+}
+
+# The data folder: data/ here, or FIELDMAP_DATA (scripts/install-nginx.sh keeps it in .env).
+# Inside the tool container it is mounted at /work/data (reexec_in_tools).
+DATA_DIR="$(build_setting FIELDMAP_DATA "$REPO_DIR/data")"
+
+# Pi mode: a machine with less than 8 GB of RAM (8 GB machines report a little under 8 GiB, so
+# the line is drawn at 7 GiB, as in mem-limit.sh), or PI_MODE=yes / no in .env. In Pi mode:
+#   - every container a build starts stays within BUILD_MEMORY (default 3g), swap included;
+#   - Planetiler keeps its node locations and its other working data in files on the data
+#     drive (memory-mapped), not in its Java heap, which stays at two thirds of BUILD_MEMORY;
+#   - the contour lines are computed one elevation cell at a time (CONTOUR_JOBS=1);
+#   - only the 30 m elevation data: the 10 m and 1 m USGS data (DEM_SOURCE=usgs, the detail
+#     step) and the world layer (the whole planet) are refused;
+#   - a build leaves BUILD_RESERVE_GB (default 5) of the drive free.
+# BUILD_MEMORY also caps a build on a larger machine, when set there.
+FIELDMAP_PI="$(build_setting PI_MODE auto)"
+case "$FIELDMAP_PI" in
+    yes|no) ;;
+    *) if [ "$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)" -lt $((7 * 1024 * 1024)) ]; then
+           FIELDMAP_PI=yes
+       else
+           FIELDMAP_PI=no
+       fi ;;
+esac
+if [ "$FIELDMAP_PI" = yes ]; then
+    BUILD_MEMORY="$(build_setting BUILD_MEMORY 3g)"
+    BUILD_RESERVE_GB="$(build_setting BUILD_RESERVE_GB 5)"
+    CONTOUR_JOBS=1
+else
+    BUILD_MEMORY="$(build_setting BUILD_MEMORY "")"
+    BUILD_RESERVE_GB="$(build_setting BUILD_RESERVE_GB 0)"
+fi
+# The containers a build starts read these from the environment (reexec_in_tools passes them on).
+export FIELDMAP_PI BUILD_MEMORY BUILD_RESERVE_GB
+
+# A size such as 3g, 3072m or 3G in whole MB; nothing for none. Argument: SIZE
+size_mb() {
+    case "$1" in
+        '') ;;
+        *[gG]) echo $(( ${1%[gG]} * 1024 )) ;;
+        *[mM]) echo "${1%[mM]}" ;;
+        *) echo "Error: a memory size must look like 3g or 3072m, not '$1'." >&2; exit 1 ;;
+    esac
+}
+
+# Stop with a plain message when Pi mode leaves out what a step was asked for.
+# Arguments: WHAT
+refuse_in_pi_mode() {
+    [ "$FIELDMAP_PI" = yes ] || return 0
+    cat >&2 <<EOF
+Error: $1 is not built on this machine.
+It runs in Pi mode (under 8 GB of RAM, or PI_MODE=yes in .env): builds stay within
+$BUILD_MEMORY of RAM and use the 30 m elevation data only. Build it on a larger machine
+and copy the file into the data folder, or set PI_MODE=no in .env on a machine with 8 GB
+of RAM or more.
+EOF
+    exit 1
+}
+
 # Where the finished .mbtiles files go: data/, or data/$FIELDMAP_STAGE when a build stages
 # its files there to swap them in together at the end (build-region.sh --staged).
 # OUT_SUB is the same place relative to data/, for the containers that mount data/.
-OUT_DIR="$REPO_DIR/data${FIELDMAP_STAGE:+/$FIELDMAP_STAGE}"
+OUT_DIR="$DATA_DIR${FIELDMAP_STAGE:+/$FIELDMAP_STAGE}"
 OUT_SUB="${FIELDMAP_STAGE:+$FIELDMAP_STAGE/}"
 
 # Label on every container a build starts, so that a build can be stopped from outside
@@ -19,6 +88,24 @@ BUILD_LABEL="fieldmap-build"
 # they need it, so the maps stay usable during a build of hours or days. Docker's default
 # weight is 1024; BUILD_CPU_SHARES=1024 gives a build the same weight as everything else.
 BUILD_DOCKER_ARGS=(--label "$BUILD_LABEL" --cpu-shares "${BUILD_CPU_SHARES:-128}")
+# The memory cap (BUILD_MEMORY, Pi mode): swap included, so that a build that needs more stops
+# with an error instead of making the whole machine swap. Only one build container runs at a
+# time, so this is the cap of the whole build.
+if [ -n "$BUILD_MEMORY" ]; then
+    BUILD_DOCKER_ARGS+=(--memory "$BUILD_MEMORY" --memory-swap "$BUILD_MEMORY")
+fi
+
+# Called when a build container failed. Docker gives 137 for a container that was killed, which
+# under a memory cap is almost always the cap: say so in plain words.
+# Arguments: EXIT_CODE WHAT
+memory_hint() {
+    [ "$1" -eq 137 ] || return 0
+    cat >&2 <<EOF
+
+$2 ran out of memory: it needed more than the ${BUILD_MEMORY:-available} RAM it may use.
+Build a smaller region, or fewer regions at a time.
+EOF
+}
 
 # Planetiler release used for the base map. Pinned so a new release cannot change
 # the tiles unnoticed; set PLANETILER_IMAGE to try another one.
@@ -44,6 +131,36 @@ world_file() {
     echo "world-z0-8${LANGUAGE:+-$LANGUAGE}.mbtiles"
 }
 
+# Run the Planetiler container: the data folder at /data, the Java heap MEMORY, but under a
+# memory cap (BUILD_MEMORY) at most two thirds of the cap: the rest is for Java itself and for
+# the memory-mapped working files. Under a cap, Planetiler keeps its node locations and other
+# working data in those files on the data drive (--storage, --nodemap-storage=mmap), not in
+# its heap: slower, but the RAM it needs no longer grows with the region.
+# Arguments: MEMORY [docker run options ...] -- [Planetiler arguments ...]
+planetiler() {
+    local memory="$1" docker_args=() storage=() code=0 cap
+    shift
+    while [ $# -gt 0 ] && [ "$1" != -- ]; do docker_args+=("$1"); shift; done
+    shift
+    if [ -n "$BUILD_MEMORY" ]; then
+        cap=$(( $(size_mb "$BUILD_MEMORY") * 2 / 3 ))
+        if [ "$(size_mb "$memory")" -gt "$cap" ]; then memory="${cap}m"; fi
+        storage=(--storage=mmap --nodemap-type=sparsearray --nodemap-storage=mmap)
+    fi
+    echo "Planetiler: Java heap $memory${BUILD_MEMORY:+, at most $BUILD_MEMORY of RAM in all, working data on disk}"
+    docker run --rm "${BUILD_DOCKER_ARGS[@]}" \
+        --user "$(id -u):$(id -g)" \
+        -e JAVA_TOOL_OPTIONS="-Xmx$memory" \
+        -v "$DATA_DIR":/data \
+        "${docker_args[@]}" \
+        "$PLANETILER_IMAGE" \
+        "$@" "${storage[@]}" || code=$?
+    if [ "$code" -ne 0 ]; then
+        memory_hint "$code" "Planetiler"
+        return "$code"
+    fi
+}
+
 # Run Planetiler (OpenMapTiles profile) on one OSM file from data/sources.
 # Planetiler makes no network calls: fetch_shared_sources must run first.
 # Arguments: OSM_FILE_NAME OUTPUT_NAME MEMORY [more Planetiler arguments ...]
@@ -52,11 +169,7 @@ run_planetiler() {
     shift 3
     local lang=()
     [ -n "${LANGUAGE:-}" ] && lang=(--languages="$LANGUAGE")
-    docker run --rm "${BUILD_DOCKER_ARGS[@]}" \
-        --user "$(id -u):$(id -g)" \
-        -e JAVA_TOOL_OPTIONS="-Xmx$memory" \
-        -v "$REPO_DIR/data":/data \
-        "$PLANETILER_IMAGE" \
+    planetiler "$memory" -- \
         --force \
         --osm-path="/data/sources/$osm" \
         --tmpdir=/data/tmp \
@@ -78,7 +191,8 @@ build_basemap() {
     fi
     local world language=()
     world="$(world_file)"
-    if [ ! -s "$REPO_DIR/data/$world" ]; then
+    if [ ! -s "$DATA_DIR/$world" ]; then
+        refuse_in_pi_mode "The world layer ($world, made from the whole OpenStreetMap planet)"
         echo "No world layer yet ($world): building it first."
         [ -n "${LANGUAGE:-}" ] && language=(--language "$LANGUAGE")
         "$REPO_DIR/scripts/build-world.sh" "${language[@]}"
@@ -86,9 +200,9 @@ build_basemap() {
         echo "World layer: reusing data/$world (delete it to rebuild)"
     fi
     run_planetiler "$osm" region-z9-14.mbtiles "$memory" --minzoom=9 "$@"
-    merge_world_tiles "$REPO_DIR/data/$world" "$REPO_DIR/data/region-z9-14.mbtiles" \
+    merge_world_tiles "$DATA_DIR/$world" "$DATA_DIR/region-z9-14.mbtiles" \
         "$OUT_DIR/basemap.mbtiles"
-    rm -f "$REPO_DIR/data/region-z9-14.mbtiles"
+    rm -f "$DATA_DIR/region-z9-14.mbtiles"
 }
 
 # Combine the world layer (zoom 0-8) and a region file (zoom 9 and up) into
@@ -155,6 +269,11 @@ require_free_space() {
     mkdir -p "$dir"
     local avail_gb
     avail_gb="$(free_gb "$dir")"
+    # The space the drive keeps free for the system (BUILD_RESERVE_GB; 5 GB in Pi mode).
+    if [ "${BUILD_RESERVE_GB:-0}" -gt 0 ]; then
+        need_gb=$((need_gb + BUILD_RESERVE_GB))
+        what="$what, and $BUILD_RESERVE_GB GB left free for the system (BUILD_RESERVE_GB)"
+    fi
     if [ "$avail_gb" -lt "$need_gb" ]; then
         cat >&2 <<EOF
 
@@ -400,21 +519,31 @@ reexec_in_tools() {
     fi
     echo "Building the tool image (first run can take some minutes)..."
     docker build -q -t "$TOOLS_IMAGE" "$REPO_DIR/tools"
+    # Under a memory cap, GDAL's block cache stays small (its default is 5 % of the machine's RAM,
+    # which it reads past the cap).
+    local gdal=()
+    [ -z "$BUILD_MEMORY" ] || gdal=(-e GDAL_CACHEMAX=256)
     # Run as the calling user so that files under data/ are not owned by
     # root. Host-side steps (curl, rm) must be able to write there too.
-    exec docker run --rm "${BUILD_DOCKER_ARGS[@]}" \
+    # The data folder is /work/data inside, wherever it is here (FIELDMAP_DATA).
+    local code=0
+    docker run --rm "${BUILD_DOCKER_ARGS[@]}" \
         --user "$(id -u):$(id -g)" \
         -e HOME=/tmp \
         -e IN_TOOLS=1 \
+        -e FIELDMAP_DATA=/work/data -e PI_MODE="$FIELDMAP_PI" -e BUILD_MEMORY -e BUILD_RESERVE_GB "${gdal[@]}" \
         -e FIELDMAP_STAGE \
         -e OSM_MAX_AGE_DAYS -e OSM_REFRESH -e OSM_REFRESH_DAYS \
         -e ELEVATION_MAXZOOM -e ELEVATION_ENCODING -e ELEVATION_FORMAT \
         -e HILLSHADE_MAXZOOM -e HILLSHADE_FORMAT -e CONTOUR_JOBS -e DEM_SOURCE \
         -e DETAIL_MAX_KM2 -e DETAIL_MAXZOOM -e BUILD_CPU_SHARES \
         -v "$REPO_DIR":/work \
+        -v "$DATA_DIR":/work/data \
         -w /work \
         "$TOOLS_IMAGE" \
-        bash "/work/scripts/$(basename "$0")" "$@"
+        bash "/work/scripts/$(basename "$0")" "$@" || code=$?
+    memory_hint "$code" "The $(basename "$0" .sh) step"
+    exit "$code"
 }
 
 # Elevation data for the terrain builds (contours, hillshade, elevation), chosen with
@@ -427,10 +556,11 @@ reexec_in_tools() {
 # Sets DEM_SOURCE, USGS_DIR and USGS_ARGS (the option the Python tools take).
 terrain_source() {
     DEM_SOURCE="${DEM_SOURCE:-copernicus}"
-    USGS_DIR="$REPO_DIR/data/cache/dem-usgs"
+    USGS_DIR="$DATA_DIR/cache/dem-usgs"
     case "$DEM_SOURCE" in
         copernicus) USGS_ARGS=() ;;
-        usgs) USGS_ARGS=(--usgs-dir "$USGS_DIR") ;;
+        usgs) refuse_in_pi_mode "The 10 m USGS elevation data (DEM_SOURCE=usgs)"
+              USGS_ARGS=(--usgs-dir "$USGS_DIR") ;;
         *) echo "Error: DEM_SOURCE must be 'copernicus' or 'usgs', not '$DEM_SOURCE'." >&2; exit 1 ;;
     esac
 }
@@ -462,7 +592,7 @@ terrain_outline() {
     terrain_source
     mkdir -p "$work/outline"
     python3 "$REPO_DIR/tools/region-outline.py" prepare --out "$work/outline" \
-        --dem-dir "$REPO_DIR/data/cache/dem" --poly-cache "$REPO_DIR/data/cache/outlines" \
+        --dem-dir "$DATA_DIR/cache/dem" --poly-cache "$DATA_DIR/cache/outlines" \
         "${USGS_ARGS[@]}" --bbox "${bbox[@]}" "${areas[@]}"
 }
 
@@ -479,7 +609,7 @@ usgs_tile() {
 
 # 0 when a cell has elevation data to build from. Argument: Copernicus cell name
 cell_has_data() {
-    [ -f "$REPO_DIR/data/cache/dem/$1.tif" ] ||
+    [ -f "$DATA_DIR/cache/dem/$1.tif" ] ||
         { [ "$DEM_SOURCE" = usgs ] && [ -f "$USGS_DIR/$(usgs_tile "$1").tif" ]; }
 }
 
@@ -499,7 +629,7 @@ terrain_land_cells() {
 terrain_estimate() {
     local work="$1"; shift
     python3 "$REPO_DIR/tools/region-outline.py" estimate --out "$work/outline" \
-        --dem-dir "$REPO_DIR/data/cache/dem" "${USGS_ARGS[@]}" \
+        --dem-dir "$DATA_DIR/cache/dem" "${USGS_ARGS[@]}" \
         --elevation-maxzoom "${ELEVATION_MAXZOOM:-$(terrain_default_zoom elevation)}" \
         --hillshade-maxzoom "${HILLSHADE_MAXZOOM:-$(terrain_default_zoom hillshade)}" \
         --hillshade-format "${HILLSHADE_FORMAT:-webp}" "$@"
@@ -544,7 +674,7 @@ fetch_file() {
 # Argument: WORK_DIR
 download_dem() {
     local work="$1"
-    local out_dir="$REPO_DIR/data/cache/dem" base_url="https://copernicus-dem-30m.s3.amazonaws.com"
+    local out_dir="$DATA_DIR/cache/dem" base_url="https://copernicus-dem-30m.s3.amazonaws.com"
     local usgs_url="https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/current"
     local ocean="$out_dir/ocean-cells.txt" no_tile="$USGS_DIR/no-tile.txt"
     local full="$USGS_DIR/full-tiles.txt" gaps="$USGS_DIR/gap-tiles.txt"
@@ -571,7 +701,7 @@ download_dem() {
     done 3< "$work/outline/cells.txt"
     # Up to about 30 MB a Copernicus cell and 450 MB a USGS tile; cells that turn out to
     # have no file take nothing.
-    require_free_space "$REPO_DIR/data" "$(( todo * 3 / 100 + usgs_todo * 45 / 100 + 1 ))" \
+    require_free_space "$DATA_DIR" "$(( todo * 3 / 100 + usgs_todo * 45 / 100 + 1 ))" \
         "downloading up to $((todo + usgs_todo)) elevation cells"
     local fetched=0 cached=0 none=0 hires=0 need
     while read -r _part name <&3; do
@@ -620,6 +750,6 @@ download_dem() {
 # WORK_DIR/outline/mosaics.txt (see tools/region-outline.py). Run after download_dem.
 # Argument: WORK_DIR
 terrain_mosaic() {
-    python3 "$REPO_DIR/tools/region-outline.py" mosaic --out "$1/outline" --dem-dir "$REPO_DIR/data/cache/dem" \
+    python3 "$REPO_DIR/tools/region-outline.py" mosaic --out "$1/outline" --dem-dir "$DATA_DIR/cache/dem" \
         "${USGS_ARGS[@]}"
 }

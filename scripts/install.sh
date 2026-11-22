@@ -21,8 +21,10 @@
 #      restarts the tile server when its config, styles or data changed;
 #   5. installs the map builder page (scripts/admin.sh) as a systemd service. The page is then
 #      at /mapadmin/. --no-builder leaves it out, and removes the service if an earlier run
-#      installed it. (Building maps wants a machine with plenty of RAM and disk: on a Raspberry
-#      Pi, build them elsewhere and copy the .mbtiles files into data/.);
+#      installed it. On a machine with less than 8 GB of RAM (a Raspberry Pi) it builds in Pi
+#      mode: at most 3 GB of RAM, the 30 m elevation data only (see PI_MODE in .env.example).
+#      With FIELDMAP_PAUSE_UNITS in .env it stops those services during a build to free RAM and
+#      starts them again afterwards (scripts/pause-setup.sh lets it, as root);
 #   6. puts a firewall on the machine itself: nothing from outside the local network and VPNs
 #      gets in, or gets an answer (scripts/firewall.sh; REMOTE_FIREWALL=off in .env leaves it out);
 #   7. sets up remote access for the Fieldmap Android app (scripts/remote.sh setup): devices
@@ -295,6 +297,8 @@ elif ! command -v systemctl >/dev/null || [ ! -d /run/systemd/system ]; then
     echo "This machine has no systemd: start the page yourself with ./scripts/admin.sh when you need it."
 else
     rm -f data/admin/no-builder
+    # Stopping and starting the services of FIELDMAP_PAUSE_UNITS during a build (root's part).
+    $SUDO env FIELDMAP_CHANGES="$FIELDMAP_CHANGES" ./scripts/pause-setup.sh "$OWNER"
     # The unit in systemd/, with this folder and its owner filled in.
     unit="$(sed -e "s|/opt/tileserver|$REPO_DIR|g" -e "s|^User=.*|User=$OWNER|" systemd/fieldmap-admin.service)"
     if [ "$unit" != "$(cat "$UNIT" 2>/dev/null)" ]; then
@@ -303,7 +307,7 @@ else
         changed "$UNIT"
     fi
     $SUDO systemctl enable -q fieldmap-admin
-    SUM="$(sum_of "$UNIT" scripts/admin.sh tools/admin-server.py .env)"
+    SUM="$(sum_of "$UNIT" scripts/admin.sh tools/admin-server.py tools/pause-services.py .env)"
     if [ "$SUM" != "$(stamp fieldmap-admin)" ] || ! systemctl is-active -q fieldmap-admin; then
         $SUDO systemctl restart fieldmap-admin
         changed "restarted fieldmap-admin"

@@ -18,7 +18,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib.sh
 source "$REPO_DIR/scripts/lib.sh"
-trap 'disk_full_hint "$REPO_DIR/data"' ERR
+trap 'disk_full_hint "$DATA_DIR"' ERR
 
 # Only --language sets the label language: LANGUAGE in the environment is the desktop's
 # own setting for the language of program messages.
@@ -30,16 +30,17 @@ while [ $# -gt 0 ]; do
     esac
 done
 check_language
+refuse_in_pi_mode "The world layer (made from the whole OpenStreetMap planet)"
 MEMORY="${PLANETILER_MEMORY:-8g}"
 
-if [ ! -s "$REPO_DIR/data/sources/planet-z0-8.osm.pbf" ]; then
-    require_free_space "$REPO_DIR/data" 160 "downloading and filtering the OpenStreetMap planet"
+if [ ! -s "$DATA_DIR/sources/planet-z0-8.osm.pbf" ]; then
+    require_free_space "$DATA_DIR" 160 "downloading and filtering the OpenStreetMap planet"
     "$REPO_DIR/scripts/filter-planet.sh"
 fi
 
-fetch_shared_sources "$REPO_DIR/data/sources"
+fetch_shared_sources "$DATA_DIR/sources"
 
 OUT="$(world_file)"
 echo "Planetiler: build data/$OUT (zoom 0-8, Java heap $MEMORY${LANGUAGE:+, language $LANGUAGE})"
 run_planetiler planet-z0-8.osm.pbf "$OUT" "$MEMORY" --maxzoom=8 --render_maxzoom=8
-echo "Done. Output: $REPO_DIR/data/$OUT"
+echo "Done. Output: $DATA_DIR/$OUT"

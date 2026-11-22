@@ -6,8 +6,9 @@
 # Run it as root, from anywhere:
 #   sudo FIELDMAP_NGINX_DIR=<folder> ./scripts/install-nginx.sh
 # It installs Docker if needed, starts TileServer GL and the route service in Docker on
-# localhost, builds the map (print/) here with Node.js, adds its nginx snippets (pi/nginx), and
-# sets up remote access for the Fieldmap app and the firewall. Re-run it after `git pull` to
+# localhost, builds the map (print/) here with Node.js, installs the Map Builder (/mapadmin/),
+# adds its nginx snippets (pi/nginx), and sets up remote access for the Fieldmap app and the
+# firewall. Re-run it after `git pull` to
 # update. A second run changes nothing and restarts nothing that did not change; every run
 # ends with its own checks through nginx and a list of what it changed. It never asks
 # anything and never reboots; when something fails it says what, and exits with an error.
@@ -25,6 +26,12 @@
 #   FIELDMAP_SERVER_NAME=name   the host name the final checks ask nginx for (default 127.0.0.1)
 #   FIELDMAP_USER=name          the user the services run as. Default: the owner of this folder;
 #                               with FIELDMAP_DATA, the system user "fieldmap" (made here)
+#   FIELDMAP_BUILD_USER=name    the user the Map Builder runs as: it writes the maps into the data
+#                               folder and starts Docker containers (so it joins the docker group).
+#                               Default: the owner of the data folder (when that is not root)
+#   FIELDMAP_PAUSE_UNITS="..."  services the Map Builder stops during a build to free RAM, and
+#                               starts again afterwards: systemd services by name, Docker
+#                               containers as docker:<name> (see .env.example)
 #   REMOTE=no                   leave remote access for the app out (the firewall stays)
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -71,7 +78,7 @@ env_set() {
 }
 
 echo "== Settings"
-for name in FIELDMAP_DATA FIELDMAP_NGINX_DIR FIELDMAP_PORTS_FILE FIELDMAP_SERVER_NAME FIELDMAP_USER; do
+for name in FIELDMAP_DATA FIELDMAP_NGINX_DIR FIELDMAP_PORTS_FILE FIELDMAP_SERVER_NAME FIELDMAP_USER FIELDMAP_BUILD_USER FIELDMAP_PAUSE_UNITS; do
     if [ -n "${!name:-}" ]; then env_set "$name" "${!name}"; fi
 done
 DATA="$(setting FIELDMAP_DATA "$REPO/data")"
@@ -109,10 +116,12 @@ fi
 echo "Data: $DATA. nginx snippets: $NGINX_DIR. Services run as: $SVC_USER."
 
 echo "== Checking data"
+# No maps yet: the map is blank until they are built on the Map Builder page, or copied in.
 for f in basemap contours hillshade; do
-    [ -f "$DATA/$f.mbtiles" ] || die "$DATA/$f.mbtiles is missing. Copy your three .mbtiles files (basemap, contours, hillshade) into $DATA first."
+    [ -f "$DATA/$f.mbtiles" ] || echo "No $f.mbtiles in $DATA yet: build it at /mapadmin/ (Map Builder), or copy it in."
 done
-# Optional files (build-extras.sh, build-usdata.sh); empty ones keep the tile server starting without them.
+# Files not built yet (and the optional ones: build-extras.sh, build-usdata.sh); empty ones keep the tile
+# server starting without them.
 before="$(ls "$DATA")"
 owner="$(stat -c %U "$DATA")"; id "$owner" >/dev/null 2>&1 || owner=root
 as_user "$owner" ./scripts/data-placeholders.sh
@@ -300,9 +309,53 @@ if [ "$SUM" != "$(stamp fieldmap-wmm)" ] || ! systemctl is-active -q fieldmap-wm
 fi
 stamp_save fieldmap-wmm "$SUM"
 
+echo "== Map Builder"
+# The page at /mapadmin/ (tools/admin-server.py, run by scripts/admin.sh): it chooses regions and
+# layers and runs the builds, which write the maps into the data folder and start Docker
+# containers. So it runs as a user who owns the data folder, in the docker group.
+BUILDER=yes
+data_owner="$(stat -c %U "$DATA")"
+BUILD_USER="$(setting FIELDMAP_BUILD_USER "")"
+if [ -z "$BUILD_USER" ]; then
+    if [ "$data_owner" != root ] && id "$data_owner" >/dev/null 2>&1; then BUILD_USER="$data_owner"; else BUILD_USER="$SVC_USER"; fi
+fi
+if ! sudo -u "$BUILD_USER" test -w "$DATA"; then
+    echo "WARNING: the Map Builder is not installed: its user, $BUILD_USER, cannot write to $DATA (owner: $data_owner)." >&2
+    echo "         Set FIELDMAP_BUILD_USER to the owner of the data folder, or give $BUILD_USER that folder." >&2
+    BUILDER=failed
+else
+    if ! id -nG "$BUILD_USER" | tr ' ' '\n' | grep -qx docker; then
+        usermod -aG docker "$BUILD_USER"
+        changed "added $BUILD_USER to the docker group (the Map Builder starts the build's containers)"
+    fi
+    [ -d "$DATA/admin" ] || { install -d -m 755 -o "$BUILD_USER" -g "$(id -gn "$BUILD_USER")" "$DATA/admin"; changed "made $DATA/admin"; }
+    if [ -n "$(find "$DATA/admin" -maxdepth 0 ! -user "$BUILD_USER")" ]; then
+        chown -R "$BUILD_USER": "$DATA/admin"
+        changed "owner of $DATA/admin: $BUILD_USER"
+    fi
+    # Stopping and starting the services of FIELDMAP_PAUSE_UNITS during a build (root's part).
+    ./scripts/pause-setup.sh "$BUILD_USER"
+    unit="$(sed -e "s#/opt/tileserver/data#$DATA#g" -e "s#/opt/tileserver#$REPO#g" -e "s#^User=.*#User=$BUILD_USER#" systemd/fieldmap-admin.service)"
+    if [ "$unit" != "$(cat /etc/systemd/system/fieldmap-admin.service 2>/dev/null)" ]; then
+        printf '%s\n' "$unit" > /etc/systemd/system/fieldmap-admin.service
+        systemctl daemon-reload
+        changed "/etc/systemd/system/fieldmap-admin.service"
+    fi
+    systemctl enable -q fieldmap-admin.service
+    SUM="$(sum_of /etc/systemd/system/fieldmap-admin.service scripts/admin.sh tools/admin-server.py tools/pause-services.py .env)"
+    if [ "$SUM" != "$(stamp fieldmap-admin)" ] || ! systemctl is-active -q fieldmap-admin; then
+        systemctl restart fieldmap-admin.service
+        changed "restarted fieldmap-admin"
+    fi
+    stamp_save fieldmap-admin "$SUM"
+    echo "The Map Builder runs as a service (fieldmap-admin), as user $BUILD_USER."
+fi
+
 echo "== nginx ($NGINX_DIR)"
 SNIPPETS="$(mktemp -d)"
-for f in mapprinter-nginx.conf maps-nginx.conf routing-nginx.conf; do
+SNIPPET_FILES=(mapprinter-nginx.conf maps-nginx.conf routing-nginx.conf)
+[ "$BUILDER" != yes ] || SNIPPET_FILES+=(mapadmin-nginx.conf)
+for f in "${SNIPPET_FILES[@]}"; do
     sed -e "s#/opt/fieldmap-server/data/#$DATA/#g" -e "s#/opt/fieldmap-server/#$REPO/#g" "pi/nginx/$f" > "$SNIPPETS/$f"
 done
 ./scripts/nginx-snippets.sh "$SNIPPETS" "$NGINX_DIR" || { rm -rf "$SNIPPETS"; die "the nginx snippets were not installed (see above)."; }
@@ -349,6 +402,11 @@ check /map/ 200 "the map"
 check /mapprinter/ 301 "the old map printer address, sent on to /map/"
 check /guide/ 200 "User Guide"
 check /map/wmm-api/status 200 "magnetic model service"
+# The page answers once its service is up (a moment after a restart).
+if [ "$BUILDER" = yes ]; then
+    for _ in $(seq 15); do [ "$(code /mapadmin/)" = 200 ] && break; sleep 1; done
+    check /mapadmin/ 200 "Map Builder"
+fi
 check "/routing/route?profile=car-vario&lonlats=0,0%7C0.001,0.001" "200 404" "route service"
 got="$(code /routing/index.json)"
 case "$got" in
@@ -370,6 +428,7 @@ else
     echo "Nothing changed: everything was up to date."
 fi
 if [ "${REMOTE:-yes}" = failed ]; then FAILED+=("remote access setup"); fi
+if [ "$BUILDER" = failed ]; then FAILED+=("Map Builder setup"); fi
 if [ ${#FAILED[@]} -gt 0 ]; then
     echo >&2
     echo "Error: fieldmap-server is installed, but these checks failed: ${FAILED[*]}" >&2
@@ -377,6 +436,13 @@ if [ ${#FAILED[@]} -gt 0 ]; then
 fi
 echo
 echo "Done. Map: http://<server>/map/"
+if [ "$BUILDER" = yes ]; then
+    echo "Map Builder: http://<server>/mapadmin/"
+    if [ -z "$(setting ADMIN_PIN "")" ]; then
+        echo "Note: everyone who can reach this server can open the Map Builder and replace the maps. To make it ask"
+        echo "      for an Access Code, set ADMIN_PIN=<code> in $REPO/.env and run this script again."
+    fi
+fi
 echo "TAK clients: http://<server>/maps/styles/topo-light/{z}/{x}/{y}.jpg"
 
 if [ "$NEED_REBOOT" = 1 ]; then

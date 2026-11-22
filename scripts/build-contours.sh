@@ -56,8 +56,8 @@ case "$UNITS" in
     *)  echo "Error: units must be 'm' or 'ft'." >&2; exit 1 ;;
 esac
 
-WORK_DIR="$REPO_DIR/data/cache/contours"
-trap 'disk_full_hint "$REPO_DIR/data"' ERR
+WORK_DIR="$DATA_DIR/cache/contours"
+trap 'disk_full_hint "$DATA_DIR"' ERR
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 
@@ -73,7 +73,7 @@ CELLS="$(terrain_land_cells "$WORK_DIR")"
 # complete, so a stopped build carries on where it was. They belong to one outline, one
 # unit and one elevation source: others are removed.
 SIGNATURE="$( (echo "v3 $UNITS $DEM_SOURCE"; cat "$WORK_DIR/outline/outline.geojson") | sha1sum | cut -c1-12)"
-CELLS_ROOT="$REPO_DIR/data/cache/contour-cells"
+CELLS_ROOT="$DATA_DIR/cache/contour-cells"
 CELLS_DIR="$CELLS_ROOT/$SIGNATURE"
 mkdir -p "$CELLS_DIR"
 find "$CELLS_ROOT" -mindepth 1 -maxdepth 1 ! -name "$SIGNATURE" -exec rm -rf {} +
@@ -88,11 +88,11 @@ HAVE_MB="$(du -sm "$CELLS_DIR" | cut -f1)"
 PER_CELL=0.2
 [ "$DEM_SOURCE" = usgs ] && PER_CELL=0.5
 NEED_GB="$(python3 -c "print(max(4, int($CELLS * $PER_CELL + 3 - $HAVE_MB / 1024)))")"
-require_free_space "$REPO_DIR/data" "$NEED_GB" "contours for $CELLS one-degree cells with land"
+require_free_space "$DATA_DIR" "$NEED_GB" "contours for $CELLS one-degree cells with land"
 
 echo "Step 2/3: compute contour lines, one elevation cell at a time (interval $MINOR $UNITS)"
 python3 "$REPO_DIR/tools/contour-cells.py" --outline-dir "$WORK_DIR/outline" \
-    --dem-dir "$REPO_DIR/data/cache/dem" "${USGS_ARGS[@]}" --out-dir "$CELLS_DIR" --units "$UNITS" \
+    --dem-dir "$DATA_DIR/cache/dem" "${USGS_ARGS[@]}" --out-dir "$CELLS_DIR" --units "$UNITS" \
     ${CONTOUR_JOBS:+--jobs "$CONTOUR_JOBS"}
 
 echo "Step 3/3: build the vector tiles"
@@ -106,7 +106,7 @@ import mmap, sys
 with open(sys.argv[1], 'w+b') as f:
     f.truncate(4096)
     mmap.mmap(f.fileno(), 4096).close()" "$TIPPE_TMP/probe" 2>/dev/null; then
-    echo "Note: $REPO_DIR/data cannot map files into memory; tippecanoe's temporary files go to /tmp."
+    echo "Note: $DATA_DIR cannot map files into memory; tippecanoe's temporary files go to /tmp."
     TIPPE_TMP=/tmp
 fi
 rm -f "$TIPPE_TMP/probe"

@@ -10,7 +10,7 @@ ADMIN_PORT is set). It serves admin/ (the page), ui/ (the look every page shares
 
   GET  /api/status     free disk space, what is on the device, the running or last build
   POST /api/estimate   space and time a selection needs      {regions, layers, options}
-  POST /api/build      start a build                          {regions, layers, options}
+  POST /api/build      start a build                          {regions, layers, options, pause_ok}
   POST /api/cancel     stop the running build
   GET  /api/log?from=N the build's output from byte N
   POST /api/login      {pin} -> a session cookie (only when ADMIN_PIN is set)
@@ -20,6 +20,13 @@ scripts/build-region.sh --staged with it: the new files replace the old ones tog
 every step has finished, and the tile server is then restarted. The build runs as its own
 process (this file's "run-job"), so it carries on if the page or this server is closed.
 
+Pi mode (a machine with less than 8 GB of RAM, or PI_MODE=yes in .env; see scripts/lib.sh):
+the build stays within BUILD_MEMORY (3g), uses the 30 m elevation data only and leaves
+BUILD_RESERVE_GB (5) of the drive free; the estimate refuses a selection that cannot be built
+within that RAM and counts with a slower pace. On any machine, FIELDMAP_PAUSE_UNITS in .env
+names services the build stops to free RAM and starts again when it ends (tools/pause-services.py);
+the page warns about it, and /api/build then needs pause_ok.
+
 The page is open to whoever can reach it, as the tile server and the print tool are: it is
 meant for a network you trust. Whoever can open it can start a build that takes days and
 replaces the maps; ADMIN_PIN=<code> makes it ask for that code first, and ADMIN_HOST=127.0.0.1
@@ -28,6 +35,7 @@ options: nothing a browser sends reaches a command line as text.
 """
 import glob
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -47,7 +55,25 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = os.path.join(ROOT, "data")
+
+
+def setting(name, default=""):
+    """A setting from the environment, else from .env (as scripts/lib.sh reads it), else default."""
+    value = os.environ.get(name, "")
+    if not value:
+        try:
+            with open(os.path.join(ROOT, ".env")) as f:
+                lines = [l.rstrip("\n").split("=", 1)[1] for l in f if l.startswith(name + "=")]
+            value = lines[-1].strip() if lines else ""
+        except OSError:
+            value = ""
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+    return value or default
+
+
+# The data folder: data/ here, or FIELDMAP_DATA (scripts/install-nginx.sh keeps it in .env).
+DATA = setting("FIELDMAP_DATA", os.path.join(ROOT, "data"))
 ADMIN = os.path.join(DATA, "admin")
 STATIC = os.path.join(ROOT, "admin")
 SHARED = os.path.join(ROOT, "ui")
@@ -78,6 +104,118 @@ US_STATES = ("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA 
 
 with open(os.path.join(STATIC, "regions.json")) as _f:
     REGIONS = {r["id"]: r for r in json.load(_f)["regions"]}
+
+# The services a build stops (FIELDMAP_PAUSE_UNITS): the list is read with the same code as the
+# root helper's, which the installers put at PAUSE_HELPER; PAUSE_STATE is its list of what it stopped.
+_spec = importlib.util.spec_from_file_location("pause_services", os.path.join(ROOT, "tools", "pause-services.py"))
+pause_services = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(pause_services)
+PAUSE_HELPER = os.environ.get("FIELDMAP_PAUSE_HELPER", "/usr/local/lib/fieldmap-server/pause-services")
+PAUSE_STATE = os.environ.get("FIELDMAP_PAUSE_STATE", pause_services.STATE)
+
+
+# ---------- this machine: Pi mode, RAM, the drive ----------
+
+def ram_gb():
+    """The machine's RAM in GB (GiB, as /proc/meminfo counts it)."""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) / 1024 ** 2
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024 ** 3
+    except (ValueError, OSError):
+        return 8.0
+
+
+def pi_mode():
+    """True on a machine with less than 8 GB of RAM (8 GB machines report a little under 8 GiB,
+    so the line is at 7), or with PI_MODE=yes in .env; PI_MODE=no turns it off (scripts/lib.sh)."""
+    value = setting("PI_MODE", "auto")
+    if value in ("yes", "no"):
+        return value == "yes"
+    return ram_gb() < 7
+
+
+def size_gb(text):
+    """3g, 3072m -> GB; None for "" or a size that is not one."""
+    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([gGmM])\s*", text or "")
+    if not m:
+        return None
+    return float(m[1]) / (1024 if m[2] in "mM" else 1)
+
+
+def build_memory_gb():
+    """The RAM a build may use (BUILD_MEMORY; 3g in Pi mode), or None for no cap."""
+    return size_gb(setting("BUILD_MEMORY", "3g" if pi_mode() else ""))
+
+
+def reserve_gb():
+    """The free space a build leaves on the drive (BUILD_RESERVE_GB; 5 in Pi mode)."""
+    try:
+        return max(0.0, float(setting("BUILD_RESERVE_GB", "5" if pi_mode() else "0")))
+    except ValueError:
+        return 5.0
+
+
+def planetiler_heap_gb(cap):
+    """The Java heap Planetiler gets under a memory cap: two thirds of it (scripts/lib.sh)."""
+    return cap * 2 / 3
+
+
+def planetiler_max_osm_gb(cap):
+    """The largest OpenStreetMap data (GB of .osm.pbf) Planetiler builds within a memory cap.
+    With its node locations and work files on disk (memory-mapped), its heap still holds the
+    relations and the outlines of areas: about half the size of the input, as its own
+    documentation says, plus half a GB."""
+    return max(0.0, (planetiler_heap_gb(cap) - 0.5) / 0.5)
+
+
+def on_sd_card(path):
+    """True when path is on an SD card (or eMMC: the kernel's mmcblk devices, major number 179)."""
+    try:
+        if os.major(os.stat(path).st_dev) == 179:
+            return True
+        # A file system whose own device number is not the card's (btrfs, a bind mount): the
+        # source of the mount that holds the path.
+        real, best, source = os.path.realpath(path), "", ""
+        with open("/proc/self/mountinfo") as f:
+            for line in f:
+                left, _, right = line.partition(" - ")
+                mount = left.split()[4].replace("\\040", " ")
+                if (real == mount or real.startswith(mount.rstrip("/") + "/")) and len(mount) >= len(best):
+                    best, source = mount, (right.split() + ["", ""])[1]
+        return os.path.basename(source).startswith("mmcblk")
+    except (OSError, IndexError):
+        return False
+
+
+def pause_list():
+    """What FIELDMAP_PAUSE_UNITS names, what of it is refused, and what a build stopped and has
+    not started again yet (the root helper's state file)."""
+    services, refused = pause_services.configured(os.path.join(ROOT, ".env"))
+    stopped = pause_services.read_state(PAUSE_STATE)["stopped"]
+    return {"services": [s["label"] for s in services], "refused": refused,
+            "stopped": [s.get("label") or s["name"] for s in stopped], "ready": os.path.isfile(PAUSE_HELPER)}
+
+
+_restoring = threading.Lock()
+
+
+def restore_services(say=print):
+    """Starts again what a build stopped, when it stopped anything. True when nothing is left
+    stopped."""
+    if not os.path.exists(PAUSE_STATE):
+        return True
+    with _restoring:
+        r = subprocess.run(["sudo", "-n", PAUSE_HELPER, "restore"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True)
+    for line in r.stdout.splitlines():
+        say(line)
+    return r.returncode == 0 and not os.path.exists(PAUSE_STATE)
 
 
 def read_json(path, default):
@@ -126,10 +264,17 @@ def check_selection(body):
     if not layers:
         raise BadRequest("Select at least one layer.")
     o = body.get("options") or {}
+    if pi_mode() and o.get("terrain") in ("10m", "1m"):
+        raise BadRequest("This server builds the standard terrain (30 m) only: it runs in Pi mode, with less than 8 GB "
+                         "of RAM. Set Terrain Resolution to Standard.")
     options = {"world": bool(o.get("world")), "fresh": bool(o.get("fresh")), "units": "m" if o.get("units") == "m" else "ft",
                "terrain": o.get("terrain") if o.get("terrain") in ("10m", "1m") else "30m",
                "language": o.get("language") if o.get("language") in LANGUAGES else "", "detail": None}
     regions = [REGIONS[i] for i in ids]
+    if pi_mode() and options["world"] and "basemap" in layers and not os.path.exists(world_file(options)):
+        raise BadRequest("The World Overview cannot be built on this server: it is made from the map data of the whole "
+                         "world, which needs a large machine. Clear Include World Overview, or build the overview on "
+                         "another machine and copy it into the data folder.")
     usa = [r for r in regions if is_us(r)]
     if "usdata" in layers and not usa:
         raise BadRequest("US Government Data is available only for regions in the United States.")
@@ -277,7 +422,10 @@ def estimate(regions, layers, options):
     a build needs is the largest of (all kept so far + the temp of the part running), less what
     on_hand() says it gets back by then."""
     cpus = os.cpu_count() or 2
-    slow = 8 / cpus
+    pi = pi_mode()
+    # A Pi's cores take about three times as long as a PC's for the same work, and its build
+    # keeps its working data on disk (Pi mode).
+    slow = 8 / cpus * (3 if pi else 1)
     osm = sum(r["osm_mb"] for r in regions) / 1024
     # Extracts on hand that the build uses again (merge-osm.sh): recent enough, and not asked anew.
     ages = osm_ages()
@@ -342,15 +490,42 @@ def estimate(regions, layers, options):
     # Afterwards: the new files, less what is already here and the files of the layers they replace.
     replaced = sum(s["size_gb"] for k, s in layers_status().items() if k in layers and s["present"])
     free = shutil.disk_usage(DATA if os.path.isdir(DATA) else ROOT).free / 1024 ** 3
+    reserve = reserve_gb()
+    memory = memory_problem(regions, layers)
     out = {"items": items, "need_gb": round(max(need, 0.1), 1), "kept_gb": round(kept, 1),
            "more_after_gb": round(kept - back - replaced, 1), "on_hand_gb": round(back, 1),
-           "free_gb": round(free, 1), "ok": need <= free, "hours": round(sum(i["hours"] for i in items), 1),
-           "cpus": cpus}
+           "free_gb": round(free, 1), "reserve_gb": round(reserve, 1), "space_ok": need + reserve <= free,
+           "memory_gb": build_memory_gb(), "memory_problem": memory, "pi": pi,
+           "hours": round(sum(i["hours"] for i in items), 1), "cpus": cpus}
+    out["ok"] = out["space_ok"] and not memory
     # The sharper terrain takes roughly ten times the space of the standard one: what that would need.
     if us_cells and any(k in layers for k in ("contours", "hillshade", "elevation")):
         out["standard_need_gb"] = estimate(regions, [k for k in layers if k != "detail"],
                                            {**options, "terrain": "30m", "detail": None})["need_gb"]
     return out
+
+
+def memory_problem(regions, layers):
+    """Why a selection cannot be built within the build's memory cap, in plain words; "" when it can
+    (or when there is no cap). Only the steps that run Planetiler (the base map and the printed map
+    details) need more RAM for a larger region: the terrain steps work one elevation cell at a
+    time, and the routing data is downloaded."""
+    cap = build_memory_gb()
+    if not cap:
+        return ""
+    ram = ram_gb()
+    if ram < cap + 0.5:
+        return (f"This server has {ram:.1f} GB of RAM. A build may use up to {cap:g} GB (BUILD_MEMORY in .env), "
+                f"and the server needs about 0.5 GB for itself. Set BUILD_MEMORY lower in .env.")
+    planetiler = [k for k in ("basemap", "extras") if k in layers]
+    osm = sum(r["osm_mb"] for r in regions) / 1024
+    most = planetiler_max_osm_gb(cap)
+    if planetiler and osm > most:
+        what = "base map" if "basemap" in planetiler else "printed map details"
+        return (f"The selected regions are too large for this server to build the {what}: their map data is about "
+                f"{osm:.1f} GB, and within {cap:g} GB of RAM it can build up to about {most:.1f} GB. Select fewer or "
+                f"smaller regions, or build the {what} on a larger machine.")
+    return ""
 
 
 def lon_span(spans):
@@ -380,10 +555,7 @@ def region_file(regions, options):
     ids = sorted(r["id"] for r in regions)
     west, east = lon_span([(r["bbox"][0], r["bbox"][2]) for r in regions])
     south, north = min(r["bbox"][1] for r in regions), max(r["bbox"][3] for r in regions)
-    try:
-        ram_gb = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024 ** 3
-    except (ValueError, OSError):
-        ram_gb = 8
+    ram, cap = ram_gb(), build_memory_gb()
     lines = [
         "# Written by the map builder page (tools/admin-server.py) for: " + ", ".join(r["name"] for r in regions),
         f'REGION_NAME="admin-{hashlib.sha1(" ".join(ids).encode()).hexdigest()[:10]}"',
@@ -393,7 +565,9 @@ def region_file(regions, options):
         f'WORLD="{"yes" if options["world"] else "no"}"',
         f'LANGUAGE="{options["language"]}"',
         f'DEM_SOURCE="{"copernicus" if options["terrain"] == "30m" else "usgs"}"',
-        f'PLANETILER_MEMORY="{int(min(24, max(2, ram_gb * 0.5)))}g"',
+        # Under a memory cap (Pi mode), Planetiler's heap is two thirds of it (scripts/lib.sh).
+        (f'PLANETILER_MEMORY="{int(planetiler_heap_gb(cap) * 1024)}m"' if cap else
+         f'PLANETILER_MEMORY="{int(min(24, max(2, ram * 0.5)))}g"'),
     ]
     if options["detail"]:
         lines.append('DETAIL_BBOX="' + " ".join(f"{v:.5f}" for v in detail_bbox(options["detail"])) + '"')
@@ -426,6 +600,8 @@ def job_status():
         job.update(state="failed", message="The build stopped unexpectedly. Was the server shut down? "
                                            "The current maps did not change.")
         write_json(JOB, job)
+        # It did not start again what it stopped: do that now.
+        threading.Thread(target=restore_services, kwargs={"say": lambda _line: None}, daemon=True).start()
     done, current = log_steps(job["started"])
     step_of = {v[0]: k for k, v in LAYERS.items()}
     job["log_size"] = _steps["offset"]
@@ -464,6 +640,23 @@ def log_steps(job_started):
 
 def docker(*args, **kw):
     return subprocess.run(["docker", *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **kw)
+
+
+def check_build(est, body):
+    """Raises BadRequest, in plain words, when a build of this estimate must not start."""
+    if est["memory_problem"]:
+        raise BadRequest(est["memory_problem"])
+    if not est["space_ok"]:
+        keep = f", and {est['reserve_gb']:g} GB must stay free for the system" if est["reserve_gb"] else ""
+        raise BadRequest(f"Not enough free space. The build needs about {est['need_gb']:.0f} GB{keep}, but "
+                         f"only {est['free_gb']:.0f} GB is free. Select fewer regions or layers.")
+    pause = pause_list()
+    if pause["services"] and not pause["ready"]:
+        raise BadRequest("The other services (FIELDMAP_PAUSE_UNITS) cannot be stopped: this server is not "
+                         "set up for it. On the server, run the installer again.")
+    # The page asks first, and says which: starting the build is the answer.
+    if pause["services"] and body.get("pause_ok") is not True:
+        raise BadRequest("Confirm that these services are stopped during the build: " + ", ".join(pause["services"]) + ".")
 
 
 def start_build(regions, layers, options):
@@ -508,10 +701,29 @@ def run_job():
                             "The server keeps the completed parts; start the same build again to resume.")
 
     def finish(state, message):
+        # The services the build stopped, again, however it ended.
+        if os.path.exists(PAUSE_STATE):
+            print("\nStarting the stopped services again.", flush=True)
+            if not restore_services():
+                left = ", ".join(pause_list()["stopped"])
+                message += (f" Some services did not start again: {left}. Start them on the server, or restart it.")
         job.update(state=state, message=message, finished=int(time.time()))
         write_json(JOB, job)
         sys.exit(0)
 
+    print(f"Map Builder: {', '.join(request['names'])}; steps: {' '.join(steps)}", flush=True)
+    if pi_mode():
+        print(f"Pi mode: at most {setting('BUILD_MEMORY', '3g')} of RAM for the build, 30 m elevation data.", flush=True)
+    pause = pause_list()
+    if pause["services"]:
+        print(f"Stopping other services to free RAM for the build: {', '.join(pause['services'])}. "
+              "They start again when the build ends.", flush=True)
+        # Before this process listens for Cancel Build: a cancel now waits until they are stopped,
+        # and then starts them again (finish), so the two never run at once.
+        r = subprocess.run(["sudo", "-n", PAUSE_HELPER, "stop"])
+        if r.returncode != 0:
+            finish("failed", "The build did not start: the other services could not be stopped (FIELDMAP_PAUSE_UNITS). "
+                             "The Build Log below shows why. The current maps did not change.")
     signal.signal(signal.SIGTERM, stop)
     job["pid"] = os.getpid()
     job["ready"] = True
@@ -525,7 +737,6 @@ def run_job():
         if os.path.basename(old) != name + ".osm.pbf":
             os.remove(old)
             print(f"Removed {os.path.basename(old)}, the merged map data of an earlier selection.", flush=True)
-    print(f"Map Builder: {', '.join(request['names'])}; steps: {' '.join(steps)}", flush=True)
     env = dict(os.environ)
     env.pop("LANGUAGE", None)          # a locale setting, not the label language of a build
     if request["options"].get("fresh"):
@@ -603,7 +814,10 @@ def status():
     return {"free_gb": round(usage.free / 1024 ** 3, 1), "total_gb": round(usage.total / 1024 ** 3, 1),
             "layers": layers_status(), "job": job_status(), "docker": shutil.which("docker") is not None,
             "languages": LANGUAGES, "web_port": web_port(), "detail_km": DETAIL_KM,
-            "osm_ages": osm_ages(), "osm_refresh_days": OSM_REFRESH_DAYS}
+            "osm_ages": osm_ages(), "osm_refresh_days": OSM_REFRESH_DAYS,
+            "pi": pi_mode(), "ram_gb": round(ram_gb(), 1), "memory_gb": build_memory_gb(), "reserve_gb": reserve_gb(),
+            "sd_card": on_sd_card(base), "pause": pause_list(),
+            "world_files": sorted(os.path.basename(p) for p in glob.glob(os.path.join(DATA, "world-z0-8*.mbtiles")))}
 
 
 def web_port():
@@ -729,9 +943,7 @@ class Handler(BaseHTTPRequestHandler):
                         raise BadRequest("A build is already in progress.")
                     if not shutil.which("docker"):
                         raise BadRequest("Docker is not installed on the server. The build requires Docker.")
-                    if not est["ok"]:
-                        raise BadRequest(f"Not enough free space. The build needs about {est['need_gb']:.0f} GB, but only "
-                                         f"{est['free_gb']:.0f} GB is free. Select fewer regions or layers.")
+                    check_build(est, body)
                     start_build(regions, layers, options)
                 return self.send(200, {"ok": True})
             self.send(404, {"error": "not found"})
@@ -768,6 +980,10 @@ def serve():
         sys.exit(f"Error: {ADMIN} belongs to another user (often root, when Docker made it).\n"
                  f"Fix it with:  sudo chown -R $(id -un) {ADMIN}   (scripts/install.sh does this too)")
     os.chmod(SOCKET, 0o666)             # nginx runs as another user
+    # Services a build stopped and did not start again (it was killed): start them now.
+    job = job_status()
+    if not job or job["state"] != "running":
+        restore_services()
     print("Map Builder: http://<server address>/mapadmin/", flush=True)
     port = os.environ.get("ADMIN_PORT") or os.environ.get("PORT")
     if port:

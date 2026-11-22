@@ -34,8 +34,8 @@ reexec_in_tools "$@"
 OUT_NAME="$1"
 shift
 
-EXTRACT_DIR="$REPO_DIR/data/sources/extracts"
-OUT_FILE="$REPO_DIR/data/sources/$OUT_NAME.osm.pbf"
+EXTRACT_DIR="$DATA_DIR/sources/extracts"
+OUT_FILE="$DATA_DIR/sources/$OUT_NAME.osm.pbf"
 mkdir -p "$EXTRACT_DIR"
 
 INPUTS=()
@@ -73,7 +73,7 @@ done
 # come to roughly ten times the size of the extracts.
 EXTRACT_GB="$(du -cBG "${INPUTS[@]}" | tail -1 | tr -dc '0-9')"
 NEED_GB="$(python3 -c "print(max(6, int($EXTRACT_GB * 10 + 4)))")"
-require_free_space "$REPO_DIR/data" "$NEED_GB" "merging and processing $EXTRACT_GB GB of map extracts"
+require_free_space "$DATA_DIR" "$NEED_GB" "merging and processing $EXTRACT_GB GB of map extracts"
 
 if [ ${#INPUTS[@]} -eq 1 ]; then
     echo "One extract only: copy it to the output file."
