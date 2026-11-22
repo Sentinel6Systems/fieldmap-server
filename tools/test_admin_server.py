@@ -156,7 +156,8 @@ class AdminServerTest(unittest.TestCase):
         self.assertIn("BUILD_MEMORY", e["memory_problem"])
 
     def test_pi_pace_is_slower(self):
-        body = self.selection(regions=["us/maine"])
+        # A large region: on a small one the fixed start of each step is most of the time.
+        body = self.selection(regions=["germany"])
         work = lambda e: sum(i["hours"] for i in e["items"] if i["key"] not in ("osm", "dem", "routing"))
         pi = work(self.estimate(body))
         self.ram = 7.6

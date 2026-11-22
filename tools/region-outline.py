@@ -267,11 +267,13 @@ def mosaic(a):
 # Measured on test builds (see the README's "Terrain outline"): output kB per km² of land
 # (low = flat, high = rugged; at zoom 12 and 40 ft contours) and seconds per 1000 km² on
 # 8 CPUs. All three are made in parallel and scale with the CPUs.
+# secs: per 1000 km² of land on 8 CPUs, as measured on an 8-CPU PC with an NVMe drive
+# (900,000 km²: contours 21 min, hillshade 3 min, elevation 8 min), with a little to spare.
 RATES = {
-    "contours":  {"kb": (1.5, 5.5), "secs": 4.5, "parallel": True},
+    "contours":  {"kb": (1.5, 5.5), "secs": 1.5, "parallel": True},
     "hillshade": {"kb": {"webp": (0.1, 0.25), "webp-lossless": (0.4, 0.9), "png": (0.5, 1.0)},
-                  "secs": 0.5, "parallel": True},
-    "elevation": {"kb": (0.5, 1.4), "secs": 1.0, "parallel": True},
+                  "secs": 0.2, "parallel": True},
+    "elevation": {"kb": (0.5, 1.4), "secs": 0.55, "parallel": True},
 }
 # With the USGS 1/3 arc-second tiles (as if every cell had one): the contour lines have about
 # three times the points, and the raster layers are built to a higher zoom (see scripts/lib.sh).

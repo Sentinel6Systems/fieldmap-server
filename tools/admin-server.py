@@ -530,7 +530,8 @@ def estimate(regions, layers, options):
     cpus = os.cpu_count() or 2
     pi = pi_mode()
     # A Pi's cores take about three times as long as a PC's for the same work, and its build
-    # keeps its working data on disk (Pi mode).
+    # keeps its working data on disk (Pi mode). The rates below are an 8-CPU PC's with an NVMe
+    # drive, measured on a 2.8 GB, 900,000 km² build (the terrain ones as tools/region-outline.py).
     slow = 8 / cpus * (3 if pi else 1)
     osm = sum(r["osm_mb"] for r in regions) / 1024
     # Extracts on hand that the build uses again (merge-osm.sh): recent enough, and not asked anew.
@@ -554,7 +555,7 @@ def estimate(regions, layers, options):
     if "basemap" in layers:
         if options["world"] and not os.path.exists(world_file(options)):
             add("world", "World Overview (First Build Only)", 3, 160, 10 * slow)
-        add("basemap", "Base Map", osm * 1.1 + 0.1, osm * 8 + 3, 0.1 + osm * 0.35 * slow)
+        add("basemap", "Base Map", osm * 1.1 + 0.1, osm * 8 + 3, 0.1 + osm * 0.06 * slow)
     terrain = [k for k in ("contours", "hillshade", "elevation") if k in layers]
     if terrain:
         gb = cells * 0.025 + us_cells * 0.35
@@ -562,10 +563,10 @@ def estimate(regions, layers, options):
     if "contours" in layers:
         final = kb(5.5, 1.85)
         add("contours", "Contour Lines", final, (cells - us_cells) * 0.2 + us_cells * 0.5 - final,
-            (land - us_land + us_land * 2.5) / 1000 * 4.5 * slow / 3600)
+            (land - us_land + us_land * 2.5) / 1000 * 1.5 * slow / 3600)
     if "hillshade" in layers:
         add("hillshade", "Hillshade", kb(0.25, 16), (cells - us_cells) * 0.03 + us_cells * 0.2,
-            (land - us_land + us_land * 16) / 1000 * 0.5 * slow / 3600)
+            (land - us_land + us_land * 16) / 1000 * 0.2 * slow / 3600)
     if "detail" in layers:
         # 10 km tiles of up to 500 MB (they are kept), often from two or three overlapping
         # surveys; the hillshade raster and the finished tiles as measured on two test areas
@@ -575,12 +576,12 @@ def estimate(regions, layers, options):
             km * km * 0.0015, 0.05 + km * km / 2500 * slow)
     if "elevation" in layers:
         add("elevation", "Elevation Data", kb(1.4, 4), 0,
-            (land - us_land + us_land * 7.2) / 1000 * 1.0 * slow / 3600)
+            (land - us_land + us_land * 7.2) / 1000 * 0.55 * slow / 3600)
     if "extras" in layers:
-        add("extras", "Printed Map Details", osm * 0.15 + 0.05, osm * 3 + 2, 0.05 + osm * 0.1 * slow)
+        add("extras", "Printed Map Details", osm * 0.15 + 0.05, osm * 3 + 2, 0.05 + osm * 0.01 * slow)
     if "usdata" in layers:
         states = sum(1 for r in regions if is_us(r)) if not any(r["id"] == "us" for r in regions) else 51
-        add("usdata", "US Government Data", 0.05 + states * 0.08, 1 + states * 0.1, 0.1 + states * 0.05)
+        add("usdata", "US Government Data", 0.05 + states * 0.08, 1 + states * 0.1, 0.1 + states * 0.01)
     if "routing" in layers:
         # A rough estimate: BRouter's files come to about a quarter to a half of the OpenStreetMap
         # extract (the half here), more for a small region, as its 5 degree squares come whole.

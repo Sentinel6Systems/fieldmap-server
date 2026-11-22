@@ -2,6 +2,12 @@
 
 ## Since v1.0.0
 
+- **Build time estimates closer to real builds.** Measured on an 8-CPU PC with an NVMe drive (15 US states,
+  2.8 GB of map data, 900,000 km² of land: about 67 minutes in all), the estimates of the base map, contours,
+  hillshade, elevation data, printed map details and US government data were two to ten times too long. The Map
+  Builder and the build scripts' own terrain estimates now use the measured rates; a Raspberry Pi still counts
+  about three times as long per core.
+
 - **Map Builder: Free Up Storage.** Under step 4, a card shows how much space the downloads and build files take
   (`data/sources`, `cache`, `tmp`, `incoming`), and **Delete Downloads and Build Files** deletes them, for servers
   with little storage. The maps don't change; the next build downloads its data again. The server deletes them in
