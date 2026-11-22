@@ -14,7 +14,7 @@ import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
 import { initWmmNotice } from "./wmm.js";
 import { startLive, conversations, partnerOf, ageText, statusText, cleanText, MAX_NAME, BASE } from "./live.js";
 import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, SPEEDS, MAX_ROUTE_POINTS, shareableShape } from "./shared.js";
-import { createRouter, routesFC, routeStats, durationText } from "./routing.js";
+import { createRouter, routesFC, routeStats, durationText, ROAD_CLASSES } from "./routing.js";
 
 // The map at /map/: what the devices share (live.js, shared.js), drawing, terrain analysis, and
 // printing (the Print tab: the sheet on the map, render.js). Opened with ?print (the print
@@ -597,7 +597,25 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 /* ---------- data: routes ---------- */
 // A route is its points (2 to 30, the most one mesh radio packet carries) and its Route Type, as
 // in the app. Its legs follow roads or trails where the server's router finds a way (routing.js).
-const router = createRouter(() => { drawRoutes(); refreshLists(); });
+const router = createRouter(() => { drawRoutes(); refreshLists(); }, undefined, nearRoads);
+/** The lines of the roads near a point that a Route Type can use, from the map tiles loaded now
+ *  (the base map's transportation layer): where a leg that ends off the road goes to the road. */
+function nearRoads(p, routing) {
+  const classes = ROAD_CLASSES[routing];
+  const layer = (map.getStyle().layers || []).find((l) => l["source-layer"] === "transportation");
+  if (!classes || !layer) return [];
+  const feats = map.querySourceFeatures(layer.source, { sourceLayer: "transportation", filter: ["in", ["get", "class"], ["literal", classes]] });
+  // Only lines near the point: about 15 km around it.
+  const dLat = 0.14, dLng = 0.14 / Math.max(0.1, Math.cos((p.lat * Math.PI) / 180));
+  const near = (c) => Math.abs(c[0] - p.lng) < dLng && Math.abs(c[1] - p.lat) < dLat;
+  const lines = [];
+  for (const f of feats) {
+    const g = f.geometry;
+    const parts = g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : [];
+    for (const line of parts) if (line.some(near)) lines.push(line);
+  }
+  return lines;
+}
 function drawRoutes() {
   const list = shown(routes);
   router.want(list);
@@ -639,11 +657,13 @@ function previewRoute(ll) {
     ...pendingRoute.map((p) => ({ type: "Feature", geometry: { type: "Point", coordinates: [p.lng, p.lat] }, properties: {} })),
   ] });
 }
-/** "Walking · 2.4 mi · 1 h 12 min", and how many legs are straight for want of a way. */
+/** "Walking · 2.4 mi · 1 h 12 min", how many legs are straight for want of a way, and how many
+ *  end off the road (dashed from the road to the point). */
 function routeDetail(r) {
   const st = routeStats(r, router);
   const legs = st.straightLegs ? ` · ${st.straightLegs} straight leg${st.straightLegs === 1 ? "" : "s"}: no route found` : "";
-  return `${routeType(r.routing)[1]} · ${fmtLength(st.meters, state.units)} · ${durationText(st.seconds)}${legs}`;
+  const off = st.offRoad ? ` · ${st.offRoad} leg${st.offRoad === 1 ? " ends" : "s end"} off road (dashed)` : "";
+  return `${routeType(r.routing)[1]} · ${fmtLength(st.meters, state.units)} · ${durationText(st.seconds)}${legs}${off}`;
 }
 /** Route Type and Speed of a route, as in the app. A new type comes with its own speed. */
 function routeEditor(r) {

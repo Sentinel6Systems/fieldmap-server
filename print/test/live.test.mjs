@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mergeState, mergeMessages, conversations, partnerOf, ageLook, ageText, newUid, cleanText, newMessageId, statusText } from "../src/live.js";
 import { describe, sharedFC, peopleFC, kindText, itemFromFeature, featureFromItem, itemKey } from "../src/shared.js";
 import { shapeRing } from "../src/shapes.js";
-import { createRouter, readLeg, routeLegs, routeStats, routesFC, durationText, legKey } from "../src/routing.js";
+import { createRouter, readLeg, routeLegs, routeStats, routesFC, durationText, legKey, nearestRoadPoints } from "../src/routing.js";
 
 const ME = "web-0011223344556677";
 const point = (id, lon, lat, extra = {}) => ({ type: "Feature", id, geometry: { type: "Point", coordinates: [lon, lat] },
@@ -207,4 +207,38 @@ test("routes: legs along roads from the router, straight and dashed where it has
   assert.equal(legKey("car-vario", { lng: 10.0000001, lat: 45 }, { lng: 10, lat: 45 }), "car-vario|10,45|10,45");
   assert.equal(readLeg({ features: [{ geometry: { type: "Point", coordinates: [1, 2] } }] }), null);
   assert.deepEqual([durationText(30), durationText(45 * 60), durationText(125 * 60)], ["1 min", "45 min", "2 h 05 min"]);
+});
+
+test("routes: a leg that ends off the road goes along the road to the nearest one, then straight", async () => {
+  // A road along latitude 45 from lon 10 to 10.1; the end point is 1 km north of it, off the road.
+  const road = [[10, 45], [10.05, 45], [10.1, 45]];
+  const off = { lng: 10.08, lat: 45.009 };
+  const near = nearestRoadPoints(off, [road, [[10.08, 45.2], [10.09, 45.2]]]);
+  assert.equal(near.length, 2, "two places on the near road; the far road is past the limit");
+  assert.ok(near.every((p) => Math.abs(p.lat - 45) < 1e-9));
+  assert.ok(Math.abs(near[0].lng - 10.08) < 1e-9 && Math.abs(near[0].lat - 45) < 1e-9);
+  assert.ok(Math.abs(near[0].meters - 995) < 10);
+  // Spread: the places tried are far enough apart to be on other stretches of road.
+  assert.equal(nearestRoadPoints(off, [road], 3, 5000).length, 1);
+
+  const route = { id: "r2", color: "#d7263d", label: "R2", routing: "driving", speedMph: 25, points: [{ lng: 10, lat: 45 }, off] };
+  const asked = [];
+  let done;
+  const finished = new Promise((r) => (done = r));
+  const answer = (line) => ({ ok: true, json: async () => ({ type: "FeatureCollection", features: [{ type: "Feature", properties: { "track-length": "6400" }, geometry: { type: "LineString", coordinates: line } }] }) });
+  const router = createRouter(() => setTimeout(done, 0), async (url) => {
+    asked.push(url);
+    // The router finds no way to the point off the road, a way to the road next to it.
+    return url.includes("10.08,45.009") ? { ok: false, status: 404 } : answer([[10, 45], [10.05, 45], [10.08, 45]]);
+  }, (p, routing) => (routing === "driving" ? [road] : []));
+  router.want([route]);
+  await finished;
+  assert.equal(asked.length, 2, "the leg as tapped, then to the nearest road");
+  assert.match(asked[1], /lonlats=10,45%7C10\.08,45&/);
+  const [leg] = routeLegs(route, router);
+  assert.deepEqual(leg.tail, [[10.08, 45], [10.08, 45.009]]);
+  assert.equal(leg.head, null);
+  assert.ok(Math.abs(leg.meters - 6400 - 995) < 10, "the road, and the straight part to the point");
+  assert.deepEqual(routesFC([route], router).features.map((f) => f.properties.part), ["line", "dashed", "vertex", "vertex", "label"]);
+  assert.deepEqual([routeStats(route, router).offRoad, routeStats(route, router).straightLegs], [1, 0]);
 });
