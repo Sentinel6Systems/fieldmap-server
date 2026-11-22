@@ -63,12 +63,14 @@ SUDO=""
 
 # What this run changed: printed at the end (remote.sh, firewall.sh add theirs, as root too: so
 # in a folder of its own, not straight in /tmp, where root may not write to a user's file). Kept
-# across the restart of this script in the docker group (below).
+# across the restart of this script in the docker group (below). FIELDMAP_CHANGES_DIR is the
+# folder made here: the only one removed at the end, never one a caller's file is in.
 if [ -z "${FIELDMAP_CHANGES:-}" ] || [ ! -f "$FIELDMAP_CHANGES" ]; then
-    FIELDMAP_CHANGES="$(mktemp -d)/changes"
+    FIELDMAP_CHANGES_DIR="$(mktemp -d)"
+    FIELDMAP_CHANGES="$FIELDMAP_CHANGES_DIR/changes"
     : > "$FIELDMAP_CHANGES"
 fi
-export FIELDMAP_CHANGES
+export FIELDMAP_CHANGES FIELDMAP_CHANGES_DIR="${FIELDMAP_CHANGES_DIR:-}"
 changed() { echo "Changed: $1"; echo "$1" >> "$FIELDMAP_CHANGES"; }
 # The last run's sums of what goes into each part, to tell whether it changed since.
 STATE=/var/lib/fieldmap-server
@@ -368,7 +370,11 @@ if [ -s "$FIELDMAP_CHANGES" ]; then
 else
     echo "Nothing changed: everything was up to date."
 fi
-rm -rf "$(dirname "$FIELDMAP_CHANGES")"
+# Only the list and its folder made above, and the folder only if nothing else is in it.
+if [ -n "$FIELDMAP_CHANGES_DIR" ] && [ "$FIELDMAP_CHANGES" = "$FIELDMAP_CHANGES_DIR/changes" ]; then
+    rm -f "$FIELDMAP_CHANGES"
+    rmdir "$FIELDMAP_CHANGES_DIR" 2>/dev/null || true
+fi
 echo
 echo "Ready:"
 echo "  Map                     $WEB_PUBLIC/map/"
