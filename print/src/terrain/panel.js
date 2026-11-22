@@ -1,4 +1,4 @@
-// The Terrain section of the panel: viewshed and radio coverage from a point (area), or
+// The Terrain Analysis view of the panel (opened from the tool bar): viewshed and radio coverage from a point (area), or
 // a profile between two points (line). Owns its map markers and overlay, runs the worker
 // and keeps the last result for printing. Hidden when the tile server has no elevation.
 import * as maplibregl from "maplibre-gl";
@@ -31,7 +31,7 @@ const ANTENNAS = [["Handheld", 5 * FT], ["Vehicle Roof", 6 * FT], ["Mast", 30 * 
 const MAX_RADIUS = 25000;
 const EMPTY_IMG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
-/** Set up the Terrain section. Resolves to a controller (available: false when there is
+/** Set up the Terrain Analysis view. Resolves to a controller (available: false when there is
  *  no elevation tile set). */
 export async function initTerrain({ map, tilesBase, state, saveSettings, root, onLayout }) {
   const src = await findElevation(tilesBase);
@@ -239,7 +239,7 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
     body.innerHTML = "";
     const metric = units() === "metric";
     body.append(seg("Analysis", t.mode, [["off", "Off"], ["viewshed", "Viewshed"], ["radio", "Radio Coverage"]], (v) => { t.mode = v; area = null; save(); render(); schedule(0); }));
-    $summary().textContent = t.mode === "off" ? "" : t.mode === "viewshed" ? "Viewshed" : "Radio Coverage";
+    if ($summary()) $summary().textContent = t.mode === "off" ? "" : t.mode === "viewshed" ? "Viewshed" : "Radio Coverage";
     if (t.mode === "off") {
       body.append(h("div", { class: "hint", text: "Viewshed shows what is visible from a point. Radio Coverage shows where a VHF or UHF radio can likely reach, or checks a single link." }));
       drawMap(); onLayout();
@@ -316,7 +316,7 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
     drawMap();
     onLayout();
   }
-  const $summary = () => root.querySelector("#terrain-summary");
+  const $summary = () => document.getElementById("terrain-summary");
 
   function renderLegend() {
     const box = body.querySelector(".terrain-legend");
@@ -341,7 +341,7 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
     const box = body.querySelector(".terrain-profile");
     if (!box) return;
     box.innerHTML = "";
-    if (t.mode === "off" || t.kind !== "line" || !line || !line.prof || !sameLine() || !root.open) return;
+    if (t.mode === "off" || t.kind !== "line" || !line || !line.prof || !sameLine() || root.closest("[hidden]")) return;
     const w = Math.max(240, body.clientWidth || 360), hh = Math.round(w * 0.55), dpr = window.devicePixelRatio || 1;
     const c = h("canvas", { class: "terrain-chart" });
     c.width = Math.round(w * dpr); c.height = Math.round(hh * dpr); c.style.width = "100%";
@@ -355,8 +355,7 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
   }
 
   /* ---------------- public ---------------- */
-  // The chart is drawn at the panel's width, which is only known while the section is open.
-  root.addEventListener("toggle", () => { if (root.open) renderProfile(); });
+  // The chart is drawn at the panel's width, which is only known while the view is open (onShow).
   let resizeTimer = 0;
   window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderProfile, 200); });
   window.__terrain = { t, get area() { return area; }, get line() { return line; } };   // for debugging in the console
@@ -370,6 +369,8 @@ export async function initTerrain({ map, tilesBase, state, saveSettings, root, o
     addLayers,
     /** Ink, layer switch or units changed. */
     refresh() { render(); },
+    /** The view was opened: the profile chart can be drawn at its width now. */
+    onShow() { renderProfile(); },
     get picking() { return !!picking; },
     cancelPick() { if (picking) { picking = null; map.getCanvas().style.cursor = ""; render(); } },
     /** A map tap while placing a point: returns true when it was used. */

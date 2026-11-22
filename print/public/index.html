@@ -29,7 +29,6 @@
     <nav class="tabs" role="tablist" aria-label="Panel">
       <button role="tab" data-tab="layers" aria-selected="true">Layers</button>
       <button role="tab" data-tab="markers" aria-selected="false">Markers</button>
-      <button role="tab" data-tab="messages" aria-selected="false" hidden>Messages<span id="unread" class="badge" hidden></span></button>
       <button role="tab" data-tab="print" aria-selected="false">Print</button>
     </nav>
     <button id="panel-toggle" class="icon" title="Show or Hide Panel">▾</button>
@@ -57,16 +56,23 @@
     </div>
 
     <details id="layers" class="layers">
-      <summary><h2>Layers</h2><span id="layers-summary" class="hint"></span></summary>
+      <summary><h2>Map Features</h2><span id="layers-summary" class="hint"></span></summary>
       <div id="layer-controls"></div>
       <button id="layers-reset" class="secondary" type="button">Show All Layers</button>
       <div class="hint">These settings apply to the map on screen and on every printed page.</div>
     </details>
+  </section>
 
-    <details id="terrain" class="layers terrain" hidden>
-      <summary><h2>Terrain</h2><span id="terrain-summary" class="hint"></span></summary>
+  <!-- Terrain Analysis: a tool, opened from the tool bar, not a tab. Close goes back to the tab. -->
+  <section id="tab-terrain" class="tab" role="region" aria-label="Terrain Analysis" hidden>
+    <div class="section-head">
+      <h2>Terrain Analysis <span id="terrain-summary" class="hint"></span></h2>
+      <button id="terrain-close" class="secondary compact">Close</button>
+    </div>
+    <div id="terrain" hidden>
+      <div id="terrain-overlay-switch"></div>
       <div id="terrain-controls"></div>
-    </details>
+    </div>
   </section>
 
   <section id="tab-markers" class="tab features" role="tabpanel" hidden>
@@ -101,40 +107,6 @@
       <input id="shape-measure" type="checkbox">
       <span>Show Measurements</span>
     </label>
-  </section>
-
-  <section id="tab-messages" class="tab" role="tabpanel" hidden>
-    <div id="messages-status" class="hint"></div>
-    <label>Display Name
-      <input id="display-name" type="text" maxlength="24" placeholder="Your name on the map and in messages">
-    </label>
-    <div id="name-hint" class="hint error"></div>
-    <div id="my-location" class="my-location" hidden>
-      <span id="my-location-text"></span>
-      <button id="my-location-stop" class="secondary compact" hidden>Stop Sharing</button>
-    </div>
-    <div id="conversations-view">
-      <div id="conversations"></div>
-      <button id="new-message" class="secondary">New Message</button>
-    </div>
-    <div id="pick-view" hidden>
-      <div class="section-head">
-        <button id="pick-back" class="icon" title="Back to Messages">‹</button>
-        <h2>New Message</h2>
-      </div>
-      <div id="pick-list"></div>
-    </div>
-    <div id="conversation" hidden>
-      <div class="section-head">
-        <button id="conversation-back" class="icon" title="Back to Messages">‹</button>
-        <h2 id="conversation-title"></h2>
-      </div>
-      <div id="conversation-list" class="conversation"></div>
-      <div class="composer">
-        <input id="message-text" type="text" maxlength="140" placeholder="Message" aria-label="Message" autocomplete="off">
-        <button id="message-send" class="primary">Send</button>
-      </div>
-    </div>
   </section>
 
   <section id="tab-print" class="tab" role="tabpanel" hidden>
@@ -198,6 +170,44 @@
   </section>
   </div>
 </aside>
+
+<!-- Messages: the header's Messages page, a view of this page in place of the map. -->
+<main id="messages-page" class="messages-page" hidden>
+  <section id="tab-messages">
+    <h1>Messages</h1>
+    <div id="messages-status" class="hint"></div>
+    <label>Display Name
+      <input id="display-name" type="text" maxlength="24" placeholder="Your name on the map and in messages">
+    </label>
+    <div id="name-hint" class="hint error"></div>
+    <div id="my-location" class="my-location" hidden>
+      <span id="my-location-text"></span>
+      <button id="my-location-stop" class="secondary compact" hidden>Stop Sharing</button>
+    </div>
+    <div id="conversations-view">
+      <div id="conversations"></div>
+      <button id="new-message" class="secondary">New Message</button>
+    </div>
+    <div id="pick-view" hidden>
+      <div class="section-head">
+        <button id="pick-back" class="icon" title="Back to Messages">‹</button>
+        <h2>New Message</h2>
+      </div>
+      <div id="pick-list"></div>
+    </div>
+    <div id="conversation" hidden>
+      <div class="section-head">
+        <button id="conversation-back" class="icon" title="Back to Messages">‹</button>
+        <h2 id="conversation-title"></h2>
+      </div>
+      <div id="conversation-list" class="conversation"></div>
+      <div class="composer">
+        <input id="message-text" type="text" maxlength="140" placeholder="Message" aria-label="Message" autocomplete="off">
+        <button id="message-send" class="primary">Send</button>
+      </div>
+    </div>
+  </section>
+</main>
 
 <dialog id="addresses" aria-labelledby="addresses-title">
   <div class="dhead"><h1 id="addresses-title">Tile URLs for Other Apps</h1><button id="addresses-close" type="button">Close</button></div>

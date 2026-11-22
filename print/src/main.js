@@ -114,8 +114,11 @@ let pendingRoute = null;    // [{lng,lat}, ...] while a route's points are tappe
 let pendingShape = null;    // {type, center | points} while a shape is being drawn
 let selected = null;        // {kind:"marker"|"arrow"|"route"|"shape", id}
 let paletteOpenFor = null;  // id of the row whose swatches are open
-// The panel's tab: layers | markers | messages | print. The sheet is on the map only on the Print tab.
-let tab = qs.has("print") ? "print" : ["layers", "markers", "messages", "print"].includes(state.tab) ? state.tab : "layers";
+// The panel's tab: layers | markers | print (or the Terrain Analysis view). The sheet is on the map only on the Print tab.
+let tab = qs.has("print") ? "print" : ["layers", "markers", "print"].includes(state.tab) ? state.tab : "layers";
+// The page shows the map, or Messages (the header's Messages page, ?messages) in its place.
+let view = qs.has("messages") ? "messages" : "map";
+let lastTab = tab;          // the tab to go back to when the Terrain Analysis view is closed
 
 fetch("config.json").then((r) => (r.ok ? r.json() : {})).then((c) => (config = c)).catch(() => {});
 
@@ -373,7 +376,7 @@ let terrain = null;
 const terrainReady = initTerrain({
   map, tilesBase: TILES, state, saveSettings, root: $("terrain"),
   onLayout: () => updateFootprint(),
-}).then((t) => { terrain = t; renderLayerPanel(); return t; });
+}).then((t) => { terrain = t; renderLayerPanel(); renderTerrainSwitch(); return t; });
 
 map.on("click", (e) => {
   if (justDragged) { justDragged = false; return; }
@@ -1033,16 +1036,17 @@ function renderLayerPanel() {
   }
   const h = document.createElement("h3"); h.textContent = "Grid"; box.appendChild(h);
   box.appendChild(toggle("MGRS Grid Lines", state.layers.grid !== false, (on) => { state.layers.grid = on; saveSettings(); }, "The grid numbers at the edges always print."));
-  if (terrain && terrain.available) {
-    const ht = document.createElement("h3"); ht.textContent = "Terrain Analysis"; box.appendChild(ht);
-    box.appendChild(toggle("Analysis Overlay", state.layers.terrain !== false, (on) => {
-      state.layers.terrain = on; saveSettings(); terrain.refresh(); updateFootprint();
-    }, "The viewshed or radio coverage overlay and its points."));
-  }
   const hidden = state.layers.off.filter((g) => have.has(g)).length;
   $("layers-summary").textContent = hidden ? `${hidden} hidden` : "";
 }
-$("layers-reset").onclick = () => { state.layers = { ...LAYER_DEFAULTS }; saveSettings(); redraw(); renderLayerPanel(); renderLiveSwitches(); drawLive(); };
+$("layers-reset").onclick = () => { state.layers = { ...LAYER_DEFAULTS }; saveSettings(); redraw(); renderLayerPanel(); renderLiveSwitches(); renderTerrainSwitch(); drawLive(); if (terrain) terrain.refresh(); };
+/** The Analysis Overlay switch, at the top of the Terrain Analysis view. */
+function renderTerrainSwitch() {
+  if (!terrain || !terrain.available) return;
+  $("terrain-overlay-switch").replaceChildren(toggle("Analysis Overlay", state.layers.terrain !== false, (on) => {
+    state.layers.terrain = on; saveSettings(); terrain.refresh(); updateFootprint();
+  }, "The viewshed or radio coverage overlay and its points, on screen and in print."));
+}
 renderLayerPanel();
 paperSel.onchange = () => { state.paper = paperSel.value; saveSettings(); updateFootprint(); };
 $("orientation").onchange = (e) => { state.orientation = e.target.value; saveSettings(); updateFootprint(); };
@@ -1055,28 +1059,26 @@ $("bring").onclick = () => { footprintCenter = visibleCenter(); updateFootprint(
 $("fit").onclick = () => { const { bounds } = footprintPolygon(); map.fitBounds(bounds, { padding: panelPadding(), duration: 400 }); };
 $("panel-toggle").onclick = () => document.body.classList.toggle("panel-collapsed");
 
-// Terrain Analysis is a section of the Layers tab; the tool bar opens it.
+// Terrain Analysis is a tool: the tool bar opens its view in the panel (in place of the tabs'
+// contents), Close or a tab goes back. There only when the server has elevation data.
 $("add-terrain").hidden = true;
 terrainReady.then((t) => { $("add-terrain").hidden = !t.available; });
-$("add-terrain").onclick = () => {
-  setMode(null);
-  showTab("layers");
-  $("terrain").open = true;
-  $("terrain").scrollIntoView({ block: "start", behavior: "smooth" });
-};
+$("add-terrain").onclick = () => { setMode(null); showTab(tab === "terrain" ? lastTab : "terrain"); };
+$("terrain-close").onclick = () => showTab(lastTab);
 
 /* ---------- the tabs ---------- */
 const TABS = [...document.querySelectorAll(".tabs [data-tab]")];
 function showTab(name) {
-  if (name === "messages" && TABS.find((b) => b.dataset.tab === "messages").hidden) name = "layers";
   const was = tab;
   tab = name;
-  state.tab = name; saveSettings();
+  // The Terrain Analysis view is not a tab: the page opens again on the tab it came from.
+  if (name !== "terrain") { lastTab = name; state.tab = name; saveSettings(); }
   for (const b of TABS) b.ariaSelected = String(b.dataset.tab === name);
-  for (const key of ["layers", "markers", "messages", "print"]) $(`tab-${key}`).hidden = key !== name;
+  for (const key of ["layers", "markers", "print", "terrain"]) $(`tab-${key}`).hidden = key !== name;
+  $("add-terrain").classList.toggle("active", name === "terrain");
   document.body.classList.remove("panel-collapsed");
   showSheet(was !== "print" && name === "print");
-  if (name === "messages") renderMessages();
+  if (name === "terrain" && terrain) terrain.onShow();
 }
 for (const b of TABS) b.onclick = () => showTab(b.dataset.tab);
 
@@ -1311,13 +1313,13 @@ let picking = false;                  // choosing whom a new message is for
 let shownCount = 0;                   // messages in the open conversation when it was last drawn
 function renderMessages() {
   const on = live && live.status === "on" && live.info && live.info.messages;
-  $("messages-status").textContent = !live || on ? "" : live.text;
+  // A server from before messages has locations and markers only.
+  $("messages-status").textContent = !live || on ? "" : live.status === "on" ? "This server has no messages. Update it to send and receive messages." : live.text;
   const convs = live ? conversations(live.messages.list, live.uid, nameOf) : [];
   const unread = convs.reduce((n, c) => n + c.unread, 0);
-  $("unread").hidden = !unread;
-  $("unread").textContent = String(unread);
-  document.title = unread ? `(${unread}) Map` : "Map";
-  if (tab !== "messages") return;
+  markUnread(unread);
+  document.title = `${unread ? `(${unread}) ` : ""}${view === "messages" ? "Messages" : "Map"}`;
+  if (view !== "messages") return;
   $("conversations-view").hidden = !!openConversation || picking;
   $("pick-view").hidden = !picking;
   $("conversation").hidden = !openConversation;
@@ -1354,9 +1356,43 @@ function renderMessages() {
     return d;
   }) : [Object.assign(document.createElement("div"), { className: "hint", textContent: "No messages." })]));
   // A new message, or the conversation just opened: the newest is in view.
-  if (list.length !== shownCount) { shownCount = list.length; $("panel").scrollTop = $("panel").scrollHeight; }
+  if (list.length !== shownCount) { shownCount = list.length; $("messages-page").scrollTop = $("messages-page").scrollHeight; }
   live.markRead(openConversation);
 }
+/** The unread count on the header's Messages link (the header is drawn again now and then). */
+function markUnread(n) {
+  const a = document.querySelector('#fm-bar a[data-page="messages"]');
+  if (!a) return;
+  let b = a.querySelector(".badge");
+  if (!b) { b = Object.assign(document.createElement("span"), { className: "badge" }); a.append(b); }
+  b.hidden = !n;
+  b.textContent = String(n);
+}
+window.addEventListener("fm-nav", () => renderMessages());
+
+/** Map or Messages, switched in place: the header marks it, the address keeps it. */
+function showView(name) {
+  if (name === view && $("messages-page").hidden === (name !== "messages")) return;
+  view = name;
+  setMode(null);
+  document.body.classList.toggle("view-messages", name === "messages");
+  $("messages-page").hidden = name !== "messages";
+  const bar = $("fm-bar");
+  bar.dataset.page = name;
+  if (window.fmNavRedraw) window.fmNavRedraw();
+  history.replaceState(null, "", `${location.pathname}${name === "messages" ? "?messages" : ""}${location.hash}`);
+  if (name === "map") map.resize();
+  shownCount = -1;
+  renderMessages();
+}
+// The header's Map and Messages links switch the view here, without loading the page again.
+$("fm-bar").addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest("a[data-page]");
+  if (!a || (a.dataset.page !== "map" && a.dataset.page !== "messages") || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  e.preventDefault();
+  showView(a.dataset.page);
+});
+
 $("conversation-back").onclick = () => { openConversation = null; renderMessages(); };
 $("pick-back").onclick = () => { picking = false; renderMessages(); };
 $("new-message").onclick = () => { picking = true; renderMessages(); };
@@ -1371,7 +1407,7 @@ $("display-name").onchange = () => {
 };
 /** Asks for the Display Name: messages and My Location need it. */
 function askName() {
-  showTab("messages");
+  showView("messages");
   $("name-hint").textContent = "Enter a Display Name first.";
   $("display-name").focus();
 }
@@ -1426,10 +1462,6 @@ function onLive(l) {
   // No sharing service on this server: none of it is shown.
   const there = l.status !== "absent" && l.status !== "starting";
   $("live-layers").hidden = !there;
-  // A server from before messages has locations and markers only.
-  const messaging = there && !(l.status === "on" && l.info && !l.info.messages);
-  TABS.find((b) => b.dataset.tab === "messages").hidden = !messaging;
-  if (!messaging && tab === "messages") showTab("layers");
   $("live-status").textContent = l.status === "on" ? "" : l.text;
   if (st) { syncIn(st); syncSoon(); }
   else if (l.status === "disabled" || l.status === "absent") dropShared();
@@ -1446,6 +1478,7 @@ function onLive(l) {
 }
 renderLiveSwitches();
 showTab(tab);
+if (view === "messages") { view = "map"; showView("messages"); }
 $("add-me").hidden = true;            // until the server says location sharing is enabled
 live = startLive(onLive);
 if (state.myLocation && cleanText(state.displayName, MAX_NAME)) live.setLocation({ lat: state.myLocation.lat, lon: state.myLocation.lng }, state.displayName);

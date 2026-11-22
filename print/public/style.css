@@ -16,7 +16,7 @@ html, body { height: 100%; overflow: hidden; }
 .panel-head .icon { min-height: 30px; height: 30px; min-width: 30px; }
 .tab { display: flex; flex-direction: column; gap: 8px; }
 
-/* The panel's tabs: Layers, Markers, Messages, Print. */
+/* The panel's tabs: Layers, Markers, Print. */
 .tabs { display: flex; gap: 2px; min-width: 0; flex: 1; }
 .tabs button {
   flex: 1 1 auto; height: 34px; min-height: 34px; padding: 0 6px; border: 0; border-bottom: 2px solid transparent; background: none;
@@ -80,7 +80,13 @@ label.check.share { margin: 4px 0 0 40px; font-size: 12px; color: var(--muted); 
 .msg { max-width: 88%; padding: 6px 9px; background: var(--panel2); border: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
 .msg.mine { align-self: flex-end; border-color: var(--sig); }
 .msg small { display: block; color: var(--muted); font-size: 11px; }
-.composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; position: sticky; bottom: -12px; padding: 8px 0 4px; background: var(--panel); }
+.composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; position: sticky; bottom: 0; padding: 8px 0 12px; background: var(--bg); }
+/* Messages: the header's Messages page, in place of the map. */
+.messages-page { position: absolute; z-index: 6; inset: var(--bar-h) 0 0 0; overflow-y: auto; background: var(--bg); }
+.messages-page > section { max-width: 640px; margin: 0 auto; padding: 16px 16px 0; display: flex; flex-direction: column; gap: 10px; }
+.messages-page h1 { margin: 0; }
+.view-messages #panel, .view-messages .mode-bar { display: none; }
+.fm-nav a .badge { margin-left: 6px; }
 #new-message { margin-top: 8px; }
 
 /* Tile URLs dialog */

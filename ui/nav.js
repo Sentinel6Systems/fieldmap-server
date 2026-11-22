@@ -1,14 +1,18 @@
 // fieldmap-server: the header every page shares. A page carries
-//   <header class="fm-bar" id="fm-bar" data-page="map|guide|access|phones|builder" data-root="<its own folder>"></header>
+//   <header class="fm-bar" id="fm-bar" data-page="map|messages|guide|access|phones|builder" data-root="<its own folder>"></header>
 // and loads this file right after it. The header shows the name, a link to each page that
 // is there (the current one marked), and a Home button when the site sets one.
 //
-// The Map (printing is one of its tabs) and the User Guide are for everyone. What not everyone
+// The Map (printing is one of its tabs), Messages and the User Guide are for everyone. Messages
+// is a view of the map's own page (/map/?messages): the map switches between the two in place
+// (it sets data-page and calls window.fmNavRedraw()); from other pages it is a link. What not everyone
 // needs is under the Admin tab: remote access, the devices and the map builder now, more
 // later. On those pages a second row under the header names them (when there is more than one).
 //
 // Where the other pages are is found out, not configured, on this page's own host:
 //   the map           /map/          (its config.json answers)
+//   Messages          /map/?messages (when the map is there and its sharing service answers;
+//                                    "Unavailable" while sharing is switched off)
 //   the User Guide    /guide/        (its fieldmap.css answers)
 //   the map builder   /mapadmin/     (answers; "Unavailable" when only its place is there)
 //   the Devices page  /phones/       (the Fieldmap app; the same, and only on the box's own network,
@@ -19,9 +23,11 @@
 (() => {
   const bar = document.getElementById("fm-bar");
   if (!bar) return;
-  const here = bar.dataset.page;
+  let here = bar.dataset.page;
   const own = new URL(bar.dataset.root || "./", location.href).pathname;
-  const PAGES = [["map", "Map", "Map"], ["guide", "User Guide", "Guide"], ["admin", "Admin", "Admin"]];
+  const onMap = here === "map" || here === "messages";
+  if (here === "map" && new URLSearchParams(location.search).has("messages")) bar.dataset.page = here = "messages";
+  const PAGES = [["map", "Map", "Map"], ["messages", "Messages", "Messages"], ["guide", "User Guide", "Guide"], ["admin", "Admin", "Admin"]];
   // Under Admin, in this order. The Admin tab opens the first one that is running.
   const ADMIN = [["access", "Remote Access"], ["phones", "Devices"], ["builder", "Map Builder"]];
   const inAdmin = ADMIN.some(([key]) => key === here);
@@ -36,9 +42,13 @@
     '<rect x="3" y="3" width="18" height="18"/><path d="M3 10h18M10 3v18"/><circle cx="15.5" cy="15.5" r="1.6" fill="currentColor" stroke="none"/></svg>';
 
   // Where each page is: its address, "off" (installed, not running) or nothing (not there).
-  const place = (found, key) => (key === here ? (key === "access" ? location.pathname : own) : found[key]);
+  const place = (found, key) => (key === "messages" && onMap ? (found.messages === "off" && here !== "messages" ? "off" : own + "?messages")
+    : key === "map" && onMap ? own : key === here ? (key === "access" ? location.pathname : own) : found[key]);
 
+  let last = {};
   function draw(found) {
+    last = found;
+    here = bar.dataset.page;
     const mark = el("div", { className: "fm-mark" });
     mark.innerHTML = MARK + "<span>FIELDMAP</span>";
     const nav = el("nav", { className: "fm-nav", ariaLabel: "Pages" });
@@ -61,7 +71,9 @@
     bar.replaceChildren(mark, nav);
     if (found.home) bar.append(el("a", { className: "fm-home", href: found.home.url, ariaLabel: found.home.name }, "‹", el("span", { textContent: found.home.name })));
     drawAdmin(found);
+    window.dispatchEvent(new Event("fm-nav"));
   }
+  window.fmNavRedraw = () => draw(last);
 
   // The second row on the Admin pages: each of them, the current one marked.
   function drawAdmin(found) {
@@ -86,9 +98,10 @@
 
   async function find() {
     const found = {};
-    const mapRoot = here === "map" ? own : "/map/";
-    const [config, guide, builder, phones] = await Promise.all([
+    const mapRoot = onMap ? own : "/map/";
+    const [config, share, guide, builder, phones] = await Promise.all([
       json(mapRoot + "config.json"),
+      json("/mapshare/info"),
       here === "guide" ? own : (async () => {
         const r = await get("/guide/fieldmap.css");
         return r && r.ok && (r.headers.get("Content-Type") || "").includes("css") ? "/guide/" : null;
@@ -109,6 +122,9 @@
     ]);
     if (config && typeof config === "object") {
       found.map = mapRoot;
+      // Messages go through the sharing service; a server from before messages has none.
+      if (share && share.enabled === false) found.messages = "off";
+      else if (share && share.messages) found.messages = mapRoot + "?messages";
       // Only a web address: never a script.
       try {
         const url = config.homeUrl && new URL(config.homeUrl, location.href);
