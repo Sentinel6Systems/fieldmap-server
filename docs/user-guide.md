@@ -407,7 +407,8 @@ Pairing is only needed for [remote access](#remote-access). Pair each device onc
 
 1. On the **Devices** page, under **Remote Connectivity** (step 3), press **Enable**. This also starts pairing mode
    for 10 minutes. If it is already enabled, press **Start Pairing** under **Device Pairing**.
-3. In the app, go to **Menu** › **Server** and press **Pair Device**.
+2. Connect the device to the local network and open the Fieldmap app.
+3. Within 10 minutes, in the app, go to **Menu** › **Server** and press **Pair Device**.
 
 The device then shows under **Paired Devices**. Press **Remove** beside a device to lock it out at once, for
 example if it is lost.

@@ -260,15 +260,15 @@
     <h3>Device Pairing</h3>
     <p class="quiet" id="pair-off" hidden>Pairing needs Remote Connectivity: enable it above.</p>
     <ol>
+      <li>Click <b>Start Pairing</b>. Pairing stays open for 10 minutes.
+        <div class="row">
+          <button id="pair" type="button" class="primary">Start Pairing</button>
+          <button id="pair-stop" type="button" hidden>Stop Pairing</button>
+          <span class="left" id="pair-left"></span>
+        </div></li>
       <li>Connect the device to the server's local network and open the Fieldmap app.</li>
-      <li>Click <b>Start Pairing</b> below (enabling Remote Connectivity also starts it).</li>
-      <li>Within 10 minutes, in the app tap <b>Menu</b> &gt; <b>Server</b> &gt; <b>Pair Device</b>.</li>
+      <li>In the app, tap <b>Menu</b> &gt; <b>Server</b> &gt; <b>Pair Device</b>.</li>
     </ol>
-    <div class="row">
-      <button id="pair" type="button" class="primary">Start Pairing</button>
-      <button id="pair-stop" type="button" hidden>Stop Pairing</button>
-      <span class="left" id="pair-left"></span>
-    </div>
   </section>
 
   <section class="card step" data-for="devices">
