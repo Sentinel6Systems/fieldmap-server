@@ -2,6 +2,25 @@
 
 ## Since v1.0.0
 
+- **Route cache.** The web server keeps every route leg the route service works out (nginx proxy_cache, up to
+  300 MB, an entry goes after 60 days unused), for every browser: a reload or another browser gets the same leg
+  at once, and a leg asked twice at the same time is worked out once. Each request carries the routing data's
+  date (v, from /routing/index.json), so new routing data starts afresh. With install-nginx.sh the cache's store
+  goes into /etc/nginx/conf.d/fieldmap-route-cache.conf when the machine's nginx reads that folder; otherwise
+  routes work as before, without the cache.
+
+- **Route Options, Bicycle and danger areas.** A route along roads or trails has **Route Options**: Driving can
+  avoid highways, allow dirt tracks, avoid big towns or save fuel; Walking has a Trail Difficulty (Easy, Moderate,
+  Hard) and can avoid steps or wet ground. Every such route can avoid the areas in a group (circles, rectangles,
+  polygons, 100 m around markers, and arrows as lines across blocked roads), and can take the second, third or
+  fourth way. **Bicycle** is a new Route Type (BRouter's trekking profile, added to the route service). The options
+  travel with a shared or exported route (fieldmap: options, avoid, alternative). The web server passes on only
+  these settings, as numbers. Run the installer again to rebuild the route service with the bicycle profile.
+
+- **User Guide: read and write MGRS coordinates.** A short section under The map, in plain words: the parts of a
+  reference, how many digits give how exact a location, how to read one from the map's grid (read right, then
+  up), and how to write and say one. Both guides (docs/user-guide.md and the guide page).
+
 - **Map: Clear All clears everything.** It used to delete only the items kept in this browser and did nothing,
   without a word, when every item was shared. It now deletes every marker, arrow, route and shape in every group
   after one warning that says how many are shared (those are removed from all devices too), and says so when
@@ -22,7 +41,7 @@
 
 - **Map: grid labels you can read at any zoom; arrow heads that stay.** The MGRS grid's digits now sit upright at
   the top and left edges of the map instead of along the lines, and each 100 km square in view keeps its full name
-  (such as 18S XJ) in the middle of the part you see, however far you zoom in. The digits follow MGRS: one on
+  (such as 13S DC) in the middle of the part you see, however far you zoom in. The digits follow MGRS: one on
   10 km lines, two on 1 km lines, three on 100 m lines. Arrow heads are drawn as lines again, sized for the zoom
   each time it changes and over the handle at the tip; the head drawn as an icon could fail to show when zoomed
   out.

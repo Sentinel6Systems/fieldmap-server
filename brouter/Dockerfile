@@ -19,7 +19,7 @@ RUN set -eu; \
     unzip -q brouter.zip; \
     mkdir -p /opt/brouter/profiles /tmp/brouter-custom; \
     mv "brouter-${BROUTER_VERSION}/brouter-${BROUTER_VERSION}-all.jar" /opt/brouter/brouter.jar; \
-    for f in lookups.dat car-vario.brf hiking-mountain.brf; do mv "brouter-${BROUTER_VERSION}/profiles2/$f" /opt/brouter/profiles/; done; \
+    for f in lookups.dat car-vario.brf hiking-mountain.brf trekking.brf; do mv "brouter-${BROUTER_VERSION}/profiles2/$f" /opt/brouter/profiles/; done; \
     rm -rf /tmp/brouter.zip "/tmp/brouter-${BROUTER_VERSION}"; \
     chown nobody /tmp/brouter-custom
 

@@ -15,10 +15,11 @@
 // An item in a group carries the group's name in "fieldmap" (group); a file of one group also
 // names it at the top ("fieldmap": { group }), for the items that do not.
 import { shapeRing } from "./shapes.js";
+import { routeExtras, routeExtrasOut } from "./shared.js";
 
 export const FORMAT = "fieldmap-drawings";
 const KINDS = ["marker", "arrow", "circle", "rect", "polygon", "route"];
-const ROUTINGS = ["driving", "walking", "straight"];
+const ROUTINGS = ["driving", "walking", "straight", "bicycle"];
 const SPEEDS = [2, 4, 10, 15, 25, 45, 60];
 const MAX_ROUTE_POINTS = 30;
 const MAX_LABEL = 30;                      // as the name fields in the panel
@@ -39,7 +40,7 @@ export function toGeoJSON(markers, arrows, shapes, extra = {}, routes = []) {
   for (const r of routes) {
     const pts = r.points.map((p) => [p.lng, p.lat]);
     features.push({ type: "Feature", geometry: { type: "LineString", coordinates: pts },
-      properties: props(r, "route", { waypoints: pts, routing: r.routing, speedMph: r.speedMph }) });
+      properties: props(r, "route", { waypoints: pts, routing: r.routing, speedMph: r.speedMph, ...routeExtrasOut(r) }) });
   }
   for (const s of shapes) {
     const more = s.type === "circle" ? { center: s.center, radius: s.radius, unit: s.unit } : { points: s.points };
@@ -107,7 +108,8 @@ export function fromGeoJSON(textOrObject, defaultColor) {
         const pts = way.map(lngLat);
         if (pts.length <= MAX_ROUTE_POINTS && pts.every(Boolean)) {
           const routing = fm && ROUTINGS.includes(fm.routing) ? fm.routing : "straight";
-          out.routes.push({ points: pts, routing, speedMph: fm && SPEEDS.includes(fm.speedMph) ? fm.speedMph : 2, label: name, color, ...inGroup });
+          out.routes.push({ points: pts, routing, speedMph: fm && SPEEDS.includes(fm.speedMph) ? fm.speedMph : 2, label: name, color, ...inGroup,
+            ...(fm ? routeExtras(routing, fm) : {}) });
         } else out.skipped++;
       } else if (part.type === "LineString" && Array.isArray(c) && c.length === 2) {
         const a = lngLat(c[0]), b = lngLat(c[1]);

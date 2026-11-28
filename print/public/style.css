@@ -184,6 +184,14 @@ label.inline select { flex: 1; }
 .radius-row input, .radius-row select { height: 32px; min-height: 32px; padding: 0 8px; font-size: 14px; }
 .route-row { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 8px; align-items: center; margin: 6px 0 2px 40px; font-size: 12px; color: var(--muted); }
 .route-row select { height: 32px; min-height: 32px; padding: 0 8px; font-size: 14px; min-width: 0; }
+/* A route's Route Options: folded; the heading says what is set. */
+details.route-options { margin: 6px 0 2px 40px; font-size: 12px; }
+details.route-options > summary { cursor: pointer; color: var(--muted); min-height: 26px; display: flex; align-items: center; gap: 6px; }
+details.route-options > summary .hint { color: var(--ink); }
+details.route-options[open] { display: flex; flex-direction: column; gap: 2px; }
+details.route-options label.check { margin-top: 2px; }
+.option-row { display: grid; grid-template-columns: 110px 1fr; flex-direction: row; gap: 8px; align-items: center; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.option-row select { height: 32px; min-height: 32px; padding: 0 8px; font-size: 14px; min-width: 0; }
 .item { padding: 5px 0; border-bottom: 1px solid var(--line); }
 .item-row { display: grid; grid-template-columns: 32px 1fr 36px 36px; gap: 8px; align-items: center; }
 .item.selected input[type=text] { border-color: var(--sig); }

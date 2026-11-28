@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mergeState, mergeMessages, conversations, partnerOf, ageLook, ageText, newUid, cleanText, newMessageId, statusText } from "../src/live.js";
 import { describe, sharedFC, peopleFC, kindText, itemFromFeature, featureFromItem, itemKey } from "../src/shared.js";
 import { shapeRing } from "../src/shapes.js";
-import { createRouter, readLeg, routeLegs, routeStats, routesFC, durationText, legKey, nearestRoadPoints, ends } from "../src/routing.js";
+import { createRouter, readLeg, routeLegs, routeStats, routesFC, durationText, legKey, nearestRoadPoints, ends, routeAsk, routingVersion } from "../src/routing.js";
 
 const ME = "web-0011223344556677";
 const point = (id, lon, lat, extra = {}) => ({ type: "Feature", id, geometry: { type: "Point", coordinates: [lon, lat] },
@@ -187,7 +187,7 @@ test("routes: legs along roads from the router, straight and dashed where it has
   router.want([route]);
   await finished;
   assert.equal(asked.length, 2, "one request per leg, each leg asked once");
-  assert.match(asked[0], /^\/routing\/route\?lonlats=10,45%7C10\.01,45&profile=car-vario&format=geojson$/);
+  assert.match(asked[0], /^\/routing\/route\?lonlats=10,45%7C10\.01,45&profile=car-vario&v=0&format=geojson$/);
   const SERVER = /^-?[0-9.]{1,12},-?[0-9.]{1,12}((\||%7[Cc])-?[0-9.]{1,12},-?[0-9.]{1,12}){1,29}$/;   // web/nginx.conf
   assert.match(new URL(asked[0], "http://x").searchParams.get("lonlats").replace("|", "%7C"), SERVER);
   const legs = routeLegs(route, router);
@@ -204,7 +204,7 @@ test("routes: legs along roads from the router, straight and dashed where it has
   router.want([line]);
   assert.equal(asked.length, 2);
   assert.deepEqual(routesFC([line], router).features.filter((f) => f.properties.part === "dashed"), []);
-  assert.equal(legKey("car-vario", { lng: 10.0000001, lat: 45 }, { lng: 10, lat: 45 }), "car-vario|10,45|10,45");
+  assert.equal(legKey({ profile: "car-vario", extra: "" }, { lng: 10.0000001, lat: 45 }, { lng: 10, lat: 45 }), "car-vario|10,45|10,45");
   assert.equal(readLeg({ features: [{ geometry: { type: "Point", coordinates: [1, 2] } }] }), null);
   assert.deepEqual([durationText(30), durationText(45 * 60), durationText(125 * 60)], ["1 min", "45 min", "2 h 05 min"]);
 });
@@ -277,10 +277,61 @@ test("a leg still being worked out counts as working, not as a leg with no way",
   let st = routeStats(route, router);
   assert.equal(st.pendingLegs, 1);
   assert.equal(st.straightLegs, 0);
+  await new Promise((r) => setTimeout(r, 0));      // the request goes out after the data's date
   answer({ ok: false });
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(router.busy(), 0);
   st = routeStats(route, router);
   assert.equal(st.pendingLegs, 0);
   assert.equal(st.straightLegs, 1);
+});
+
+test("route options, avoid areas and the way go into the router's request, and into its key", async () => {
+  const asked = [];
+  const router = createRouter(() => {}, async (u) => { asked.push(u); return { ok: false }; }, null,
+    (g) => (g === "Danger" ? { nogos: [[10.5, 45.5, 250]], polygons: [[[10, 45], [10.1, 45], [10.1, 45.1]]], polylines: [[[10, 45], [10.2, 45.2]]] } : null));
+  const route = { id: "r", points: [{ lng: 10, lat: 45 }, { lng: 10.01, lat: 45.01 }], routing: "driving", speedMph: 25,
+    options: ["fuel-saver", "avoid-highways", "avoid-steps"], avoid: "Danger", alternative: 2 };
+  const ask = routeAsk(route, router ? (g) => (g === "Danger" ? { nogos: [[10.5, 45.5, 250]] } : null) : null);
+  assert.match(ask.extra, /profile:avoid_motorways=1/);
+  assert.match(ask.extra, /profile:vmax=70/);
+  assert.doesNotMatch(ask.extra, /allow_steps/, "a Walking option on a Driving route is not sent");
+  router.want([route]);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.match(asked[0], /alternativeidx=2/);
+  assert.match(asked[0], /nogos=10\.5,45\.5,250/);
+  assert.match(asked[0], /polygons=10,45,10\.1,45,10\.1,45\.1/);
+  assert.match(asked[0], /polylines=10,45,10\.2,45\.2/);
+  assert.notEqual(legKey(routeAsk(route), route.points[0], route.points[1]), legKey(routeAsk({ ...route, alternative: 0 }), route.points[0], route.points[1]));
+  assert.equal(routeAsk({ ...route, routing: "straight" }), null);
+  const walk = routeAsk({ ...route, routing: "walking", options: ["avoid-steps", "hard", "easy"] });
+  assert.match(walk.extra, /profile:allow_steps=0/);
+  assert.match(walk.extra, /profile:SAC_scale_limit=1/, "easy wins over hard");
+});
+
+test("a shared route keeps its options, avoid group and way; unknown ones are dropped", () => {
+  const it = { id: "route-0001", points: [{ lng: 10, lat: 45 }, { lng: 10.1, lat: 45.1 }], routing: "walking", speedMph: 2, label: "R1",
+    color: "#d32f2f", options: ["hard", "avoid-wet"], avoid: "Danger Areas", alternative: 1 };
+  const f = featureFromItem(it, "route", ME);
+  assert.equal(f.properties.fieldmap.options, "avoid-wet hard");
+  const back = itemFromFeature(f).item;
+  assert.deepEqual(back.options, ["avoid-wet", "hard"]);
+  assert.equal(back.avoid, "Danger Areas");
+  assert.equal(back.alternative, 1);
+  f.properties.fieldmap.options = "avoid-highways bogus";
+  f.properties.fieldmap.alternative = 9;
+  const odd = itemFromFeature(f).item;
+  assert.equal(odd.options, undefined);
+  assert.equal(odd.alternative, undefined);
+});
+
+test("each leg request carries the routing data's date, for the server's route cache", async () => {
+  assert.equal(await routingVersion(async () => ({ ok: true, json: async () => ({ made: "2026-11-28T05:30:00Z" }) })), "20261128053000");
+  assert.equal(await routingVersion(async () => ({ ok: false })), "0");
+  assert.equal(await routingVersion(async () => { throw new Error("offline"); }), "0");
+  const asked = [];
+  const router = createRouter(() => {}, async (u) => { asked.push(u); return { ok: false }; }, null, () => null, async () => "20261128053000");
+  router.want([{ id: "r", points: [{ lng: 10, lat: 45 }, { lng: 10.01, lat: 45.01 }], routing: "walking", speedMph: 2 }]);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.match(asked[0], /&v=20261128053000&format=geojson$/);
 });

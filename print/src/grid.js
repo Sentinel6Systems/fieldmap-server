@@ -2,7 +2,7 @@
 // sheets draw their own grid (render.js). The spacing follows the zoom: 100 m, 1 km, 10 km or
 // 100 km lines, and the grid zone lines (6 degrees by 8) when zoomed out further. Each line's
 // digits sit where it meets the top or left edge of the view (kind "edge", upright), and each
-// 100 km square in view has its full name ("18S XJ") in the middle of the part that is in view,
+// 100 km square in view has its full name ("13S DC") in the middle of the part that is in view,
 // so that the square is known at any zoom.
 import { fromUTM, toUTM, squareId, bandFor } from "./utm.js";
 

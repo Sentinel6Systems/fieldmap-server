@@ -137,7 +137,7 @@ The panel beside the map has these tabs:
   off (woodland, roads, contour lines, grid lines and so on). **Show All Layers** switches everything back on.
   Changes apply on screen and on paper. **MGRS Grid Lines** draws the grid on the map too: 100 km, 10 km, 1 km or
   100 m lines as you zoom in. Each line's digits are at the top and left edges of the map, and the 100 km
-  square's name (such as 18S XJ) stays in view at every zoom; zoomed far out, it shows the grid zones (such as 18T).
+  square's name (such as 13S DC) stays in view at every zoom; zoomed far out, it shows the grid zones (such as 13S).
   While location sharing is on, **Set My Location** is under the switches.
 - **Markers**: **Add** puts markers, arrows, routes and shapes on the map, and the groups keep them (next sections).
 - **Print**: print sheets and atlases (see [Print a map](#print-a-map)).
@@ -145,6 +145,62 @@ The panel beside the map has these tabs:
   [Use the terrain tools](#use-the-terrain-tools)).
 
 While you add something, a hint above the map says what to tap next; **Cancel** or Esc stops.
+
+### Read and write MGRS coordinates
+
+MGRS is a way to give a location with letters and numbers. Many field maps, radios and TAK apps use it. An MGRS
+reference names a square on the map. More digits give a smaller square, and so a more exact location.
+
+**The parts of a reference.** Example: the summit of Pikes Peak, Colorado, is **13S DC 9616 9908**.
+
+| Part | Example | What it is |
+|---|---|---|
+| Grid zone | 13S | A large area, about 6° wide and 8° high. |
+| 100 km square | DC | A square of 100 × 100 km in that zone. |
+| Easting | 9616 | How far right (east) in the 100 km square. |
+| Northing | 9908 | How far up (north) in the 100 km square. |
+
+The easting always comes first. The easting and the northing always have the same number of digits.
+
+**How exact is it?** Each pair of digits makes the square 10 times smaller:
+
+| Digits | Example | Size of the square |
+|---|---|---|
+| 2 | 13S DC 9 9 | 10 km |
+| 4 | 13S DC 96 99 | 1 km |
+| 6 | 13S DC 961 990 | 100 m |
+| 8 | 13S DC 9616 9908 | 10 m |
+| 10 | 13S DC 96162 99082 | 1 m |
+
+For most uses, 6 digits (100 m) or 8 digits (10 m) are enough.
+
+**Read a location from the map.** Remember the rule: **read right, then up.**
+
+1. In **Layers** › **Map Features**, set **MGRS Grid Lines** on.
+2. Zoom in until you see the 1 km lines. Each line has a two-digit number at the edge of the map.
+3. Find the name of the 100 km square near the location, for example **13S DC**.
+4. Find the vertical line to the left of the location. Read its number at the top edge. Example: **96**.
+5. Estimate how far the location is to the right of that line, in tenths of a square. Example: **1**.
+6. Find the horizontal line below the location. Read its number at the left edge. Example: **99**.
+7. Estimate how far the location is above that line, in tenths. Example: **0**.
+8. Write the parts in this order: zone and square, then right, then up. Example: **13S DC 961 990**.
+
+**Get the reference without reading it.** Put a marker on the location (**Markers** › **Add** › **Marker**). The
+marker's row shows its reference to 10 m.
+
+**Write and say a reference correctly:**
+
+- Write the zone, the square, the easting and the northing, with a space between each.
+- Keep the zeros at the start. Write **0412**, not **412**. A missing zero moves the location.
+- Do not change the order. The easting (right) is always first, and the northing (up) is always second.
+- On a radio, say each digit separately: "one-three-sierra, delta-charlie, niner-six-one, niner-niner-zero".
+- If the other person is in the same 100 km square, you can leave out the zone and square: **961 990**.
+
+| Mistake | Result |
+|---|---|
+| Northing before easting | The location is wrong, often by many kilometers. |
+| Different digit counts in the two halves (961 9908) | Nobody can read it. Use the same number of digits in each half. |
+| No zone or square, and the other person is far away | The same numbers also exist in other squares. The location can be wrong. |
 
 **ATAK, WinTAK, iTAK and other map apps** can use the server's maps as an online tile source:
 
@@ -205,11 +261,13 @@ A route is a line through up to 30 points, along roads and trails or straight be
 
 1. Press **Add**, then **Route**, and tap the points of the route in order.
 2. To finish, tap the last point again, press Enter, or press **Finish Route**. The route is named R1, R2, and so on.
-3. In the route's row, choose the **Route Type** (**Driving**, **Walking** or **Straight Line**) and the **Speed**
-   used for the time estimate.
+3. In the route's row, choose the **Route Type** (**Driving**, **Walking**, **Bicycle** or **Straight Line**) and
+   the **Speed** used for the time estimate. **Route Options** has more choices (see [Route options](#route-options)).
 
 While the server works out the legs, a note at the top of the map says how many are left, and the route's row
-shows a spinner; a long leg can take a few minutes. Drag a point to move it. The row shows the distance and the
+shows a spinner; a long leg can take a few minutes. The server keeps every leg it has worked out, for every
+browser: when you open the map again, or someone else opens the same route, the legs come back at once. New
+routing data starts afresh. Drag a point to move it. The row shows the distance and the
 time. Legs along roads and trails are solid lines. A
 leg with no way found is drawn straight and dashed, and the row says how many. A point away from the road gets a
 line along the road to the nearest place, then a dashed straight line to the point.
@@ -223,6 +281,36 @@ out one leg at a time, from one point to the next.
 > than you intended. Put a point at each turn you care about and every few miles along the way, rather than a few
 > points far apart. The route is then quicker to work out, easier to fix by moving one point, and comes out the
 > same when another device recreates it from the shared points.
+
+### Route options
+
+Under a route's row, **Route Options** changes which roads and trails the route takes. They are off at first.
+
+| Route Type | Option | What it does |
+|---|---|---|
+| Driving | **Avoid Highways** | Stays off highways and motorways where it can. |
+| Driving | **Allow Dirt Tracks** | Also uses farm and forest tracks. Use it only with a vehicle that can drive them. |
+| Driving | **Avoid Big Towns** | Goes around large towns and cities where it can. |
+| Driving | **Fuel Saver** | Prefers slower, steadier roads that use less fuel. |
+| Walking | **Trail Difficulty** | **Easy**: plain paths only. **Moderate**: normal hiking trails. **Hard**: also rough mountain paths. |
+| Walking | **Avoid Steps** | Never uses stairs: for carts, stretchers and wheelchairs. |
+| Walking | **Avoid Wet Ground** | Avoids muddy and wet paths, for example after a flood or heavy rain. |
+| Driving, Walking, Bicycle | **Avoid Areas In** | Goes around everything in a group: its circles, rectangles and polygons, 100 m around its markers, and the roads its arrows cross. |
+| Driving, Walking, Bicycle | **Way** | **Best Way**, or the second, third or fourth way. Each one avoids the roads of the ways before it. |
+
+**Avoid danger areas.** Make a group, for example **Danger Areas**. Draw the dangers in it: a circle or a polygon
+around a fire or a flood, or an arrow across a blocked road or a broken bridge. Then choose that group under
+**Avoid Areas In** for each route. When the group changes, the routes are worked out again. An area that holds
+one of the route's own points is not avoided.
+
+**Find another way.** If the route uses a road that you cannot use, choose **Second Way** under **Way**. Each leg
+then takes a different road where one exists.
+
+**Bicycle** is a Route Type of its own: it prefers cycle routes and quiet roads, and avoids large roads.
+
+The options stay with the route when you share it or export it. The app uses the same options from its next
+release after 0.1.2; an older app draws the route without them. Other devices avoid the areas of their own copy of the group,
+so share the group's items too.
 
 ## Print a map
 

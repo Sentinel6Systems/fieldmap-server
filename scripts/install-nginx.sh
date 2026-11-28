@@ -352,11 +352,32 @@ else
 fi
 
 echo "== nginx ($NGINX_DIR)"
+# The route cache's store (pi/nginx/route-cache-http.conf) belongs at nginx's http level: in
+# /etc/nginx/conf.d when nginx reads that folder (and it is not the snippets' folder). Without it
+# the routing snippet leaves out its "route cache" lines, and routes are worked out every time.
+ROUTE_CACHE=no
+CACHE_CONF=/etc/nginx/conf.d/fieldmap-route-cache.conf
+if [ "$NGINX_DIR" != /etc/nginx/conf.d ] && nginx -T 2>/dev/null | grep -qE '^[[:space:]]*include[[:space:]]+/etc/nginx/conf\.d/\*\.conf;'; then
+    if cmp -s pi/nginx/route-cache-http.conf "$CACHE_CONF"; then
+        ROUTE_CACHE=yes
+    else
+        install -m 644 pi/nginx/route-cache-http.conf "$CACHE_CONF"
+        if nginx -t >/dev/null 2>&1; then
+            ROUTE_CACHE=yes
+            changed "$CACHE_CONF"
+        else
+            rm -f "$CACHE_CONF"
+            echo "nginx refused the route cache in $CACHE_CONF; routes are not kept."
+        fi
+    fi
+fi
 SNIPPETS="$(mktemp -d)"
 SNIPPET_FILES=(mapprinter-nginx.conf maps-nginx.conf routing-nginx.conf)
 [ "$BUILDER" != yes ] || SNIPPET_FILES+=(mapadmin-nginx.conf)
 for f in "${SNIPPET_FILES[@]}"; do
-    sed -e "s#/opt/fieldmap-server/data/#$DATA/#g" -e "s#/opt/fieldmap-server/#$REPO/#g" "pi/nginx/$f" > "$SNIPPETS/$f"
+    drop=()
+    [ "$f" != routing-nginx.conf ] || [ "$ROUTE_CACHE" = yes ] || drop=(-e '/# route cache$/d')
+    sed -e "s#/opt/fieldmap-server/data/#$DATA/#g" -e "s#/opt/fieldmap-server/#$REPO/#g" "${drop[@]}" "pi/nginx/$f" > "$SNIPPETS/$f"
 done
 ./scripts/nginx-snippets.sh "$SNIPPETS" "$NGINX_DIR" || { rm -rf "$SNIPPETS"; die "the nginx snippets were not installed (see above)."; }
 rm -rf "$SNIPPETS"

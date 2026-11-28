@@ -14,7 +14,7 @@ import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groups
 import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
 import { initWmmNotice } from "./wmm.js";
 import { startLive, conversations, partnerOf, ageText, statusText, cleanText, MAX_NAME, BASE } from "./live.js";
-import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, SPEEDS, MAX_ROUTE_POINTS, shareableShape, chevronImage, CHEVRON, arrowHead } from "./shared.js";
+import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, ROUTE_OPTIONS, DIFFICULTY, ALTERNATIVES, cleanOptions, SPEEDS, MAX_ROUTE_POINTS, shareableShape, chevronImage, CHEVRON, arrowHead } from "./shared.js";
 import { createRouter, routesFC, routeStats, durationText, ROAD_CLASSES } from "./routing.js";
 
 // The map at /map/: what the devices share (live.js, shared.js), drawing, terrain analysis, and
@@ -241,7 +241,7 @@ map.on("load", () => {
       "text-anchor": ["get", "anchor"], "text-offset": ["match", ["get", "anchor"], "top", ["literal", [0, 0.3]], ["literal", [0.3, 0]]],
       "text-allow-overlap": true, "text-ignore-placement": true },
     paint: { "text-color": "#1f5fbf", "text-halo-color": "#fff", "text-halo-width": 2 } });
-  // The 100 km square's name (18S XJ), in view at every zoom.
+  // The 100 km square's name (13S DC), in view at every zoom.
   map.addLayer({ id: "grid-name", type: "symbol", source: "grid", filter: ["==", ["get", "kind"], "name"],
     layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 15, "text-allow-overlap": true },
     paint: { "text-color": "#1f5fbf", "text-halo-color": "#fff", "text-halo-width": 2.5 } });
@@ -600,6 +600,7 @@ function saveMarkers() {
   localStorage.setItem(LS.markers, JSON.stringify(ownOnly(markers)));
   syncSoon();
   if (map.getSource("markers")) map.getSource("markers").setData(markersFC());
+  if (routes.some((r) => r.avoid)) drawRoutes();   // a route may avoid what changed
   renderLists();
 }
 function addMarker(ll) {
@@ -634,6 +635,7 @@ function saveArrows() {
   localStorage.setItem(LS.arrows, JSON.stringify(ownOnly(arrows)));
   syncSoon();
   if (map.getSource("arrows")) map.getSource("arrows").setData(arrowsFC());
+  if (routes.some((r) => r.avoid)) drawRoutes();   // a route may avoid what changed
   renderLists();
 }
 function addArrow(a, b) {
@@ -648,7 +650,19 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 /* ---------- data: routes ---------- */
 // A route is its points (2 to 30, the most one mesh radio packet carries) and its Route Type, as
 // in the app. Its legs follow roads or trails where the server's router finds a way (routing.js).
-const router = createRouter(() => { drawRoutes(); refreshLists(); }, undefined, nearRoads);
+const router = createRouter(() => { drawRoutes(); refreshLists(); }, undefined, nearRoads, avoidAreas);
+/** The areas a route avoids when its Avoid Areas names this group (routing.js routeAsk): the
+ *  group's circles (and markers, 100 m around them) as circles, its rectangles and polygons as
+ *  areas, its arrows as lines that cut the roads they cross. Its routes are not obstacles. */
+function avoidAreas(group) {
+  const of = (list) => list.filter((it) => it.group === group);
+  const ring = (s) => { const r = shapeRing(s); const [f, l] = [r[0], r[r.length - 1]]; return f[0] === l[0] && f[1] === l[1] ? r.slice(0, -1) : r; };
+  return {
+    nogos: [...of(markers).map((m) => [m.lng, m.lat, 100]), ...of(shapes).filter((s) => s.type === "circle").map((s) => [s.center.lng, s.center.lat, s.radius])],
+    polygons: of(shapes).filter((s) => s.type !== "circle").map(ring),
+    polylines: of(arrows).map((a) => [[a.a.lng, a.a.lat], [a.b.lng, a.b.lat]]),
+  };
+}
 /** While legs are being worked out: a note at the bottom of the map, so that it is clear that
  *  something is happening (a long leg can take minutes). */
 function routeStatus() {
@@ -723,7 +737,8 @@ function routeDetail(r) {
   const working = st.pendingLegs ? ` · <span class="working"><i class="spinner"></i>working out ${st.pendingLegs} leg${st.pendingLegs === 1 ? "" : "s"}</span>` : "";
   const legs = (st.straightLegs ? ` · ${st.straightLegs} straight leg${st.straightLegs === 1 ? "" : "s"}: no route found` : "") + working;
   const off = st.offRoad ? ` · ${st.offRoad} leg${st.offRoad === 1 ? " ends" : "s end"} off road (dashed)` : "";
-  return `${routeType(r.routing)[1]} · ${fmtLength(st.meters, state.units)} · ${durationText(st.seconds)}${legs}${off}`;
+  const much = st.avoidTooMuch ? ` · ${escapeHtml(r.avoid)} has too many points to avoid all of them` : "";
+  return `${routeType(r.routing)[1]} · ${fmtLength(st.meters, state.units)} · ${durationText(st.seconds)}${legs}${off}${much}`;
 }
 /** Route Type and Speed of a route, as in the app. A new type comes with its own speed. */
 function routeEditor(r) {
@@ -736,9 +751,74 @@ function routeEditor(r) {
   const metric = state.units === "metric";
   for (const mph of SPEEDS) speed.add(new Option(metric ? `${Math.round(mph * 1.609344)} km/h` : `${mph} mph`, mph));
   speed.value = SPEEDS.includes(r.speedMph) ? r.speedMph : 2;
-  type.onchange = () => { r.routing = type.value; r.speedMph = routeType(type.value)[3]; state.routeType = type.value; saveSettings(); persist("route", true); };
+  type.onchange = () => {
+    r.routing = type.value; r.speedMph = routeType(type.value)[3]; state.routeType = type.value; saveSettings();
+    setRouteOptions(r, cleanOptions(r.routing, r.options));
+    persist("route", true);
+  };
   speed.onchange = () => { r.speedMph = +speed.value; persist("route", true); };
   return row;
+}
+/** A route's options as kept: none at all when there are none (the item stays as it was). */
+function setRouteOptions(r, options) { if (options.length) r.options = options; else delete r.options; }
+const optionsOpen = new Set();      // the routes whose Route Options are open in the list
+/** Route Options of a route along roads or trails (not Straight Line): its Route Type's switches,
+ *  Trail Difficulty (Walking), the group whose shapes it avoids, and which Way. Folded; the
+ *  heading says what is set. */
+function routeOptionsEditor(r) {
+  if (!routeType(r.routing)[2]) return null;
+  const keys = cleanOptions(r.routing, r.options);
+  const own = ROUTE_OPTIONS[r.routing] || [];
+  const alt = Number.isInteger(r.alternative) && r.alternative > 0 && r.alternative < 4 ? r.alternative : 0;
+  const on = [...own.filter(([k]) => keys.includes(k)).map(([, name]) => name),
+    ...DIFFICULTY.filter(([k]) => k && keys.includes(k)).map(([, name]) => `${name} Trails`),
+    ...(r.avoid ? [`Avoids ${r.avoid}`] : []), ...(alt ? [ALTERNATIVES[alt]] : [])];
+  const box = document.createElement("details");
+  box.className = "route-options";
+  box.open = optionsOpen.has(r.id);
+  box.ontoggle = () => { if (box.open) optionsOpen.add(r.id); else optionsOpen.delete(r.id); };
+  box.innerHTML = `<summary>Route Options <span class="hint">${on.length ? escapeHtml(on.join(", ")) : "none"}</span></summary>`;
+  const set = (key, value) => {
+    const next = new Set(keys);
+    if (value) next.add(key); else next.delete(key);
+    setRouteOptions(r, cleanOptions(r.routing, [...next]));
+    persist("route", true);
+  };
+  for (const [key, name] of own) {
+    const l = document.createElement("label");
+    l.className = "check";
+    l.innerHTML = `<input type="checkbox"${keys.includes(key) ? " checked" : ""}><span>${name}</span>`;
+    l.querySelector("input").onchange = (e) => set(key, e.target.checked);
+    box.appendChild(l);
+  }
+  const select = (label, options, value, onchange) => {
+    const l = document.createElement("label");
+    l.className = "option-row";
+    l.innerHTML = `<span>${label}</span><select></select>`;
+    const sel = l.querySelector("select");
+    for (const [v, text] of options) sel.add(new Option(text, v));
+    sel.value = value;
+    sel.onchange = () => onchange(sel.value);
+    box.appendChild(l);
+  };
+  if (r.routing === "walking") {
+    select("Trail Difficulty", DIFFICULTY.map(([k, name]) => [k, name]), DIFFICULTY.find(([k]) => k && keys.includes(k))?.[0] || "", (v) => {
+      setRouteOptions(r, cleanOptions(r.routing, [...keys.filter((k) => k !== "easy" && k !== "hard"), ...(v ? [v] : [])]));
+      persist("route", true);
+    });
+  }
+  // Any group but the route's own can hold the areas to avoid ("Danger Areas").
+  const names = groups.filter((g) => g.name).map((g) => g.name);
+  if (r.avoid && !names.includes(r.avoid)) names.push(r.avoid);
+  select("Avoid Areas In", [["", "No Group"], ...names.map((n) => [n, n])], r.avoid || "", (v) => {
+    if (v) r.avoid = v; else delete r.avoid;
+    persist("route", true);
+  });
+  select("Way", ALTERNATIVES.map((name, i) => [String(i), name]), String(alt), (v) => {
+    if (+v) r.alternative = +v; else delete r.alternative;
+    persist("route", true);
+  });
+  return box;
 }
 
 /* ---------- data: shapes ---------- */
@@ -763,6 +843,7 @@ function saveShapes() {
   localStorage.setItem(LS.shapes, JSON.stringify(ownOnly(shapes)));
   syncSoon();
   if (map.getSource("shapes")) map.getSource("shapes").setData(shapesFC());
+  if (routes.some((r) => r.avoid)) drawRoutes();   // a route may avoid what changed
   renderLists();
 }
 function addShape(s) {
@@ -1043,7 +1124,7 @@ function itemRow(kind, it) {
     persist(kind, true);
   };
   if (kind === "shape" && it.type === "circle") row.appendChild(radiusEditor(it));
-  if (kind === "route") row.appendChild(routeEditor(it));
+  if (kind === "route") { row.appendChild(routeEditor(it)); const o = routeOptionsEditor(it); if (o) row.appendChild(o); }
   if (groups.some((g) => g.name)) row.appendChild(groupEditor(kind, it));
   if (paletteOpenFor === it.id) {
     row.appendChild(swatchRow(it.color, (hex) => { it.color = hex; paletteOpenFor = null; persist(kind, true); }));
@@ -1076,6 +1157,7 @@ function persist(kind, rerender = false) {
   else if (kind === "arrow") { localStorage.setItem(LS.arrows, JSON.stringify(ownOnly(arrows))); map.getSource("arrows").setData(arrowsFC()); syncSoon(); }
   else if (kind === "route") { localStorage.setItem(LS.routes, JSON.stringify(ownOnly(routes))); drawRoutes(); syncSoon(); }
   else { localStorage.setItem(LS.shapes, JSON.stringify(ownOnly(shapes))); map.getSource("shapes").setData(shapesFC()); syncSoon(); }
+  if (kind !== "route" && routes.some((r) => r.avoid)) drawRoutes();   // a route may avoid what changed
   if (rerender) renderLists();
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -1528,7 +1610,7 @@ function syncIn(st) {
     sentAs.set(id, key);
     if (i >= 0 && itemKey(list[i]) === key && list[i].updated === got.item.updated) continue;
     // Changed in place: a list row being typed in keeps the same item.
-    if (i >= 0) { for (const k of ["lng", "lat", "a", "b", "type", "center", "radius", "points", "group"]) delete list[i][k]; Object.assign(list[i], got.item); } else list.push(got.item);
+    if (i >= 0) { for (const k of ["lng", "lat", "a", "b", "type", "center", "radius", "points", "group", "options", "avoid", "alternative"]) delete list[i][k]; Object.assign(list[i], got.item); } else list.push(got.item);
     changed = true;
   }
   // Removed on the server: gone here too (one not sent yet, or on its way, stays).

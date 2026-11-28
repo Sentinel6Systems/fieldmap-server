@@ -159,6 +159,51 @@
     </ul>
     <p>While you add something, a hint above the map says what to tap next. <b>Cancel</b> or Esc stops.</p>
     <p>The address in the address bar keeps the place and zoom, so you can bookmark a place.</p>
+    <h3 id="mgrs">Read and write MGRS coordinates</h3>
+    <p>MGRS is a way to give a location with letters and numbers. Many field maps, radios and TAK apps use it. An
+      MGRS reference names a square on the map. More digits give a smaller square, and so a more exact location.</p>
+    <p>Example: the summit of Pikes Peak, Colorado, is <b>13S DC 9616 9908</b>.</p>
+    <table>
+      <tr><th>Part</th><th>Example</th><th>What it is</th></tr>
+      <tr><td>Grid zone</td><td>13S</td><td>A large area, about 6° wide and 8° high.</td></tr>
+      <tr><td>100 km square</td><td>DC</td><td>A square of 100 × 100 km in that zone.</td></tr>
+      <tr><td>Easting</td><td>9616</td><td>How far right (east) in the 100 km square.</td></tr>
+      <tr><td>Northing</td><td>9908</td><td>How far up (north) in the 100 km square.</td></tr>
+    </table>
+    <p>The easting always comes first. The two halves always have the same number of digits. Each pair of digits
+      makes the square 10 times smaller:</p>
+    <table>
+      <tr><th>Digits</th><th>Example</th><th>Size of the square</th></tr>
+      <tr><td>2</td><td>13S DC 9 9</td><td>10 km</td></tr>
+      <tr><td>4</td><td>13S DC 96 99</td><td>1 km</td></tr>
+      <tr><td>6</td><td>13S DC 961 990</td><td>100 m</td></tr>
+      <tr><td>8</td><td>13S DC 9616 9908</td><td>10 m</td></tr>
+      <tr><td>10</td><td>13S DC 96162 99082</td><td>1 m</td></tr>
+    </table>
+    <p>For most uses, 6 digits (100 m) or 8 digits (10 m) are enough.</p>
+    <p><b>Read a location from the map.</b> Remember the rule: <b>read right, then up.</b></p>
+    <ol>
+      <li>In <b>Layers</b> › <b>Map Features</b>, set <b>MGRS Grid Lines</b> on.</li>
+      <li>Zoom in until you see the 1 km lines. Each line has a two-digit number at the edge of the map.</li>
+      <li>Find the name of the 100 km square near the location, for example <b>13S DC</b>.</li>
+      <li>Find the vertical line to the left of the location. Read its number at the top edge. Example: <b>96</b>.</li>
+      <li>Estimate how far the location is to the right of that line, in tenths of a square. Example: <b>1</b>.</li>
+      <li>Find the horizontal line below the location. Read its number at the left edge. Example: <b>99</b>.</li>
+      <li>Estimate how far the location is above that line, in tenths. Example: <b>0</b>.</li>
+      <li>Write the parts in this order: zone and square, then right, then up. Example: <b>13S DC 961 990</b>.</li>
+    </ol>
+    <p>To get the reference without reading it, put a marker on the location (<b>Markers</b> › <b>Add</b> ›
+      <b>Marker</b>). The marker's row shows its reference to 10 m.</p>
+    <ul>
+      <li>Write the zone, the square, the easting and the northing, with a space between each.</li>
+      <li>Keep the zeros at the start. Write <b>0412</b>, not <b>412</b>. A missing zero moves the location.</li>
+      <li>Do not change the order. The easting (right) is always first, and the northing (up) is always
+        second.</li>
+      <li>On a radio, say each digit separately: "one-three-sierra, delta-charlie, niner-six-one,
+        niner-niner-zero".</li>
+      <li>If the other person is in the same 100 km square, you can leave out the zone and square:
+        <b>961 990</b>.</li>
+    </ul>
     <div class="note"><b>Note</b>The map only covers the regions this server has. Elsewhere it is empty, or shows
       only large features of the world.</div>
   </section>
@@ -203,11 +248,13 @@
     <ol>
       <li>Press <b>Add</b>, then <b>Route</b>, and tap the points of the route in order.</li>
       <li>To finish, tap the last point again, press Enter, or press <b>Finish Route</b>.</li>
-      <li>In the route's row, choose the <b>Route Type</b> (<b>Driving</b>, <b>Walking</b> or <b>Straight
-        Line</b>) and the <b>Speed</b> for the time estimate.</li>
+      <li>In the route's row, choose the <b>Route Type</b> (<b>Driving</b>, <b>Walking</b>, <b>Bicycle</b> or
+        <b>Straight Line</b>) and the <b>Speed</b> for the time estimate. <b>Route Options</b> has more choices (see
+        <a href="#route-options">Route options</a>).</li>
     </ol>
     <p>While the server works out the legs, a note at the top of the map says how many are left, and the route's row
-      shows a spinner. A long leg can take a few minutes.</p>
+      shows a spinner. A long leg can take a few minutes. The server keeps every leg it has worked out, so the same
+      route opens at once the next time, in any browser.</p>
     <p>Drag a point to move it. The row shows the distance and the time. Legs along roads and trails are solid. A leg
       with no way found is straight and dashed. A point away from the road gets a line along the road to the nearest
       place, then a dashed straight line to the point. Routes along roads need the <b>Routing Data</b> layer on the
@@ -218,6 +265,37 @@
       intend. Put a point at each turn you care about and every few miles along the way, not a few points far apart.
       The route is then quicker to work out, easier to fix by moving one point, and comes out the same when another
       device recreates it from the shared points.</div>
+    <h3 id="route-options">Route options</h3>
+    <p>Under a route's row, <b>Route Options</b> changes which roads and trails the route takes. They are off at
+      first.</p>
+    <table>
+      <tr><th>Route Type</th><th>Option</th><th>What it does</th></tr>
+      <tr><td>Driving</td><td><b>Avoid Highways</b></td><td>Stays off highways and motorways where it can.</td></tr>
+      <tr><td>Driving</td><td><b>Allow Dirt Tracks</b></td><td>Also uses farm and forest tracks. Use it only with a
+        vehicle that can drive them.</td></tr>
+      <tr><td>Driving</td><td><b>Avoid Big Towns</b></td><td>Goes around large towns and cities where it can.</td></tr>
+      <tr><td>Driving</td><td><b>Fuel Saver</b></td><td>Prefers slower, steadier roads that use less fuel.</td></tr>
+      <tr><td>Walking</td><td><b>Trail Difficulty</b></td><td><b>Easy</b>: plain paths only. <b>Moderate</b>: normal
+        hiking trails. <b>Hard</b>: also rough mountain paths.</td></tr>
+      <tr><td>Walking</td><td><b>Avoid Steps</b></td><td>Never uses stairs: for carts, stretchers and
+        wheelchairs.</td></tr>
+      <tr><td>Walking</td><td><b>Avoid Wet Ground</b></td><td>Avoids muddy and wet paths, for example after a flood or
+        heavy rain.</td></tr>
+      <tr><td>Driving, Walking, Bicycle</td><td><b>Avoid Areas In</b></td><td>Goes around everything in a group: its
+        circles, rectangles and polygons, 100 m around its markers, and the roads its arrows cross.</td></tr>
+      <tr><td>Driving, Walking, Bicycle</td><td><b>Way</b></td><td><b>Best Way</b>, or the second, third or fourth
+        way. Each one avoids the roads of the ways before it.</td></tr>
+    </table>
+    <p><b>Avoid danger areas.</b> Make a group, for example <b>Danger Areas</b>. Draw the dangers in it: a circle or a
+      polygon around a fire or a flood, or an arrow across a blocked road or a broken bridge. Then choose that group
+      under <b>Avoid Areas In</b> for each route. When the group changes, the routes are worked out again. An area
+      that holds one of the route's own points is not avoided.</p>
+    <p><b>Find another way.</b> If the route uses a road that you cannot use, choose <b>Second Way</b> under
+      <b>Way</b>. Each leg then takes a different road where one exists.</p>
+    <p><b>Bicycle</b> is a Route Type of its own: it prefers cycle routes and quiet roads, and avoids large roads.</p>
+    <p>The options stay with the route when you share it or export it. The app uses the same options from its next
+      release after 0.1.2; an older app draws the route without them. Other devices avoid the areas of their own copy of the
+      group, so share the group's items too.</p>
   </section>
 
   <!-- ------------------------------------------------------------------ -->
@@ -606,7 +684,7 @@
       <tr><td>local network</td><td>The Wi-Fi or wired network the server is on.</td></tr>
       <tr><td>location sharing</td><td>Lets devices see each other's locations on the map, through the
         server.</td></tr>
-      <tr><td>MGRS</td><td>A grid reference system of letters and numbers used on many field maps.</td></tr>
+      <tr><td>MGRS</td><td>A grid reference system of letters and numbers used on many field maps. See <a href="#mgrs">Read and write MGRS coordinates</a>.</td></tr>
       <tr><td>mesh radio</td><td>A Meshtastic radio paired with the app. Devices share over it when they can't reach
         the server.</td></tr>
       <tr><td>NetBird VPN</td><td>A service that connects the server and the paired devices in a private network

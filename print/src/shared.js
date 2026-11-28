@@ -12,7 +12,7 @@ import { ageLook } from "./live.js";
 
 const FALLBACK = "#d7263d";
 const colour = (c) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : null);
-const ROUTE_TYPES = { driving: "Driving", walking: "Walking", straight: "Straight Line" };
+const ROUTE_TYPES = { driving: "Driving", walking: "Walking", straight: "Straight Line", bicycle: "Bicycle" };
 
 /** What a shared feature is: { kind, label, color, points: [[lon, lat], ...], routing, speedMph }, or null. */
 export function describe(f) {
@@ -137,7 +137,26 @@ export const PERSON_COLORS = { "live-person": "#00b4d8", "live-person-old": "#8a
 
 /** Route Types as the app has them: its key, the router's profile, and the speed a new route of
  *  that type is timed at (Drawings.kt RouteType). */
-export const ROUTE_TYPES_LIST = [["driving", "Driving", "car-vario", 25], ["walking", "Walking", "hiking-mountain", 2], ["straight", "Straight Line", null, 2]];
+export const ROUTE_TYPES_LIST = [["driving", "Driving", "car-vario", 25], ["walking", "Walking", "hiking-mountain", 2], ["straight", "Straight Line", null, 2],
+  ["bicycle", "Bicycle", "trekking", 10]];
+/** Route Options, by Route Type: [key, name, BRouter's profile settings]. The app has the same
+ *  (Routes.kt), so that a shared route takes the same roads on every device. */
+export const ROUTE_OPTIONS = {
+  driving: [["avoid-highways", "Avoid Highways", { avoid_motorways: "1" }], ["dirt-tracks", "Allow Dirt Tracks", { use_offroad: "1" }],
+    ["avoid-towns", "Avoid Big Towns", { consider_town: "1" }], ["fuel-saver", "Fuel Saver", { vmax: "70" }]],
+  walking: [["avoid-steps", "Avoid Steps", { allow_steps: "0" }], ["avoid-wet", "Avoid Wet Ground", { iswet: "1" }]],
+};
+/** Trail Difficulty of a Walking route (the hardest trails it may use): Moderate is the profile's own. */
+export const DIFFICULTY = [["easy", "Easy", { SAC_scale_limit: "1" }], ["", "Moderate", {}], ["hard", "Hard", { SAC_scale_limit: "5" }]];
+/** Way: the router's best way for each leg, or its second, third or fourth. */
+export const ALTERNATIVES = ["Best Way", "Second Way", "Third Way", "Fourth Way"];
+/** A route's options as kept: only the known keys of its Route Type, in a fixed order. */
+export function cleanOptions(routing, options) {
+  const known = [...(ROUTE_OPTIONS[routing] || []).map(([k]) => k), ...(routing === "walking" ? ["easy", "hard"] : [])];
+  const set = new Set(Array.isArray(options) ? options : typeof options === "string" ? options.split(/\s+/) : []);
+  const out = known.filter((k) => set.has(k));
+  return out.includes("easy") && out.includes("hard") ? out.filter((k) => k !== "hard") : out;
+}
 /** The speeds a route can be timed at, mph (the app's Routes.SPEEDS). */
 export const SPEEDS = [2, 4, 10, 15, 25, 45, 60];
 export const MAX_ROUTE_POINTS = 30;
@@ -164,7 +183,7 @@ export function itemFromFeature(f) {
   if (d.kind === "arrow") return { kind: "arrow", item: { ...common, a: ll(first), b: ll(second) } };
   if (d.kind === "route") {
     const mph = SPEEDS.includes(fm.speedMph) ? fm.speedMph : 2;
-    return { kind: "route", item: { ...common, points: d.points.slice(0, MAX_ROUTE_POINTS).map(ll), routing: d.routing, speedMph: mph } };
+    return { kind: "route", item: { ...common, points: d.points.slice(0, MAX_ROUTE_POINTS).map(ll), routing: d.routing, speedMph: mph, ...routeExtras(d.routing, fm) } };
   }
   const ok = (c) => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]);
   if (fm.kind === "circle" && ok(fm.center) && Number.isFinite(fm.radius) && fm.radius > 0) {
@@ -174,6 +193,27 @@ export function itemFromFeature(f) {
     return { kind: "shape", item: { ...common, type: "rect", points: fm.points.map(ll) } };
   }
   return { kind: "shape", item: { ...common, type: "polygon", points: d.points.slice(0, -1).map(ll) } };
+}
+
+/** A route's Route Options, Avoid Areas group and Way as kept in "fieldmap" (options: their keys,
+ *  one space between; avoid: a group's name; alternative: 1 to 3), as an item's properties. */
+export function routeExtras(routing, fm) {
+  const out = {};
+  const options = cleanOptions(routing, fm.options);
+  if (options.length) out.options = options;
+  const avoid = typeof fm.avoid === "string" ? fm.avoid.replace(/\s+/g, " ").trim().slice(0, 30) : "";
+  if (avoid) out.avoid = avoid;
+  if (Number.isInteger(fm.alternative) && fm.alternative > 0 && fm.alternative < 4) out.alternative = fm.alternative;
+  return out;
+}
+/** The other way: what of them a route has, for "fieldmap". */
+export function routeExtrasOut(it) {
+  const out = {};
+  const options = cleanOptions(it.routing, it.options);
+  if (options.length) out.options = options.join(" ");
+  if (it.avoid) out.avoid = it.avoid;
+  if (it.alternative) out.alternative = it.alternative;
+  return out;
 }
 
 /** An item of the map's lists as the feature PUT to /mapshare/markers/<id>.
@@ -187,7 +227,7 @@ export function featureFromItem(it, kind, by, now = new Date(), ring = null) {
   else if (kind === "arrow") geometry = { type: "LineString", coordinates: [pos(it.a), pos(it.b)] };
   else if (kind === "route") {
     geometry = { type: "LineString", coordinates: it.points.map(pos) };
-    Object.assign(fieldmap, { waypoints: it.points.map(pos), routing: it.routing, speedMph: it.speedMph });
+    Object.assign(fieldmap, { waypoints: it.points.map(pos), routing: it.routing, speedMph: it.speedMph, ...routeExtrasOut(it) });
   } else {
     geometry = { type: "Polygon", coordinates: [ring.map(([x, y]) => [r6(x), r6(y)])] };
     if (it.type === "circle") Object.assign(fieldmap, { center: pos(it.center), radius: it.radius });
@@ -201,7 +241,7 @@ export function featureFromItem(it, kind, by, now = new Date(), ring = null) {
 }
 
 /** What of an item the server holds: a change to any of it is sent. */
-export const itemKey = (it) => JSON.stringify([it.lng, it.lat, it.a, it.b, it.label, it.color, it.type, it.center, it.radius, it.points, it.routing, it.speedMph, it.group]);
+export const itemKey = (it) => JSON.stringify([it.lng, it.lat, it.a, it.b, it.label, it.color, it.type, it.center, it.radius, it.points, it.routing, it.speedMph, it.group, it.options, it.avoid, it.alternative]);
 
 /** Whether the server can keep a shape: its outline has at most MAX_AREA_POINTS points. */
 export const shareableShape = (ring) => ring.length <= MAX_AREA_POINTS;

@@ -12,7 +12,7 @@
 // map looks for the roads nearest that point (in its own tiles: nearRoads) and routes to the
 // nearest one it can reach, dashed from there. The same for a start off the road.
 import { inverse } from "./geo.js";
-import { ROUTE_TYPES_LIST } from "./shared.js";
+import { ROUTE_TYPES_LIST, ROUTE_OPTIONS, DIFFICULTY, cleanOptions } from "./shared.js";
 
 export const ROUTER = "/routing/route";
 const PROFILE = Object.fromEntries(ROUTE_TYPES_LIST.map(([key, , profile]) => [key, profile]));
@@ -25,7 +25,40 @@ export const profileOf = (routing) => PROFILE[routing] || null;
 export const ROAD_CLASSES = {
   driving: ["motorway", "trunk", "primary", "secondary", "tertiary", "minor", "service"],
   walking: ["trunk", "primary", "secondary", "tertiary", "minor", "service", "track", "path"],
+  bicycle: ["primary", "secondary", "tertiary", "minor", "service", "track", "path"],
 };
+const MAX_AVOID = 400;         // points of the avoid areas sent with one leg (the address stays short)
+
+/** What the router is asked for a route's legs, or null (Straight Line): its profile, and the rest
+ *  of the request: the Route Options as BRouter's profile settings, the Way (alternativeidx) and
+ *  the avoid areas (nogos: circles, polygons: areas, polylines: lines across roads). avoidAreas(group)
+ *  gives a group's areas: { nogos: [[lon, lat, meters]], polygons: [[[lon, lat], ...]], polylines: [...] }.
+ *  tooMuch: the group has more than MAX_AVOID points; the rest are left out. */
+export function routeAsk(route, avoidAreas = () => null) {
+  const profile = profileOf(route.routing);
+  if (!profile) return null;
+  const keys = cleanOptions(route.routing, route.options);
+  const settings = {};
+  for (const [key, , set] of [...(ROUTE_OPTIONS[route.routing] || []), ...DIFFICULTY]) if (key && keys.includes(key)) Object.assign(settings, set);
+  let extra = Object.entries(settings).map(([k, v]) => `&profile:${k}=${v}`).join("");
+  const alt = Number.isInteger(route.alternative) && route.alternative > 0 && route.alternative < 4 ? route.alternative : 0;
+  if (alt) extra += `&alternativeidx=${alt}`;
+  let tooMuch = false;
+  const areas = route.avoid ? avoidAreas(route.avoid) : null;
+  if (areas) {
+    let room = MAX_AVOID;
+    const r5 = (v) => Math.round(v * 1e5) / 1e5;
+    const take = (list, size) => list.filter((it) => { const n = size(it); if (n > room) { tooMuch = true; return false; } room -= n; return true; });
+    const nogos = take(areas.nogos || [], () => 1).map(([lon, lat, m]) => `${r5(lon)},${r5(lat)},${Math.max(1, Math.round(m))}`);
+    const line = (pts) => pts.map(([lon, lat]) => `${r5(lon)},${r5(lat)}`).join(",");
+    const polygons = take(areas.polygons || [], (p) => p.length).map(line);
+    const polylines = take(areas.polylines || [], (p) => p.length).map(line);
+    if (nogos.length) extra += `&nogos=${nogos.join("%7C")}`;
+    if (polygons.length) extra += `&polygons=${polygons.join("%7C")}`;
+    if (polylines.length) extra += `&polylines=${polylines.join("%7C")}`;
+  }
+  return { profile, extra, tooMuch };
+}
 const NEAR = 15000;            // roads farther than this from a point are not tried (m)
 const SPREAD = 500;            // the roads tried for one point are at least this far apart (m)
 const TRIES = 3;               // roads tried at each end of a leg
@@ -55,7 +88,7 @@ export function nearestRoadPoints(p, lines, count = TRIES, spread = SPREAD, most
   }
   return out.map(({ lng, lat, meters }) => ({ lng, lat, meters }));
 }
-export const legKey = (profile, a, b) => `${profile}|${r6(a.lng)},${r6(a.lat)}|${r6(b.lng)},${r6(b.lat)}`;
+export const legKey = (ask, a, b) => `${ask.profile}${ask.extra || ""}|${r6(a.lng)},${r6(a.lat)}|${r6(b.lng)},${r6(b.lat)}`;
 const straight = (a, b) => inverse(a.lat, a.lng, b.lat, b.lng).distance;
 
 /** The router's answer for one leg: { line: [[lon, lat], ...], meters }, or null. */
@@ -67,64 +100,80 @@ export function readLeg(geojson) {
   return { line: c.map((p) => [p[0], p[1]]), meters: Number.isFinite(meters) ? meters : null };
 }
 
+/** The date of the server's routing data (its index.json "made", digits only), or "0": every leg
+ *  request carries it (v), so that the server's route cache starts afresh with new routing data. */
+export async function routingVersion(fetchFn = (u) => fetch(u, { cache: "no-store" })) {
+  try {
+    const r = await fetchFn("/routing/index.json");
+    const made = r.ok ? String((await r.json()).made || "") : "";
+    return made.replace(/\D/g, "").slice(0, 20) || "0";
+  } catch { return "0"; }
+}
+
 /** Asks for the legs routes need and keeps the answers. onChange() after each one.
- *  nearRoads(point, routing): the lines of the roads near a point that a Route Type can use. */
-export function createRouter(onChange, fetchFn = (u) => fetch(u), nearRoads = null) {
+ *  nearRoads(point, routing): the lines of the roads near a point that a Route Type can use.
+ *  avoidAreas(group): a group's avoid areas (routeAsk). */
+export function createRouter(onChange, fetchFn = (u) => fetch(u), nearRoads = null, avoidAreas = () => null, version = routingVersion) {
   const legs = new Map();     // key -> { line, meters, head?, tail? } | { failed: time } | { pending: true }
   const queue = [];
   let running = 0;
-  async function fetchLeg(profile, a, b) {
+  let data = null;             // the routing data's date (routingVersion), asked once
+  async function fetchLeg(ask, a, b) {
     try {
+      data = data || version();
+      const v = await data;
       // Six decimals (about 10 cm): the server takes at most 12 characters a number.
       const at = (p) => `${r6(p.lng)},${r6(p.lat)}`;
-      const r = await fetchFn(`${ROUTER}?lonlats=${at(a)}%7C${at(b)}&profile=${profile}&format=geojson`);
+      const r = await fetchFn(`${ROUTER}?lonlats=${at(a)}%7C${at(b)}&profile=${ask.profile}${ask.extra || ""}&v=${v}&format=geojson`);
       return r.ok ? readLeg(await r.json()) : null;
     } catch { return null; }   // no answer: straight for now
   }
   /** No way from a to b: along the roads to the nearest road the router reaches from the other
    *  end (b's first, then a's, then both), and straight from there. */
-  async function viaRoads(profile, a, b, routing) {
+  async function viaRoads(ask, a, b, routing) {
     const near = (p) => { try { return nearestRoadPoints(p, nearRoads(p, routing) || []); } catch { return []; } };
     const nearB = near(b);
-    for (const c of nearB) { const got = ends(await fetchLeg(profile, a, c), a, b); if (got) return got; }
+    for (const c of nearB) { const got = ends(await fetchLeg(ask, a, c), a, b); if (got) return got; }
     const nearA = near(a);
-    for (const c of nearA) { const got = ends(await fetchLeg(profile, c, b), a, b); if (got) return got; }
-    if (nearA.length && nearB.length) return ends(await fetchLeg(profile, nearA[0], nearB[0]), a, b);
+    for (const c of nearA) { const got = ends(await fetchLeg(ask, c, b), a, b); if (got) return got; }
+    if (nearA.length && nearB.length) return ends(await fetchLeg(ask, nearA[0], nearB[0]), a, b);
     return null;
   }
-  async function ask(key, profile, routing, a, b) {
+  async function work(key, ask, routing, a, b) {
     running++;
-    let got = ends(await fetchLeg(profile, a, b), a, b);
-    if (!got && nearRoads) got = await viaRoads(profile, a, b, routing);
+    let got = ends(await fetchLeg(ask, a, b), a, b);
+    if (!got && nearRoads) got = await viaRoads(ask, a, b, routing);
     legs.set(key, got || { failed: Date.now() });
     running--;
     pump();
     onChange();
   }
   function pump() {
-    while (running < AT_ONCE && queue.length) ask(...queue.shift());
+    while (running < AT_ONCE && queue.length) work(...queue.shift());
   }
   return {
+    /** What the router is asked for this route's legs (routeAsk), or null (Straight Line). */
+    askFor(route) { return routeAsk(route, avoidAreas); },
     /** What the router gave for this leg: { line, meters }, or null (none yet, or none). */
-    leg(profile, a, b) {
-      const got = legs.get(legKey(profile, a, b));
+    leg(ask, a, b) {
+      const got = legs.get(legKey(ask, a, b));
       return got && got.line ? got : null;
     },
     /** True while this leg is still being asked for. */
-    pending(profile, a, b) { const got = legs.get(legKey(profile, a, b)); return !!(got && got.pending); },
+    pending(ask, a, b) { const got = legs.get(legKey(ask, a, b)); return !!(got && got.pending); },
     /** How many legs are still being asked for (worked out now, or waiting their turn). */
     busy() { let n = 0; for (const got of legs.values()) if (got.pending) n++; return n; },
     /** Ask for the legs of these routes that are not known yet. */
     want(routes) {
       for (const route of routes) {
-        const profile = profileOf(route.routing);
-        if (!profile) continue;
+        const ask = routeAsk(route, avoidAreas);
+        if (!ask) continue;
         for (let i = 1; i < route.points.length; i++) {
-          const a = route.points[i - 1], b = route.points[i], key = legKey(profile, a, b);
+          const a = route.points[i - 1], b = route.points[i], key = legKey(ask, a, b);
           const got = legs.get(key);
           if (got && !(got.failed && Date.now() - got.failed > RETRY_MS)) continue;
           legs.set(key, { pending: true });
-          queue.push([key, profile, route.routing, a, b]);
+          queue.push([key, ask, route.routing, a, b]);
         }
       }
       pump();
@@ -147,13 +196,14 @@ export function ends(got, a, b) {
 /** A route's legs: [{ a, b, line, meters, routed, head, tail }]; line is the router's when it has
  *  one; head and tail the straight parts off the road at its ends, when it ends off the road. */
 export function routeLegs(route, router) {
-  const profile = profileOf(route.routing);
+  const ask = router && router.askFor ? router.askFor(route) : routeAsk(route);
+  const profile = ask && ask.profile;
   const out = [];
   const ll = (c) => ({ lng: c[0], lat: c[1] });
   const length = (part) => (part ? straight(ll(part[0]), ll(part[1])) : 0);
   for (let i = 1; i < route.points.length; i++) {
     const a = route.points[i - 1], b = route.points[i];
-    const got = profile && router ? router.leg(profile, a, b) : null;
+    const got = ask && router ? router.leg(ask, a, b) : null;
     if (!got) { out.push({ a, b, line: [[a.lng, a.lat], [b.lng, b.lat]], meters: straight(a, b), routed: !profile, head: null, tail: null }); continue; }
     const head = got.head || null, tail = got.tail || null;
     let meters = got.meters;
@@ -169,10 +219,11 @@ export function routeStats(route, router) {
   const legs = routeLegs(route, router);
   const meters = legs.reduce((t, l) => t + l.meters, 0);
   const mph = route.speedMph || 2;
-  const profile = profileOf(route.routing);
+  const ask = router && router.askFor ? router.askFor(route) : routeAsk(route);
+  const profile = ask && ask.profile;
   // A leg still being worked out is straight for now, not a leg with no way.
-  const pendingLegs = profile && router && router.pending ? legs.filter((l) => router.pending(profile, l.a, l.b)).length : 0;
-  return { meters, seconds: meters / (mph * 1609.344 / 3600), pendingLegs,
+  const pendingLegs = ask && router && router.pending ? legs.filter((l) => router.pending(ask, l.a, l.b)).length : 0;
+  return { meters, seconds: meters / (mph * 1609.344 / 3600), pendingLegs, avoidTooMuch: !!(ask && ask.tooMuch),
     straightLegs: profile ? legs.filter((l) => !l.routed).length - pendingLegs : 0,
     offRoad: profile ? legs.filter((l) => l.offRoad).length : 0 };
 }

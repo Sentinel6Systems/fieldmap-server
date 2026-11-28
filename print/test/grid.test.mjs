@@ -24,11 +24,11 @@ test("line labels are the digits within the 100 km square", () => {
 });
 
 test("1 km lines fall on whole kilometres of the view's zone", () => {
-  const fc = gridFC([[-75.2, 39.9], [-75.1, 40.0]], 13);
+  const fc = gridFC([[-105.3, 39.9], [-105.2, 40.0]], 13);
   assert.ok(lines(fc).length > 10);
   for (const f of lines(fc)) {
     for (const [lon, lat] of f.geometry.coordinates) {
-      const u = toUTM(lat, lon, 18);
+      const u = toUTM(lat, lon, 13);
       const onLine = [u.easting, u.northing].some((v) => Math.abs(v - Math.round(v / 1000) * 1000) < 1);
       assert.ok(onLine, `${lon},${lat} is on no 1 km line`);
     }
@@ -36,40 +36,40 @@ test("1 km lines fall on whole kilometres of the view's zone", () => {
 });
 
 test("a view across a zone edge has each zone's lines cut at the edge", () => {
-  const fc = gridFC([[-76, 39.5], [-74, 40.5]], 10);      // zone 18 only
-  const both = gridFC([[-79, 39.5], [-77, 40.5]], 10);    // -78 is the edge of zones 17 and 18
+  const fc = gridFC([[-106, 39.5], [-104, 40.5]], 10);    // zone 13 only
+  const both = gridFC([[-103, 39.5], [-101, 40.5]], 10);  // -102 is the edge of zones 13 and 14
   for (const f of lines(both)) {
     const lons = f.geometry.coordinates.map((c) => c[0]);
-    assert.ok(Math.max(...lons) <= -78 + 1e-9 || Math.min(...lons) >= -78 - 1e-9, "a line crosses the zone edge");
+    assert.ok(Math.max(...lons) <= -102 + 1e-9 || Math.min(...lons) >= -102 - 1e-9, "a line crosses the zone edge");
   }
-  assert.ok(names(both).some((n) => n.startsWith("17")) || names(both).some((n) => n.startsWith("18")));
+  assert.ok(names(both).some((n) => n.startsWith("13")) || names(both).some((n) => n.startsWith("14")));
   assert.ok(lines(fc).length > 0);
 });
 
 test("100 km squares carry their letters", () => {
-  const fc = gridFC([[-77, 39], [-73, 42]], 8);
-  assert.ok(names(fc).includes("18T WK") || names(fc).some((n) => /^18[ST] [A-Z]{2}$/.test(n)), names(fc).join(", "));
+  const fc = gridFC([[-107, 38], [-103, 41]], 8);
+  assert.ok(names(fc).some((n) => /^13[ST] [A-Z]{2}$/.test(n)), names(fc).join(", "));
 });
 
 test("zoomed out, the grid zone lines and names", () => {
-  const fc = gridFC([[-100, 30], [-60, 50]], 3);
-  assert.ok(names(fc).includes("18T"));
+  const fc = gridFC([[-120, 30], [-90, 50]], 3);
+  assert.ok(names(fc).includes("13T"));
   assert.ok(lines(fc).every((f) => f.properties.kind === "zone"));
 });
 
 test("below the equator one zone runs on across it", () => {
-  const fc = gridFC([[-75.2, -0.05], [-75.1, 0.05]], 13);
+  const fc = gridFC([[-105.2, -0.05], [-105.1, 0.05]], 13);
   assert.ok(lines(fc).some((f) => f.geometry.coordinates.some((c) => c[1] < 0) && f.geometry.coordinates.some((c) => c[1] > 0)));
 });
 
 test("zoomed in, the lines' digits sit on the view's top and left edges, and the square is named", () => {
-  const view = [[-75.2, 39.9], [-75.1, 40.0]];
+  const view = [[-105.3, 39.9], [-105.2, 40.0]];
   const fc = gridFC(view, 13);
   const edges = fc.features.filter((f) => f.properties.kind === "edge");
   assert.ok(edges.some((f) => f.properties.anchor === "top" && Math.abs(f.geometry.coordinates[1] - 40.0) < 1e-6));
-  assert.ok(edges.some((f) => f.properties.anchor === "left" && Math.abs(f.geometry.coordinates[0] + 75.2) < 1e-6));
+  assert.ok(edges.some((f) => f.properties.anchor === "left" && Math.abs(f.geometry.coordinates[0] + 105.3) < 1e-6));
   assert.ok(edges.every((f) => /^\d\d$/.test(f.properties.label)));
-  assert.ok(names(fc).some((n) => /^18S [A-Z]{2}$/.test(n)), names(fc).join(", "));
+  assert.ok(names(fc).some((n) => /^13S [A-Z]{2}$/.test(n)), names(fc).join(", "));
   // At 100 m lines too: the square stays named.
-  assert.ok(names(gridFC([[-75.152, 39.95], [-75.148, 39.953]], 17)).length > 0);
+  assert.ok(names(gridFC([[-105.252, 39.95], [-105.248, 39.953]], 17)).length > 0);
 });
