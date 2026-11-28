@@ -26,6 +26,10 @@ RUN set -eu; \
 USER nobody
 # The routing files (read-only), the profiles, a folder for custom profiles (not reachable from
 # outside), the port, two routes at a time, and where it listens (BIND: 0.0.0.0 in the compose
-# network, 127.0.0.1 with host networking on a Pi). A route gives up after 30 s.
-ENV BIND=0.0.0.0 PORT=17777 JAVA_OPTS="-Xmx256m -DmaxRunningTime=30"
-CMD ["sh", "-c", "exec java $JAVA_OPTS -cp /opt/brouter/brouter.jar btools.server.RouteServer /segments /opt/brouter/profiles /tmp/brouter-custom $PORT 2 $BIND"]
+# network, 127.0.0.1 with host networking on a Pi). A route gives up after ROUTE_TIMEOUT seconds
+# (300, BRouter's own default; ROUTE_TIMEOUT in .env). The Java heap is two thirds of the
+# container's memory cap (BROUTER_MEM_LIMIT in .env), and gives memory back after a long route
+# (serial collector, small free share), so that a Pi has it again for the rest.
+ENV BIND=0.0.0.0 PORT=17777 ROUTE_TIMEOUT=300 \
+    JAVA_OPTS="-XX:MaxRAMPercentage=66 -XX:+UseSerialGC -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=30"
+CMD ["sh", "-c", "exec java $JAVA_OPTS -DmaxRunningTime=$ROUTE_TIMEOUT -cp /opt/brouter/brouter.jar btools.server.RouteServer /segments /opt/brouter/profiles /tmp/brouter-custom $PORT 2 $BIND"]

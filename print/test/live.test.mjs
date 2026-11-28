@@ -267,3 +267,20 @@ test("a shared item carries its group both ways, and a new group is a change to 
   delete f.properties.fieldmap.group;
   assert.equal("group" in itemFromFeature(f).item, false);
 });
+
+test("a leg still being worked out counts as working, not as a leg with no way", async () => {
+  let answer;
+  const router = createRouter(() => {}, () => new Promise((r) => { answer = r; }));
+  const route = { id: "r", points: [{ lng: 10, lat: 45 }, { lng: 10.01, lat: 45.01 }], routing: "walking", speedMph: 2 };
+  router.want([route]);
+  assert.equal(router.busy(), 1);
+  let st = routeStats(route, router);
+  assert.equal(st.pendingLegs, 1);
+  assert.equal(st.straightLegs, 0);
+  answer({ ok: false });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(router.busy(), 0);
+  st = routeStats(route, router);
+  assert.equal(st.pendingLegs, 0);
+  assert.equal(st.straightLegs, 1);
+});

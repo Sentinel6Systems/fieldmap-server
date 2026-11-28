@@ -21,12 +21,13 @@ export function gridStep(lat, zoom) {
   return STEPS.find((s) => s / mpp >= MIN_PX) || 0;
 }
 
-/** The digits a line is labelled with: its place within the 100 km square, at its spacing. */
+/** The digits a line is labelled with: its place within the 100 km square, as many digits as its
+ *  spacing gives (MGRS): one for 10 km lines (4 = 40 km), two for 1 km (43), three for 100 m (432). */
 export function lineLabel(v, step) {
   const inSquare = ((v % 100000) + 100000) % 100000;
   if (step >= 100000) return "";        // the square letters say it
-  if (step >= 1000) return String(Math.floor(inSquare / 1000)).padStart(2, "0");
-  return String(Math.floor(inSquare / 100)).padStart(3, "0");
+  const digits = Math.round(Math.log10(100000 / step));
+  return String(Math.floor(inSquare / step)).padStart(digits, "0");
 }
 
 const line = (coords, props) => ({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: props });

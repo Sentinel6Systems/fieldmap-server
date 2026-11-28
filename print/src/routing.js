@@ -112,6 +112,8 @@ export function createRouter(onChange, fetchFn = (u) => fetch(u), nearRoads = nu
     },
     /** True while this leg is still being asked for. */
     pending(profile, a, b) { const got = legs.get(legKey(profile, a, b)); return !!(got && got.pending); },
+    /** How many legs are still being asked for (worked out now, or waiting their turn). */
+    busy() { let n = 0; for (const got of legs.values()) if (got.pending) n++; return n; },
     /** Ask for the legs of these routes that are not known yet. */
     want(routes) {
       for (const route of routes) {
@@ -167,9 +169,12 @@ export function routeStats(route, router) {
   const legs = routeLegs(route, router);
   const meters = legs.reduce((t, l) => t + l.meters, 0);
   const mph = route.speedMph || 2;
-  const routed = !!profileOf(route.routing);
-  return { meters, seconds: meters / (mph * 1609.344 / 3600), straightLegs: routed ? legs.filter((l) => !l.routed).length : 0,
-    offRoad: routed ? legs.filter((l) => l.offRoad).length : 0 };
+  const profile = profileOf(route.routing);
+  // A leg still being worked out is straight for now, not a leg with no way.
+  const pendingLegs = profile && router && router.pending ? legs.filter((l) => router.pending(profile, l.a, l.b)).length : 0;
+  return { meters, seconds: meters / (mph * 1609.344 / 3600), pendingLegs,
+    straightLegs: profile ? legs.filter((l) => !l.routed).length - pendingLegs : 0,
+    offRoad: profile ? legs.filter((l) => l.offRoad).length : 0 };
 }
 
 /** "45 min", "2 h 05 min". */

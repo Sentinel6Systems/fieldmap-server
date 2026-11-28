@@ -50,10 +50,14 @@ services:
     image: fieldmap-brouter:local
     container_name: fieldmap-brouter
     restart: unless-stopped
-    mem_limit: ${BROUTER_MEM_LIMIT:-512m}
-    memswap_limit: ${BROUTER_MEM_LIMIT:-512m}
+    # A long leg (hundreds of kilometers) needs time more than memory: ROUTE_TIMEOUT seconds a
+    # leg (300), within BROUTER_MEM_LIMIT (768m; the Java heap is two thirds of it).
+    mem_limit: ${BROUTER_MEM_LIMIT:-768m}
+    memswap_limit: ${BROUTER_MEM_LIMIT:-768m}
     volumes:
       - ./data/routing:/segments:ro
+    environment:
+      ROUTE_TIMEOUT: ${ROUTE_TIMEOUT:-300}
 
   # The gateway for the Fieldmap Android app away from this network: it demands a
   # certificate this box issued and serves only what the app needs. Not started by

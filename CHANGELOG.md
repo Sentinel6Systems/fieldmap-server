@@ -2,11 +2,30 @@
 
 ## Since v1.0.0
 
+- **Map: Clear All clears everything.** It used to delete only the items kept in this browser and did nothing,
+  without a word, when every item was shared. It now deletes every marker, arrow, route and shape in every group
+  after one warning that says how many are shared (those are removed from all devices too), and says so when
+  there is nothing to clear.
+
+- **Map: routes show that they are being worked out.** While the server works out legs, a note at the top of the
+  map says how many are left, and the route's row shows a spinner ("working out 2 legs"). A leg still being worked
+  out is no longer counted as a straight leg with no way found.
+
+- **Longer route legs.** The route service now gives a leg up to 5 minutes (was 30 seconds) and may use 768 MB
+  (was 512 MB), with a Java heap of two thirds of that that shrinks again after a long route. Both are settings in
+  `.env`: `ROUTE_TIMEOUT` (seconds, at most 900) and `BROUTER_MEM_LIMIT`. The web server waits up to 900 seconds
+  for a leg. Run the installer again (or rebuild the brouter image) to use it.
+
+- **Map: items on top of each other.** A tap on the map where several markers, arrows, routes or shapes overlap
+  lists them to choose from; the chosen one opens in the Markers tab (its group opened), and the next drag on that
+  spot moves it. A tap on a single item opens its row the same way.
+
 - **Map: grid labels you can read at any zoom; arrow heads that stay.** The MGRS grid's digits now sit upright at
   the top and left edges of the map instead of along the lines, and each 100 km square in view keeps its full name
-  (such as 18S XJ) in the middle of the part you see, however far you zoom in. Arrow heads are drawn as lines again,
-  sized for the zoom each time it changes and over the handle at the tip; the head drawn as an icon could fail to
-  show when zoomed out.
+  (such as 18S XJ) in the middle of the part you see, however far you zoom in. The digits follow MGRS: one on
+  10 km lines, two on 1 km lines, three on 100 m lines. Arrow heads are drawn as lines again, sized for the zoom
+  each time it changes and over the handle at the tip; the head drawn as an icon could fail to show when zoomed
+  out.
 
 - **Map: Add and groups in the Markers tab.** The tool bar that floated on the map is gone. **Add** at the top of
   the Markers tab puts a marker, arrow, route, circle, rectangle or polygon on the map, into the group chosen under

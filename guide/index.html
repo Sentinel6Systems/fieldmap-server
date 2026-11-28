@@ -174,10 +174,13 @@
         edge; a rectangle is two opposite corners. For a polygon, tap each corner, then tap the first corner again,
         press Enter, or press <b>Finish Shape</b>.</li>
     </ol>
+    <p>Tap an item on the map to open its row; where several are on top of each other, the tap lists them to choose
+      from, and the next drag there moves the one you chose.</p>
     <p>Drag an item to move it. Each item has a row in its group with its color, name, <b>Show on Map</b>, a
       delete button, <b>Group</b> (to move it) and <b>Share with All Devices</b>. Under <b>Settings</b>,
       <b>Units</b> switches between feet and miles or meters and kilometers, and <b>Show Measurements</b> puts
-      lengths and areas on the map. <b>Clear All</b> deletes this browser's items; shared items stay.</p>
+      lengths and areas on the map. <b>Clear All</b> deletes every item in every group, after a warning; shared ones are removed from all
+      devices too.</p>
     <h3>Groups</h3>
     <p>Groups keep items together for a task, for example <b>Water Sources</b>, <b>Egress Routes</b> or <b>Danger
       Areas</b>. <b>New Group</b> makes one, and what you add next goes into it. In a group's heading, the switch
@@ -192,12 +195,19 @@
   <section class="card" id="routes">
     <h2>5. Routes</h2>
     <p>A route is a line through up to 30 points, along roads and trails or straight between the points.</p>
+    <div class="note"><b>Why 30 points?</b>A shared route must fit in one Meshtastic radio packet, so that devices off
+      the network can still receive it over the mesh; 30 points is about what one packet holds. The app, the server
+      and this map all keep to it, so a route looks the same everywhere. For a longer route, make it as two or more
+      routes that follow on from each other: end the first where the next one starts (for example "Egress 1" and
+      "Egress 2"), and keep them in the same group.</div>
     <ol>
       <li>Press <b>Add</b>, then <b>Route</b>, and tap the points of the route in order.</li>
       <li>To finish, tap the last point again, press Enter, or press <b>Finish Route</b>.</li>
       <li>In the route's row, choose the <b>Route Type</b> (<b>Driving</b>, <b>Walking</b> or <b>Straight
         Line</b>) and the <b>Speed</b> for the time estimate.</li>
     </ol>
+    <p>While the server works out the legs, a note at the top of the map says how many are left, and the route's row
+      shows a spinner. A long leg can take a few minutes.</p>
     <p>Drag a point to move it. The row shows the distance and the time. Legs along roads and trails are solid. A leg
       with no way found is straight and dashed. A point away from the road gets a line along the road to the nearest
       place, then a dashed straight line to the point. Routes along roads need the <b>Routing Data</b> layer on the

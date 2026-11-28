@@ -419,14 +419,10 @@ map.on("click", (e) => {
   if (mode === "arrow-end") { addArrow(pendingArrow.a, { lng: e.lngLat.lng, lat: e.lngLat.lat }); pendingArrow = null; setMode(null); return; }
   if (mode === "route") { routeClick({ lng: e.lngLat.lng, lat: e.lngLat.lat }); return; }
   if (mode && shapeClick(e)) return;
-  const hitM = map.queryRenderedFeatures(e.point, { layers: ["markers-circle"] });
-  if (hitM.length) { select("marker", hitM[0].properties.id); return; }
-  const hitA = map.queryRenderedFeatures(e.point, { layers: ["arrow-ends", "arrows-line"] });
-  if (hitA.length) { select("arrow", hitA[0].properties.id); return; }
-  const hitR = map.queryRenderedFeatures(e.point, { layers: ["routes-vertex", "routes-line", "routes-dashed", "routes-label"] });
-  if (hitR.length) { select("route", hitR[0].properties.id); return; }
-  const hitS = map.queryRenderedFeatures(e.point, { layers: ["shapes-line", "shapes-label"] });
-  if (hitS.length) { select("shape", hitS[0].properties.id); return; }
+  // One item under the tap: its row; several on top of each other: a list to choose from.
+  const hits = itemsAt(e.point);
+  if (hits.length === 1) { showItem(hits[0].kind, hits[0].id); return; }
+  if (hits.length > 1) { chooseItem(e.lngLat, hits); return; }
   if (liveClick(e)) return;
   // On the Print tab, a tap outside the sheet brings the sheet there.
   if (tab !== "print") return;
@@ -441,6 +437,16 @@ const onPin = (e) => !!(e.originalEvent && e.originalEvent.target && e.originalE
 function onDown(e) {
   if (mode || (terrain && terrain.picking) || onPin(e)) return;
   const pt = e.point;
+  // The item chosen last (in the list or from items on top of each other) moves first.
+  if (selected) {
+    const mine = (layer) => map.queryRenderedFeatures(pt, { layers: [layer] }).filter((f) => f.properties.id === selected.id);
+    const h = selected.kind === "marker" ? mine("markers-circle") : selected.kind === "arrow" ? mine("arrow-ends") : selected.kind === "route" ? mine("routes-vertex") : [];
+    if (h.length) {
+      const p = h[0].properties;
+      dragging = selected.kind === "marker" ? { kind: "marker", id: p.id } : selected.kind === "arrow" ? { kind: "arrow-end", id: p.id, end: p.end } : { kind: "route-point", id: p.id, index: p.index };
+      return begin(e);
+    }
+  }
   let hit = map.getLayer("me-symbol") ? map.queryRenderedFeatures(pt, { layers: ["me-symbol"] }) : [];
   if (hit.length) { dragging = { kind: "me" }; return begin(e); }
   hit = map.queryRenderedFeatures(pt, { layers: ["markers-circle"] });
@@ -643,6 +649,13 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 // A route is its points (2 to 30, the most one mesh radio packet carries) and its Route Type, as
 // in the app. Its legs follow roads or trails where the server's router finds a way (routing.js).
 const router = createRouter(() => { drawRoutes(); refreshLists(); }, undefined, nearRoads);
+/** While legs are being worked out: a note at the bottom of the map, so that it is clear that
+ *  something is happening (a long leg can take minutes). */
+function routeStatus() {
+  const n = router.busy();
+  $("route-status").hidden = !n;
+  $("route-status-text").textContent = `Working out route${n === 1 ? "" : "s"}: ${n} leg${n === 1 ? "" : "s"} to go. A long leg can take a few minutes.`;
+}
 /** The lines of the roads near a point that a Route Type can use, from the map tiles loaded now
  *  (the base map's transportation layer): where a leg that ends off the road goes to the road. */
 function nearRoads(p, routing) {
@@ -664,6 +677,7 @@ function nearRoads(p, routing) {
 function drawRoutes() {
   const list = shown(routes);
   router.want(list);
+  routeStatus();
   try { if (map.getSource("routes")) map.getSource("routes").setData(routesFC(list, router)); } catch { /* a new map style is still loading */ }
 }
 function saveRoutes() {
@@ -706,7 +720,8 @@ function previewRoute(ll) {
  *  end off the road (dashed from the road to the point). */
 function routeDetail(r) {
   const st = routeStats(r, router);
-  const legs = st.straightLegs ? ` · ${st.straightLegs} straight leg${st.straightLegs === 1 ? "" : "s"}: no route found` : "";
+  const working = st.pendingLegs ? ` · <span class="working"><i class="spinner"></i>working out ${st.pendingLegs} leg${st.pendingLegs === 1 ? "" : "s"}</span>` : "";
+  const legs = (st.straightLegs ? ` · ${st.straightLegs} straight leg${st.straightLegs === 1 ? "" : "s"}: no route found` : "") + working;
   const off = st.offRoad ? ` · ${st.offRoad} leg${st.offRoad === 1 ? " ends" : "s end"} off road (dashed)` : "";
   return `${routeType(r.routing)[1]} · ${fmtLength(st.meters, state.units)} · ${durationText(st.seconds)}${legs}${off}`;
 }
@@ -815,6 +830,46 @@ function select(kind, id, focus = false) {
   if (focus) {
     const el = document.querySelector(`[data-id="${id}"] input[type=text]`);
     if (el) { el.focus(); el.select(); }
+  }
+}
+/** The items under a point on the map, the top one first: [{ kind, id }], each once. */
+const ITEM_LAYERS = [["markers-circle", "marker"], ["arrow-ends", "arrow"], ["arrows-head", "arrow"], ["arrows-line", "arrow"],
+  ["routes-vertex", "route"], ["routes-label", "route"], ["routes-line", "route"], ["routes-dashed", "route"], ["shapes-label", "shape"], ["shapes-line", "shape"]];
+function itemsAt(point) {
+  const box = [[point.x - 4, point.y - 4], [point.x + 4, point.y + 4]];
+  const kindOf = Object.fromEntries(ITEM_LAYERS);
+  const layers = ITEM_LAYERS.map(([l]) => l).filter((l) => map.getLayer(l));
+  const out = [];
+  for (const f of map.queryRenderedFeatures(box, { layers })) {
+    const kind = kindOf[f.layer.id], id = f.properties.id;
+    if (id && !out.some((x) => x.id === id) && listOf(kind).some((x) => x.id === id)) out.push({ kind, id });
+  }
+  return out;
+}
+/** An item tapped on the map: its row in the Markers tab, its group opened. */
+function showItem(kind, id) {
+  const it = listOf(kind).find((x) => x.id === id);
+  if (!it) return;
+  if (livePopup) livePopup.remove();
+  const g = groupState(it.group || "");
+  if (g.closed) { g.closed = false; saveGroups(); }
+  if (tab !== "markers") showTab("markers");
+  document.body.classList.remove("panel-collapsed");
+  select(kind, id);
+  const row = document.querySelector(`#group-list [data-id="${id}"]`);
+  if (row) row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+/** Several items on top of each other: which one? */
+function chooseItem(lngLat, hits) {
+  const KIND_NAMES = { marker: "Marker", arrow: "Arrow", route: "Route" };
+  const rows = hits.map(({ kind, id }, i) => {
+    const it = listOf(kind).find((x) => x.id === id);
+    const what = kind === "shape" ? SHAPE_NAMES[it.type] : KIND_NAMES[kind];
+    return `<button type="button" class="choice" data-i="${i}"><i style="background:${it.color}"></i>${escapeHtml(it.label || what)} <small>${what}${it.group ? ` · ${escapeHtml(it.group)}` : ""}</small></button>`;
+  });
+  popup(lngLat, `<b>Which one?</b>${rows.join("")}`);
+  for (const b of livePopup.getElement().querySelectorAll("button.choice")) {
+    b.onclick = () => { const h = hits[+b.dataset.i]; showItem(h.kind, h.id); };
   }
 }
 /** The groups and their items: every group an item names is in the list. */
@@ -1044,7 +1099,7 @@ function setMode(m) {
     m === "me" ? "Tap the map where you are. Your location is shared with all devices." :
     m === "arrow-start" ? "Tap the map at the start of the arrow." :
     m === "arrow-end" ? "Tap the map at the end of the arrow." :
-    m === "route" ? (stops < 2 ? `Tap the points of the route in order. Points so far: ${stops}.` : `${stops} points (at most ${MAX_ROUTE_POINTS}). To finish the route, tap the last point again, press Enter or press Finish Route.`) :
+    m === "route" ? (stops < 2 ? `Tap the points of the route in order. Points so far: ${stops}.` : `${stops} points (at most ${MAX_ROUTE_POINTS}; for more, start a second route at the last point). To finish the route, tap the last point again, press Enter or press Finish Route.`) :
     m === "circle-center" ? "Tap the center of the circle." :
     m === "circle-edge" ? "Tap the edge to set the radius. You can type an exact radius later." :
     m === "rect-start" ? "Tap one corner of the rectangle." :
@@ -1072,11 +1127,16 @@ $("add-route").onclick = () => startTool("route");
 for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).onclick = () => startTool(modes[0]);
 $("finish-shape").onclick = () => (mode === "route" ? finishRoute() : finishPolygon());
 // Only what is kept in this browser: shared items stay (each has its own Delete).
+// Everything in every group; the warning says how many are shared (those go from all devices too).
 $("clear-all").onclick = () => {
-  if ((ownOnly(markers).length || ownOnly(arrows).length || ownOnly(routes).length || ownOnly(shapes).length) && confirm("Delete all markers, arrows, routes and shapes kept in this browser, in every group?\n\nShared ones stay.")) {
-    markers = markers.filter((m) => m.shared); arrows = arrows.filter((a) => a.shared); routes = routes.filter((r) => r.shared); shapes = shapes.filter((x) => x.shared);
-    saveMarkers(); saveArrows(); saveRoutes(); saveShapes();
-  }
+  const all = KINDS.flatMap((kind) => listOf(kind));
+  if (!all.length) { fileHint("Nothing to clear: there are no markers, arrows, routes or shapes."); return; }
+  const shared = all.filter((x) => x.shared).length;
+  if (!confirm(`Delete all ${all.length} item${all.length === 1 ? "" : "s"} (markers, arrows, routes and shapes) in every group?` +
+    (shared ? `\n\n${shared === all.length ? (shared === 1 ? "It is" : "All of them are") : `${shared} of them ${shared === 1 ? "is" : "are"}`} shared: removed from all devices too.` : ""))) return;
+  for (const kind of KINDS) setList(kind, []);
+  selected = null;
+  saveMarkers(); saveArrows(); saveRoutes(); saveShapes();
 };
 // Save to a file, and load one: GeoJSON (src/drawings.js).
 // Every item carries its group; a group's file also names the group, so that it comes back as one.

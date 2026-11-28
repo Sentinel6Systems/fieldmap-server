@@ -17,7 +17,8 @@ test("the spacing follows the zoom", () => {
 
 test("line labels are the digits within the 100 km square", () => {
   assert.equal(lineLabel(4543000, 1000), "43");
-  assert.equal(lineLabel(4540000, 10000), "40");
+  assert.equal(lineLabel(4540000, 10000), "4", "10 km lines: one digit");
+  assert.equal(lineLabel(4500000, 10000), "0");
   assert.equal(lineLabel(4543200, 100), "432");
   assert.equal(lineLabel(4500000, 100000), "");
 });

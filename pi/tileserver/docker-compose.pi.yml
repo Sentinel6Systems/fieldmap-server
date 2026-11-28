@@ -28,11 +28,14 @@ services:
     image: fieldmap-brouter:local
     container_name: fieldmap-brouter
     restart: always
-    mem_limit: ${BROUTER_MEM_LIMIT:-512m}
-    memswap_limit: ${BROUTER_MEM_LIMIT:-512m}
+    # A long leg (hundreds of kilometers) needs time more than memory: ROUTE_TIMEOUT seconds a
+    # leg (300), within BROUTER_MEM_LIMIT (768m; the Java heap is two thirds of it).
+    mem_limit: ${BROUTER_MEM_LIMIT:-768m}
+    memswap_limit: ${BROUTER_MEM_LIMIT:-768m}
     network_mode: host
     environment:
       BIND: 127.0.0.1
+      ROUTE_TIMEOUT: ${ROUTE_TIMEOUT:-300}
     volumes:
       - ${FIELDMAP_DATA:-./data}/routing:/segments:ro
 

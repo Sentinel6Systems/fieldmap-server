@@ -20,6 +20,9 @@
   <button id="mode-cancel" class="secondary compact">Cancel</button>
 </div>
 
+<!-- While route legs are being worked out by the server. -->
+<div id="route-status" class="route-status" role="status" hidden><i class="spinner"></i><span id="route-status-text"></span></div>
+
 <div id="no-maps" class="notice" hidden>
   <h1>No Maps Installed</h1>
   <p>Build maps on the Map Builder page, or run scripts/build-region.sh on the server.</p>
@@ -107,7 +110,7 @@
       <input id="shape-measure" type="checkbox">
       <span>Show Measurements</span>
     </label>
-    <button id="clear-all" class="secondary danger" title="Delete all markers, arrows, routes and shapes kept in this browser">Clear All</button>
+    <button id="clear-all" class="secondary danger" title="Delete all markers, arrows, routes and shapes in every group, shared ones from all devices too">Clear All</button>
   </section>
 
   <section id="tab-print" class="tab" role="tabpanel" hidden>

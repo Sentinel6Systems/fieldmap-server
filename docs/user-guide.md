@@ -168,11 +168,14 @@ The addresses work for devices that reach the server the same way your browser d
    - **Polygon**: tap each corner. To finish, tap the first corner, press Enter, or press **Finish Shape**.
 3. Drag an item (or an arrow's end) to move it.
 
+Tap an item on the map to open its row in the Markers tab. Where several are on top of each other, the tap lists
+them: choose one, and the next drag on that spot moves the one you chose.
+
 Each item has a row in its group: its color and kind (press it for another color), its name, **Show on Map**, a
 delete button, **Group** (to move it to another group) and **Share with All Devices**. Under **Settings**, **Units**
 switches between feet and miles or meters and kilometers, **Color for New Items** sets the color of what you add
-next, and **Show Measurements** puts lengths and areas on the map. **Clear All** deletes this browser's items in
-every group; shared items stay.
+next, and **Show Measurements** puts lengths and areas on the map. **Clear All** deletes every item in
+every group, after a warning; shared ones are removed from all devices too.
 
 ### Groups
 
@@ -194,12 +197,20 @@ software and the Fieldmap app can also open. Shared items are kept on the server
 
 A route is a line through up to 30 points, along roads and trails or straight between the points.
 
+> **Why 30 points?** A shared route must fit in one Meshtastic radio packet, so that devices off the network can
+> still receive it over the mesh; 30 points is about what one packet holds. The app, the server and this map all
+> keep to it, so a route looks the same everywhere. **For a longer route, make it as two or more routes that
+> follow on from each other:** end the first where the next one starts (for example "Egress 1" and "Egress 2"),
+> and keep them in the same group.
+
 1. Press **Add**, then **Route**, and tap the points of the route in order.
 2. To finish, tap the last point again, press Enter, or press **Finish Route**. The route is named R1, R2, and so on.
 3. In the route's row, choose the **Route Type** (**Driving**, **Walking** or **Straight Line**) and the **Speed**
    used for the time estimate.
 
-Drag a point to move it. The row shows the distance and the time. Legs along roads and trails are solid lines. A
+While the server works out the legs, a note at the top of the map says how many are left, and the route's row
+shows a spinner; a long leg can take a few minutes. Drag a point to move it. The row shows the distance and the
+time. Legs along roads and trails are solid lines. A
 leg with no way found is drawn straight and dashed, and the row says how many. A point away from the road gets a
 line along the road to the nearest place, then a dashed straight line to the point.
 
@@ -207,7 +218,7 @@ Routes along roads and trails need the **Routing Data** layer (see [Build maps](
 out one leg at a time, from one point to the next.
 
 > **Tip: use more points, closer together.** Each leg between two points is worked out on its own, with a time
-> limit (about 30 seconds). A short leg is quick to find and follows the road you mean. A very long leg has far
+> limit (5 minutes on the server; `ROUTE_TIMEOUT` in `.env`). A short leg is quick to find and follows the road you mean. A very long leg has far
 > more roads to search: it can run out of time and come out as a dashed straight line, or take a different road
 > than you intended. Put a point at each turn you care about and every few miles along the way, rather than a few
 > points far apart. The route is then quicker to work out, easier to fix by moving one point, and comes out the
