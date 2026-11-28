@@ -243,7 +243,7 @@ map.on("load", () => {
     paint: { "text-color": "#1f5fbf", "text-halo-color": "#fff", "text-halo-width": 2 } });
   // The 100 km square's name (13S DC), in view at every zoom.
   map.addLayer({ id: "grid-name", type: "symbol", source: "grid", filter: ["==", ["get", "kind"], "name"],
-    layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 15, "text-allow-overlap": true },
+    layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 15, "text-allow-overlap": false },   // where zones meet: one name shows
     paint: { "text-color": "#1f5fbf", "text-halo-color": "#fff", "text-halo-width": 2.5 } });
   map.on("moveend", drawGrid);
 
@@ -993,7 +993,8 @@ function groupSection(name, items) {
     b.ariaLabel = title;
     head.appendChild(b);
   };
-  button("⤓", `Export ${label}`, () => exportItems(items, label));
+  // Ungrouped names no group in its file (an import would make a group called "Ungrouped").
+  button("⤓", `Export ${label}`, () => exportItems(items, name || null, label));
   if (name) {
     button("✎", `Rename ${label}`, () => renameGroup(name));
     button("✕", `Delete ${label}`, () => deleteGroup(name, items), "icon danger");
@@ -1223,14 +1224,15 @@ $("clear-all").onclick = () => {
 // Save to a file, and load one: GeoJSON (src/drawings.js).
 // Every item carries its group; a group's file also names the group, so that it comes back as one.
 $("save-drawings").onclick = () => exportItems(KINDS.flatMap((kind) => listOf(kind).map((it) => [kind, it])));
-/** Saves [kind, item] pairs to a file: one group's (group: its name) or all of them. */
-function exportItems(items, group = null) {
+/** Saves [kind, item] pairs to a file: one group's (group: its name) or all of them; title names
+ *  the file and the messages. */
+function exportItems(items, group = null, title = group) {
   const of = (kind) => items.filter(([k]) => k === kind).map(([, it]) => it);
   const [m, a, r, s] = KINDS.map(of);
-  if (!items.length) { fileHint(group ? `Nothing to export: ${group} is empty.` : "Nothing to export. Add a marker, arrow, route or shape first."); return; }
+  if (!items.length) { fileHint(title ? `Nothing to export: ${title} is empty.` : "Nothing to export. Add a marker, arrow, route or shape first."); return; }
   const data = toGeoJSON(m, a, s, { title: state.title || "", saved: new Date().toISOString(), ...(group ? { group } : {}) }, r);
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/geo+json" }));
-  const link = Object.assign(document.createElement("a"), { href: url, download: fileName(group || state.title) });
+  const link = Object.assign(document.createElement("a"), { href: url, download: fileName(title || state.title) });
   document.body.appendChild(link);
   link.click();
   link.remove();
