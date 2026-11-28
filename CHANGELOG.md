@@ -2,6 +2,10 @@
 
 ## Since v1.0.0
 
+- **More RAM for Pi builds.** Pi mode now lets a build use 3.0 GB (`BUILD_MEMORY` default 3072m, was 2560m),
+  which leaves 1 GB for the system on a 4 GB Pi. The Map Builder now builds a base map from up to about 3.0 GB of
+  map data (was 2.3 GB). Set `BUILD_MEMORY=2560m` in `.env` to keep the old cap.
+
 - **Build time estimates closer to real builds.** Measured on an 8-CPU PC with an NVMe drive (15 US states,
   2.8 GB of map data, 900,000 km² of land: about 67 minutes in all), the estimates of the base map, contours,
   hillshade, elevation data, printed map details and US government data were two to ten times too long. The Map

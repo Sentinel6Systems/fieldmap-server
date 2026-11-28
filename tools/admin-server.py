@@ -21,7 +21,7 @@ every step has finished, and the tile server is then restarted. The build runs a
 process (this file's "run-job"), so it carries on if the page or this server is closed.
 
 Pi mode (a machine with less than 8 GB of RAM, or PI_MODE=yes in .env; see scripts/lib.sh):
-the build stays within BUILD_MEMORY (2560m), uses the 30 m elevation data only and leaves
+the build stays within BUILD_MEMORY (3072m), uses the 30 m elevation data only and leaves
 BUILD_RESERVE_GB (5) of the drive free; the estimate refuses a selection that cannot be built
 within that RAM and counts with a slower pace. On any machine, FIELDMAP_PAUSE_UNITS in .env
 names services the build stops to free RAM and starts again when it ends (tools/pause-services.py);
@@ -152,8 +152,8 @@ def size_gb(text):
 
 
 def build_memory_gb():
-    """The RAM a build may use (BUILD_MEMORY; 2.5 GB in Pi mode, which leaves a 4 GB Pi room for the rest), or None for no cap."""
-    return size_gb(setting("BUILD_MEMORY", "2560m" if pi_mode() else ""))
+    """The RAM a build may use (BUILD_MEMORY; 3.0 GB in Pi mode, which leaves a 4 GB Pi room for the rest), or None for no cap."""
+    return size_gb(setting("BUILD_MEMORY", "3072m" if pi_mode() else ""))
 
 
 def reserve_gb():

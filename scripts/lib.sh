@@ -41,7 +41,7 @@ fi
 
 # Pi mode: a machine with less than 8 GB of RAM (8 GB machines report a little under 8 GiB, so
 # the line is drawn at 7 GiB, as in mem-limit.sh), or PI_MODE=yes / no in .env. In Pi mode:
-#   - every container a build starts stays within BUILD_MEMORY (default 2560m: 2.5 GB, safe on a 4 GB Pi), swap included;
+#   - every container a build starts stays within BUILD_MEMORY (default 3072m: 3.0 GB, leaves 1 GB on a 4 GB Pi), swap included;
 #   - Planetiler keeps its node locations and its other working data in files on the data
 #     drive (memory-mapped), not in its Java heap, which stays at two thirds of BUILD_MEMORY;
 #   - the contour lines are computed one elevation cell at a time (CONTOUR_JOBS=1);
@@ -59,7 +59,7 @@ case "$FIELDMAP_PI" in
        fi ;;
 esac
 if [ "$FIELDMAP_PI" = yes ]; then
-    BUILD_MEMORY="$(build_setting BUILD_MEMORY 2560m)"
+    BUILD_MEMORY="$(build_setting BUILD_MEMORY 3072m)"
     BUILD_RESERVE_GB="$(build_setting BUILD_RESERVE_GB 5)"
     CONTOUR_JOBS=1
 else

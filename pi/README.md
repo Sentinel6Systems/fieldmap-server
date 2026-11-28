@@ -26,7 +26,7 @@ server for TAK clients on port 8080, remote access for the Fieldmap app, and the
 ### Building maps on the Pi
 
 The Map Builder builds on the Pi itself, in **Pi mode** (on by itself below 8 GB of RAM; see
-[Builds on a Raspberry Pi](../docs/reference.md#builds-on-a-raspberry-pi)): every build container stays within 2.5 GB
+[Builds on a Raspberry Pi](../docs/reference.md#builds-on-a-raspberry-pi)): every build container stays within 3.0 GB
 of RAM, Planetiler keeps its working data on disk, the contour lines are computed one cell at a time, the terrain is
 the 30 m data only, and a build leaves 5 GB of the drive free. The page refuses a selection too large for that, before
 the build starts. A US state or a small country is fine; for several large states or a large country, build on a

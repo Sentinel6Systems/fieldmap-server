@@ -80,7 +80,7 @@ After that, the maps work with no internet.
 
 A server with less than 8 GB of RAM, such as a Raspberry Pi, builds in **Pi mode**. Step 3 says so. In Pi mode:
 
-- A build uses at most 2.5 GB of RAM. The page refuses a selection that needs more, before the build starts, and
+- A build uses at most 3.0 GB of RAM. The page refuses a selection that needs more, before the build starts, and
   says why (for example, regions too large for the base map). Build large regions on a bigger machine and copy the
   files over.
 - **Terrain Resolution** offers **Standard** only (30 m), and **Include World Overview** is not offered.

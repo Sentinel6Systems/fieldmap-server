@@ -71,7 +71,7 @@ class AdminServerTest(unittest.TestCase):
             self.assertFalse(self.m.pi_mode())
 
     def test_memory_cap_and_reserve(self):
-        self.assertEqual(self.m.build_memory_gb(), 2.5)
+        self.assertEqual(self.m.build_memory_gb(), 3.0)
         self.assertEqual(self.m.reserve_gb(), 5)
         self.write_env("BUILD_MEMORY=2048m\nBUILD_RESERVE_GB=8\n")
         self.assertEqual(self.m.build_memory_gb(), 2)
@@ -103,7 +103,7 @@ class AdminServerTest(unittest.TestCase):
         regions, layers, options = self.m.check_selection(self.selection())
         text = self.m.region_file(regions, options)
         self.assertIn('DEM_SOURCE="copernicus"', text)
-        self.assertIn('PLANETILER_MEMORY="1706m"', text)       # two thirds of 2.5 GB
+        self.assertIn('PLANETILER_MEMORY="2048m"', text)       # two thirds of 3.0 GB
         self.ram = 32
         regions, layers, options = self.m.check_selection(self.selection(terrain="10m"))
         self.assertIn('PLANETILER_MEMORY="16g"', self.m.region_file(regions, options))
@@ -125,7 +125,7 @@ class AdminServerTest(unittest.TestCase):
         self.assertEqual(e["memory_problem"], "")
         self.assertTrue(e["ok"])
         self.assertTrue(e["pi"])
-        self.assertEqual(e["memory_gb"], 2.5)
+        self.assertEqual(e["memory_gb"], 3.0)
 
     def test_large_base_map_is_refused_before_it_starts(self):
         e = self.estimate(self.selection(regions=["germany"]))
@@ -206,7 +206,7 @@ class AdminServerTest(unittest.TestCase):
         self.assertEqual(s["pause"]["stopped"], ["jellyfin"])
         self.assertTrue(s["pi"])
         self.assertTrue(s["sd_card"])
-        self.assertEqual(s["memory_gb"], 2.5)
+        self.assertEqual(s["memory_gb"], 3.0)
 
     def test_restore_runs_the_helper_only_when_something_is_stopped(self):
         calls = []

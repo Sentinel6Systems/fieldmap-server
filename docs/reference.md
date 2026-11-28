@@ -81,7 +81,7 @@ On a machine with less than 8 GB of RAM it builds in Pi mode (see [Builds on a R
 | `ADMIN_PORT=<port>` | A port of its own, for a machine with no web front |
 | `ADMIN_HOST=127.0.0.1` | Keep that port to the machine itself |
 | `PI_MODE=yes` / `no` | Pi mode on or off; without it, on below 8 GB of RAM |
-| `BUILD_MEMORY=2560m` | The most RAM a build may use; 2560m (2.5 GB) in Pi mode, no cap otherwise |
+| `BUILD_MEMORY=3072m` | The most RAM a build may use; 3072m (3.0 GB) in Pi mode, no cap otherwise |
 | `BUILD_RESERVE_GB=5` | Storage a build leaves free; 5 GB in Pi mode, 0 otherwise |
 | `FIELDMAP_PAUSE_UNITS="..."` | Services a build stops to free RAM and starts again afterwards |
 | `FIELDMAP_BUILD_USER=<user>` | `install-nginx.sh` only: the user the service runs as (default: the data folder's owner) |
@@ -96,12 +96,12 @@ restarted. `tools/make-admin-regions.py` (run in the tool container) rewrites `a
 Pi mode is on by itself on a machine with less than 8 GB of RAM (`PI_MODE=yes` or `no` in `.env` chooses). The build
 scripts (`scripts/lib.sh`) and the Map Builder then:
 
-- run every build container with `docker run --memory BUILD_MEMORY --memory-swap BUILD_MEMORY` (2560m by default;
+- run every build container with `docker run --memory BUILD_MEMORY --memory-swap BUILD_MEMORY` (3072m by default;
   one container runs at a time). A container that reaches it is stopped, and the log says it ran out of memory.
 - give Planetiler a Java heap of two thirds of that (`-Xmx`), and keep its node locations and other working data in
   memory-mapped files in `data/tmp` (`--storage=mmap --nodemap-type=sparsearray --nodemap-storage=mmap`). Its heap
   still grows with the region: the Map Builder refuses a base map (or printed map details) whose OpenStreetMap data is
-  larger than about 2.3 GB within 2.5 GB.
+  larger than about 3.0 GB within 3.0 GB.
 - compute the contour lines one elevation cell at a time (`CONTOUR_JOBS=1`) and keep GDAL's cache at 256 MB.
 - use the 30 m Copernicus data only: `DEM_SOURCE=usgs`, the detail step (1 m) and the world layer are refused.
 - leave `BUILD_RESERVE_GB` (5) of the drive free: every step's disk check adds it.
