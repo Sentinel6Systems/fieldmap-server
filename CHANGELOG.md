@@ -2,6 +2,12 @@
 
 ## Since v1.0.0
 
+- **Map: grid labels you can read at any zoom; arrow heads that stay.** The MGRS grid's digits now sit upright at
+  the top and left edges of the map instead of along the lines, and each 100 km square in view keeps its full name
+  (such as 18S XJ) in the middle of the part you see, however far you zoom in. Arrow heads are drawn as lines again,
+  sized for the zoom each time it changes and over the handle at the tip; the head drawn as an icon could fail to
+  show when zoomed out.
+
 - **Map: Add and groups in the Markers tab.** The tool bar that floated on the map is gone. **Add** at the top of
   the Markers tab puts a marker, arrow, route, circle, rectangle or polygon on the map, into the group chosen under
   **To**. **New Group** makes a group ("Water Sources", "Egress Routes"); each group's heading shows or hides it on

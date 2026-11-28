@@ -60,3 +60,15 @@ test("below the equator one zone runs on across it", () => {
   const fc = gridFC([[-75.2, -0.05], [-75.1, 0.05]], 13);
   assert.ok(lines(fc).some((f) => f.geometry.coordinates.some((c) => c[1] < 0) && f.geometry.coordinates.some((c) => c[1] > 0)));
 });
+
+test("zoomed in, the lines' digits sit on the view's top and left edges, and the square is named", () => {
+  const view = [[-75.2, 39.9], [-75.1, 40.0]];
+  const fc = gridFC(view, 13);
+  const edges = fc.features.filter((f) => f.properties.kind === "edge");
+  assert.ok(edges.some((f) => f.properties.anchor === "top" && Math.abs(f.geometry.coordinates[1] - 40.0) < 1e-6));
+  assert.ok(edges.some((f) => f.properties.anchor === "left" && Math.abs(f.geometry.coordinates[0] + 75.2) < 1e-6));
+  assert.ok(edges.every((f) => /^\d\d$/.test(f.properties.label)));
+  assert.ok(names(fc).some((n) => /^18S [A-Z]{2}$/.test(n)), names(fc).join(", "));
+  // At 100 m lines too: the square stays named.
+  assert.ok(names(gridFC([[-75.152, 39.95], [-75.148, 39.953]], 17)).length > 0);
+});

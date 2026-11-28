@@ -87,7 +87,7 @@ test("shared items: marker, arrow, route and area, as the app and the server kee
 
   const parts = (f) => sharedFC([f]).features.map((x) => x.properties.part);
   assert.deepEqual(parts(point("marker-0001", 10, 45)), ["point"]);
-  assert.deepEqual(parts(arrow), ["line", "tip", "label"]);
+  assert.deepEqual(parts(arrow), ["line", "head", "label"]);
   assert.deepEqual(parts(route), ["dashed", "vertex", "vertex", "vertex", "label"], "a road route is drawn with straight dashed legs");
   assert.deepEqual(parts(area), ["area", "label"]);
   const straight = { ...route, properties: { fieldmap: { ...route.properties.fieldmap, routing: "straight" } } };

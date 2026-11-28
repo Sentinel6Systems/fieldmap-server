@@ -7,7 +7,7 @@
 //   Polygon                                   an area (a shape of the map; not shared yet)
 // Each device draws a route's legs along roads or trails with its own routing data; the map
 // has none, so it draws them straight, dashed unless the route is a Straight Line one.
-import { inverse } from "./geo.js";
+import { inverse, destination } from "./geo.js";
 import { ageLook } from "./live.js";
 
 const FALLBACK = "#d7263d";
@@ -43,7 +43,18 @@ export function kindText(d) {
 }
 
 /** The shared items as features to draw. part: point, line, dashed, head, vertex, area, label. */
-export function sharedFC(features) {
+/** An arrow's head: the two lines back from its tip b, `length` metres long (the caller makes that
+ *  a fixed size on screen for the zoom), at most 40% of the arrow. */
+export function arrowHead(a, b, length) {
+  const inv = inverse(a.lat, a.lng, b.lat, b.lng);
+  const len = Math.min(length, inv.distance * 0.4);
+  const back = inv.finalBearing + 180;
+  const l1 = destination(b.lat, b.lng, back - 28, len), l2 = destination(b.lat, b.lng, back + 28, len);
+  return { type: "LineString", coordinates: [[l1.lng, l1.lat], [b.lng, b.lat], [l2.lng, l2.lat]] };
+}
+
+/** headLength(lat): how long an arrow's head is in metres there, for the zoom it is drawn at. */
+export function sharedFC(features, headLength = () => 400) {
   const out = [];
   const add = (geometry, props) => out.push({ type: "Feature", geometry, properties: props });
   for (const f of features) {
@@ -55,9 +66,8 @@ export function sharedFC(features) {
       add({ type: "Point", coordinates: pts[0] }, { ...base, part: "point", label: d.label });
     } else if (d.kind === "arrow") {
       const [[lon1, lat1], [lon2, lat2]] = pts;
-      const inv = inverse(lat1, lon1, lat2, lon2);
       add({ type: "LineString", coordinates: pts }, { ...base, part: "line" });
-      add({ type: "Point", coordinates: pts[1] }, { ...base, part: "tip", rotate: inv.finalBearing - 90 });
+      add(arrowHead({ lng: lon1, lat: lat1 }, { lng: lon2, lat: lat2 }, headLength(lat2)), { ...base, part: "head" });
       add({ type: "Point", coordinates: [(lon1 + lon2) / 2, (lat1 + lat2) / 2] }, { ...base, part: "label", label: d.label });
     } else if (d.kind === "route") {
       add({ type: "LineString", coordinates: pts }, { ...base, part: d.routing === "straight" ? "line" : "dashed" });
@@ -114,18 +124,6 @@ export function chevronImage(ratio = 1) {
   return g.getImageData(0, 0, size, size);
 }
 export const CHEVRON = "route-chevron";
-/** An arrow's head, the same size on screen at any zoom: a triangle pointing east with its tip
- *  at the right edge (icon-anchor "right"), turned to the arrow's bearing; recolored (sdf). */
-export function arrowheadImage(ratio = 1) {
-  const size = Math.round(20 * ratio);
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = size;
-  const g = canvas.getContext("2d");
-  g.fillStyle = "#fff";
-  g.beginPath(); g.moveTo(0, ratio); g.lineTo(size, size / 2); g.lineTo(0, size - ratio); g.lineTo(size * 0.25, size / 2); g.closePath(); g.fill();
-  return g.getImageData(0, 0, size, size);
-}
-export const ARROWHEAD = "arrow-head";
 // Live, gone quiet, and this browser's own location (placed by hand).
 export const PERSON_COLORS = { "live-person": "#00b4d8", "live-person-old": "#8a8f8a", "live-me": "#7a9a2e" };
 

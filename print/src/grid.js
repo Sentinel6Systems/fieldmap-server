@@ -1,6 +1,9 @@
 // The MGRS grid on the screen map (main.js): the lines for what is in view, as GeoJSON. Printed
 // sheets draw their own grid (render.js). The spacing follows the zoom: 100 m, 1 km, 10 km or
-// 100 km lines, and the grid zone lines (6 degrees by 8) when zoomed out further.
+// 100 km lines, and the grid zone lines (6 degrees by 8) when zoomed out further. Each line's
+// digits sit where it meets the top or left edge of the view (kind "edge", upright), and each
+// 100 km square in view has its full name ("18S XJ") in the middle of the part that is in view,
+// so that the square is known at any zoom.
 import { fromUTM, toUTM, squareId, bandFor } from "./utm.js";
 
 const STEPS = [100, 1000, 10000, 100000];
@@ -28,6 +31,18 @@ export function lineLabel(v, step) {
 
 const line = (coords, props) => ({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: props });
 const point = (coords, props) => ({ type: "Feature", geometry: { type: "Point", coordinates: coords }, properties: props });
+
+/** Where a run of [lon, lat] points crosses coordinate i (0 lon, 1 lat) = v, or null. */
+function crossing(pts, i, v) {
+  for (let k = 1; k < pts.length; k++) {
+    const p = pts[k - 1], q = pts[k];
+    if ((p[i] - v) * (q[i] - v) <= 0 && p[i] !== q[i]) {
+      const t = (v - p[i]) / (q[i] - p[i]);
+      return [p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])];
+    }
+  }
+  return null;
+}
 
 /** Splits a run of [lon, lat] points into the parts inside west..east, cut at the edges. */
 function clipLon(pts, west, east) {
@@ -106,21 +121,24 @@ export function gridFC(bounds, zoom) {
     for (let e = Math.ceil(minE / step) * step; e <= maxE; e += step) {
       const pts = [];
       for (let i = 0; i <= SEGS; i++) pts.push(at(e, minN + ((maxN - minN) * i) / SEGS));
-      for (const part of clipLon(pts, zw, ze)) features.push(line(part, { kind: kind(e), label: lineLabel(e, step) }));
+      for (const part of clipLon(pts, zw, ze)) features.push(line(part, { kind: kind(e) }));
+      const top = crossing(pts, 1, n);
+      if (lineLabel(e, step) && top && top[0] >= zw && top[0] <= ze) features.push(point(top, { kind: "edge", anchor: "top", label: lineLabel(e, step) }));
     }
     for (let nn = Math.ceil(minN / step) * step; nn <= maxN; nn += step) {
       const pts = [];
       for (let i = 0; i <= SEGS; i++) pts.push(at(minE + ((maxE - minE) * i) / SEGS, nn));
-      for (const part of clipLon(pts, zw, ze)) features.push(line(part, { kind: kind(nn), label: lineLabel(nn, step) }));
+      for (const part of clipLon(pts, zw, ze)) features.push(line(part, { kind: kind(nn) }));
+      const left = crossing(pts, 0, zw);
+      if (lineLabel(nn, step) && left && left[1] >= s && left[1] <= n) features.push(point(left, { kind: "edge", anchor: "left", label: lineLabel(nn, step) }));
     }
-    // The 100 km square letters, where the squares are large enough on screen to hold them.
-    if (step >= 10000) {
-      for (let e = Math.floor(minE / 100000) * 100000; e < maxE; e += 100000) {
-        for (let nn = Math.floor(minN / 100000) * 100000; nn < maxN; nn += 100000) {
-          const c = at(e + 50000, nn + 50000);
-          if (c[0] < zw || c[0] > ze || c[1] < s || c[1] > n || e < 100000 || e >= 900000) continue;
-          features.push(point(c, { kind: "name", label: `${zone}${bandFor(c[1])} ${squareId(zone, e, nn < 0 ? nn + 10000000 : nn)}` }));
-        }
+    // The 100 km squares' names, each in the middle of the part of the square that is in view.
+    for (let e = Math.floor(minE / 100000) * 100000; e < maxE; e += 100000) {
+      for (let nn = Math.floor(minN / 100000) * 100000; nn < maxN; nn += 100000) {
+        if (e < 100000 || e >= 900000) continue;
+        const c = at((Math.max(e, minE) + Math.min(e + 100000, maxE)) / 2, (Math.max(nn, minN) + Math.min(nn + 100000, maxN)) / 2);
+        if (c[0] < zw || c[0] > ze || c[1] < s || c[1] > n) continue;
+        features.push(point(c, { kind: "name", label: `${zone}${bandFor(c[1])} ${squareId(zone, e, nn < 0 ? nn + 10000000 : nn)}` }));
       }
     }
   }

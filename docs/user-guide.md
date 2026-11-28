@@ -136,8 +136,8 @@ The panel beside the map has these tabs:
   switches **Device Locations** and **Shared Markers**, and **Map Features**, which switches parts of the map on or
   off (woodland, roads, contour lines, grid lines and so on). **Show All Layers** switches everything back on.
   Changes apply on screen and on paper. **MGRS Grid Lines** draws the grid on the map too: 100 km, 10 km, 1 km or
-  100 m lines as you zoom in, labeled with their numbers and the 100 km square letters, and the grid zones (such
-  as 18T) when zoomed far out.
+  100 m lines as you zoom in. Each line's digits are at the top and left edges of the map, and the 100 km
+  square's name (such as 18S XJ) stays in view at every zoom; zoomed far out, it shows the grid zones (such as 18T).
   While location sharing is on, **Set My Location** is under the switches.
 - **Markers**: **Add** puts markers, arrows, routes and shapes on the map, and the groups keep them (next sections).
 - **Print**: print sheets and atlases (see [Print a map](#print-a-map)).

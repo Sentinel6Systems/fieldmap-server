@@ -5,7 +5,7 @@ import { renderSheet, atlasCells } from "./render.js";
 import { layout, footprintMeters, SCALES, PAPERS, ATLAS_GRIDS } from "./layout.js";
 import { zoomForScale, viewportBounds, inverse, fmtDistance, fmtBearing, project, unproject } from "./geo.js";
 import { toMGRS } from "./utm.js";
-import { gridFC } from "./grid.js";
+import { gridFC, metresPerPixel } from "./grid.js";
 import { arrowInfo as arrowInfoFor } from "./features.js";
 import { PALETTE, swatchRow } from "./palette.js";
 import { toGeoJSON, fromGeoJSON, fileName } from "./drawings.js";
@@ -14,7 +14,7 @@ import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groups
 import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
 import { initWmmNotice } from "./wmm.js";
 import { startLive, conversations, partnerOf, ageText, statusText, cleanText, MAX_NAME, BASE } from "./live.js";
-import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, SPEEDS, MAX_ROUTE_POINTS, shareableShape, chevronImage, CHEVRON, arrowheadImage, ARROWHEAD } from "./shared.js";
+import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, SPEEDS, MAX_ROUTE_POINTS, shareableShape, chevronImage, CHEVRON, arrowHead } from "./shared.js";
 import { createRouter, routesFC, routeStats, durationText, ROAD_CLASSES } from "./routing.js";
 
 // The map at /map/: what the devices share (live.js, shared.js), drawing, terrain analysis, and
@@ -233,14 +233,18 @@ function visibleCenter() {
 map.on("load", () => {
   // The MGRS grid (grid.js), under everything drawn on the map.
   map.addSource("grid", { type: "geojson", data: emptyFC() });
-  map.addLayer({ id: "grid-line", type: "line", source: "grid", filter: ["!=", ["get", "kind"], "name"],
+  map.addLayer({ id: "grid-line", type: "line", source: "grid", filter: ["==", ["geometry-type"], "LineString"],
     paint: { "line-color": "#1f5fbf", "line-opacity": 0.7, "line-width": ["match", ["get", "kind"], "minor", 0.8, 1.6] } });
-  map.addLayer({ id: "grid-label", type: "symbol", source: "grid", filter: ["all", ["!=", ["get", "kind"], "name"], ["!=", ["get", "label"], ""]],
-    layout: { "symbol-placement": "line", "symbol-spacing": 400, "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 11 },
-    paint: { "text-color": "#1f5fbf", "text-halo-color": "#fff", "text-halo-width": 1.5 } });
+  // Each line's digits at the top and left edges of the view, upright.
+  map.addLayer({ id: "grid-label", type: "symbol", source: "grid", filter: ["==", ["get", "kind"], "edge"],
+    layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 12,
+      "text-anchor": ["get", "anchor"], "text-offset": ["match", ["get", "anchor"], "top", ["literal", [0, 0.3]], ["literal", [0.3, 0]]],
+      "text-allow-overlap": true, "text-ignore-placement": true },
+    paint: { "text-color": "#1f5fbf", "text-halo-color": "#fff", "text-halo-width": 2 } });
+  // The 100 km square's name (18S XJ), in view at every zoom.
   map.addLayer({ id: "grid-name", type: "symbol", source: "grid", filter: ["==", ["get", "kind"], "name"],
-    layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 13 },
-    paint: { "text-color": "#1f5fbf", "text-halo-color": "#fff", "text-halo-width": 1.5 } });
+    layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 15, "text-allow-overlap": true },
+    paint: { "text-color": "#1f5fbf", "text-halo-color": "#fff", "text-halo-width": 2.5 } });
   map.on("moveend", drawGrid);
 
   map.addSource("footprint", { type: "geojson", data: emptyFC() });
@@ -298,11 +302,13 @@ map.on("load", () => {
     id: "arrow-ends", type: "circle", source: "arrows", filter: ["==", ["get", "part"], "end"],
     paint: { "circle-radius": 7, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 3 },
   });
-  // The head, over the handle at the tip, so that it shows at any zoom.
-  map.addLayer({ id: "arrows-tip", type: "symbol", source: "arrows", filter: ["==", ["get", "part"], "tip"],
-    layout: { "icon-image": ARROWHEAD, "icon-anchor": "right", "icon-rotate": ["get", "rotate"], "icon-rotation-alignment": "map",
-      "icon-allow-overlap": true, "icon-ignore-placement": true },
-    paint: { "icon-color": ["get", "color"], "icon-halo-color": "#fff", "icon-halo-width": 1.5 } });
+  // The head, over the handle at the tip; its size on screen is kept at every zoom (headLength).
+  map.addLayer({ id: "arrows-head-halo", type: "line", source: "arrows", filter: ["==", ["get", "part"], "head"],
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#fff", "line-width": 7 } });
+  map.addLayer({ id: "arrows-head", type: "line", source: "arrows", filter: ["==", ["get", "part"], "head"],
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3.5 } });
+  // The heads are drawn again for the new zoom.
+  map.on("zoomend", () => { map.getSource("arrows").setData(arrowsFC()); drawLive(); });
 
   map.addSource("routes", { type: "geojson", data: emptyFC() });
   const rpart = (...parts) => ["match", ["get", "part"], parts, true, false];
@@ -340,16 +346,12 @@ map.on("load", () => {
   map.addSource("live", { type: "geojson", data: emptyFC() });
   const part = (...parts) => ["match", ["get", "part"], parts, true, false];
   map.addLayer({ id: "live-area", type: "fill", source: "live", filter: part("area"), paint: { "fill-color": ["get", "color"], "fill-opacity": 0.12 } });
-  map.addLayer({ id: "live-halo", type: "line", source: "live", filter: part("line", "dashed", "area"),
+  map.addLayer({ id: "live-halo", type: "line", source: "live", filter: part("line", "head", "dashed", "area"),
     layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#fff", "line-width": 6, "line-opacity": 0.6 } });
-  map.addLayer({ id: "live-line", type: "line", source: "live", filter: part("line", "area"),
+  map.addLayer({ id: "live-line", type: "line", source: "live", filter: part("line", "head", "area"),
     layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3 } });
   map.addLayer({ id: "live-dashed", type: "line", source: "live", filter: part("dashed"),
     layout: { "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3, "line-dasharray": [2, 1.5] } });
-  map.addLayer({ id: "live-tip", type: "symbol", source: "live", filter: part("tip"),
-    layout: { "icon-image": ARROWHEAD, "icon-anchor": "right", "icon-rotate": ["get", "rotate"], "icon-rotation-alignment": "map",
-      "icon-allow-overlap": true, "icon-ignore-placement": true },
-    paint: { "icon-color": ["get", "color"], "icon-halo-color": "#fff", "icon-halo-width": 1.5 } });
   map.addLayer({ id: "live-vertex", type: "circle", source: "live", filter: part("vertex"),
     paint: { "circle-radius": 4, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
   map.addLayer({ id: "live-point", type: "circle", source: "live", filter: part("point"),
@@ -603,13 +605,14 @@ function addMarker(ll) {
 }
 
 /* ---------- data: arrows ---------- */
+/** An arrow head's length in metres at a latitude: 18 px on screen at the map's zoom. */
+const headLength = (lat) => 18 * metresPerPixel(lat, map.getZoom());
 function arrowsFC() {
   const feats = [];
   for (const a of shown(arrows)) {
-    const inv = inverse(a.a.lat, a.a.lng, a.b.lat, a.b.lng);
     const props = { id: a.id, color: a.color, label: arrowLabel(a) };
     feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: [[a.a.lng, a.a.lat], [a.b.lng, a.b.lat]] }, properties: { ...props, part: "line" } });
-    feats.push({ type: "Feature", geometry: { type: "Point", coordinates: [a.b.lng, a.b.lat] }, properties: { ...props, part: "tip", label: "", rotate: inv.finalBearing - 90 } });
+    feats.push({ type: "Feature", geometry: arrowHead(a.a, a.b, headLength(a.b.lat)), properties: { ...props, part: "head", label: "" } });
     // One label at the midpoint, rotated to the on-screen angle of the shaft and kept upright.
     const pa = project(a.a.lng, a.a.lat, 0), pb = project(a.b.lng, a.b.lat, 0);
     let rot = (Math.atan2(pb.y - pa.y, pb.x - pa.x) * 180) / Math.PI;
@@ -1286,7 +1289,7 @@ function showSheet(opening = false) {
 const people = new Map();            // uid -> name, from locations and messages
 let live = null;
 let livePopup = null;
-const SHARED_LAYERS = ["live-area", "live-halo", "live-line", "live-dashed", "live-tip", "live-vertex", "live-point", "live-label"];
+const SHARED_LAYERS = ["live-area", "live-halo", "live-line", "live-dashed", "live-vertex", "live-point", "live-label"];
 const PEOPLE_LAYERS = ["people-symbol", "people-name"];
 
 // The devices' symbols, made again whenever a style change has dropped them.
@@ -1295,7 +1298,6 @@ map.on("styleimagemissing", (e) => {
   const ratio = Math.max(1, Math.round(window.devicePixelRatio || 1));
   if (fill && !map.hasImage(e.id)) map.addImage(e.id, personImage(fill, ratio), { pixelRatio: ratio });
   if (e.id === CHEVRON && !map.hasImage(e.id)) map.addImage(e.id, chevronImage(ratio), { pixelRatio: ratio, sdf: true });
-  if (e.id === ARROWHEAD && !map.hasImage(e.id)) map.addImage(e.id, arrowheadImage(ratio), { pixelRatio: ratio, sdf: true });
 });
 
 /** The live layers as they are now; also every few seconds, so that locations age between answers.
@@ -1306,7 +1308,7 @@ function drawLive() {
   const st = live && live.status === "on" ? live.state : null;
   const info = (live && live.info) || {};
   try {
-    map.getSource("live").setData(st ? sharedFC([...st.markers.values()].filter((f) => !itemFromFeature(f))) : emptyFC());
+    map.getSource("live").setData(st ? sharedFC([...st.markers.values()].filter((f) => !itemFromFeature(f)), headLength) : emptyFC());
     const others = st ? st.positions.filter((p) => p.uid !== live.uid) : [];
     map.getSource("people").setData(st ? peopleFC(others, +info.interval || 5, +info.stale || 120, (Date.now() - st.at) / 1000) : emptyFC());
     for (const id of SHARED_LAYERS) map.setLayoutProperty(id, "visibility", state.layers.shared !== false ? "visible" : "none");
