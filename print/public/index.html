@@ -13,10 +13,11 @@
 <script src="nav.js"></script>
 <div id="map"></div>
 
-<!-- While a tool of the tool bar is in use: what to do next. -->
+<!-- While something is being added (Markers > Add): what to tap next. -->
 <div id="mode-bar" class="mode-bar" hidden>
   <span id="mode-hint"></span>
   <button id="finish-shape" class="primary compact" hidden>Finish Shape</button>
+  <button id="mode-cancel" class="secondary compact">Cancel</button>
 </div>
 
 <div id="no-maps" class="notice" hidden>
@@ -30,6 +31,7 @@
       <button role="tab" data-tab="layers" aria-selected="true">Layers</button>
       <button role="tab" data-tab="markers" aria-selected="false">Markers</button>
       <button role="tab" data-tab="print" aria-selected="false">Print</button>
+      <button role="tab" data-tab="terrain" aria-selected="false" hidden>Terrain</button>
     </nav>
     <button id="panel-toggle" class="icon" title="Show or Hide Panel">▾</button>
   </div>
@@ -53,6 +55,7 @@
       <h2>Shared</h2>
       <div id="live-switches"></div>
       <div id="live-status" class="hint"></div>
+      <button id="add-me" class="secondary" type="button" title="Tap the map where you are. Your location is shared with all devices." hidden>Set My Location</button>
     </div>
 
     <details id="layers" class="layers">
@@ -63,11 +66,10 @@
     </details>
   </section>
 
-  <!-- Terrain Analysis: a tool, opened from the tool bar, not a tab. Close goes back to the tab. -->
-  <section id="tab-terrain" class="tab" role="region" aria-label="Terrain Analysis" hidden>
+  <!-- Terrain Analysis: its tab is there only when the server has elevation data. -->
+  <section id="tab-terrain" class="tab" role="tabpanel" hidden>
     <div class="section-head">
       <h2>Terrain Analysis <span id="terrain-summary" class="hint"></span></h2>
-      <button id="terrain-close" class="secondary compact">Close</button>
     </div>
     <div id="terrain" hidden>
       <div id="terrain-overlay-switch"></div>
@@ -76,37 +78,36 @@
   </section>
 
   <section id="tab-markers" class="tab features" role="tabpanel" hidden>
-    <div class="section-head">
-      <h2>Markers &amp; Drawings</h2>
-      <button id="clear-all" class="secondary danger compact" title="Clear all markers, arrows, routes and shapes in this browser">Clear All</button>
+    <!-- Add: what can be put on the map, into the group chosen beside it. -->
+    <div class="add-row">
+      <div class="add-menu">
+        <button id="add-button" class="primary" type="button" aria-haspopup="menu" aria-expanded="false">Add ▾</button>
+        <div id="add-menu" class="menu" role="menu" hidden></div>
+      </div>
+      <label class="inline">To <select id="add-group" aria-label="Add to group"></select></label>
     </div>
-    <div class="hint">Add them with the tool bar on the map. Shared ones are kept on the server for all devices; the others in this browser.</div>
+    <div id="group-list"></div>
+    <button id="new-group" class="secondary" type="button">New Group</button>
+    <div class="row2 file-buttons">
+      <button id="load-drawings" class="secondary" title="Add the markers, arrows, routes and shapes from a saved file to the map, in their groups.">Import</button>
+      <button id="save-drawings" class="secondary" title="Save every group to one GeoJSON file. The map, layers and print settings are not included.">Export All</button>
+    </div>
+    <input id="load-file" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
+    <div id="file-hint" class="hint">Export a group with its ⤓ button, or all of them. A file from other map software comes in as a group of its own. Imported items are not shared until you share them.</div>
+    <h3>Settings</h3>
     <label class="inline">Units
       <select id="units">
         <option value="imperial">Imperial (ft, mi, acres)</option>
         <option value="metric">Metric (m, km, ha)</option>
       </select>
     </label>
-    <div class="hint">Default Color</div>
+    <div class="hint">Color for New Items</div>
     <div id="new-color"></div>
-    <h3>Markers</h3>
-    <div id="marker-list"></div>
-    <h3>Arrows</h3>
-    <div id="arrow-list"></div>
-    <h3>Routes</h3>
-    <div id="route-list"></div>
-    <h3>Shapes</h3>
-    <div id="shape-list"></div>
-    <div class="row2 file-buttons">
-      <button id="save-drawings" class="secondary" title="Save the markers, arrows, routes and shapes to a GeoJSON file. The map, layers and print settings are not included.">Export Drawings</button>
-      <button id="load-drawings" class="secondary" title="Add the markers, arrows, routes and shapes from a saved file to the map.">Import Drawings</button>
-    </div>
-    <input id="load-file" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
-    <div id="file-hint" class="hint">Export makes a file of them to keep a copy or to use in another browser. Imported items are not shared until you share them.</div>
     <label class="check">
       <input id="shape-measure" type="checkbox">
       <span>Show Measurements</span>
     </label>
+    <button id="clear-all" class="secondary danger" title="Delete all markers, arrows, routes and shapes kept in this browser">Clear All</button>
   </section>
 
   <section id="tab-print" class="tab" role="tabpanel" hidden>

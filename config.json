@@ -9,7 +9,7 @@
     },
     "frontPage": "ui/maps.tmpl",
     "formatOptions": {
-      "jpeg": { "quality": 60 }
+      "jpeg": { "quality": 50 }
     },
     "maxScaleFactor": 2,
     "minRendererPoolSizes": [0, 0],

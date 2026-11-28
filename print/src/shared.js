@@ -7,7 +7,7 @@
 //   Polygon                                   an area (a shape of the map; not shared yet)
 // Each device draws a route's legs along roads or trails with its own routing data; the map
 // has none, so it draws them straight, dashed unless the route is a Straight Line one.
-import { inverse, destination } from "./geo.js";
+import { inverse } from "./geo.js";
 import { ageLook } from "./live.js";
 
 const FALLBACK = "#d7263d";
@@ -56,11 +56,8 @@ export function sharedFC(features) {
     } else if (d.kind === "arrow") {
       const [[lon1, lat1], [lon2, lat2]] = pts;
       const inv = inverse(lat1, lon1, lat2, lon2);
-      const head = Math.min(Math.max(inv.distance * 0.08, 15), 400);
-      const back = inv.finalBearing + 180;
-      const l1 = destination(lat2, lon2, back - 25, head), l2 = destination(lat2, lon2, back + 25, head);
       add({ type: "LineString", coordinates: pts }, { ...base, part: "line" });
-      add({ type: "LineString", coordinates: [[l1.lng, l1.lat], [lon2, lat2], [l2.lng, l2.lat]] }, { ...base, part: "head" });
+      add({ type: "Point", coordinates: pts[1] }, { ...base, part: "tip", rotate: inv.finalBearing - 90 });
       add({ type: "Point", coordinates: [(lon1 + lon2) / 2, (lat1 + lat2) / 2] }, { ...base, part: "label", label: d.label });
     } else if (d.kind === "route") {
       add({ type: "LineString", coordinates: pts }, { ...base, part: d.routing === "straight" ? "line" : "dashed" });
@@ -117,6 +114,18 @@ export function chevronImage(ratio = 1) {
   return g.getImageData(0, 0, size, size);
 }
 export const CHEVRON = "route-chevron";
+/** An arrow's head, the same size on screen at any zoom: a triangle pointing east with its tip
+ *  at the right edge (icon-anchor "right"), turned to the arrow's bearing; recolored (sdf). */
+export function arrowheadImage(ratio = 1) {
+  const size = Math.round(20 * ratio);
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext("2d");
+  g.fillStyle = "#fff";
+  g.beginPath(); g.moveTo(0, ratio); g.lineTo(size, size / 2); g.lineTo(0, size - ratio); g.lineTo(size * 0.25, size / 2); g.closePath(); g.fill();
+  return g.getImageData(0, 0, size, size);
+}
+export const ARROWHEAD = "arrow-head";
 // Live, gone quiet, and this browser's own location (placed by hand).
 export const PERSON_COLORS = { "live-person": "#00b4d8", "live-person-old": "#8a8f8a", "live-me": "#7a9a2e" };
 
@@ -142,13 +151,16 @@ const r6 = (v) => Math.round(v * 1e6) / 1e6;
 /** A shared feature as an item of the map's lists, or null:
  *  { kind: "marker", item: { id, lng, lat } }, { kind: "arrow", item: { id, a, b } },
  *  { kind: "route", item: { id, points, routing, speedMph } },
- *  { kind: "shape", item: { id, type, center, radius } | { id, type, points } }. */
+ *  { kind: "shape", item: { id, type, center, radius } | { id, type, points } }; with group when it has one. */
 export function itemFromFeature(f) {
   const d = describe(f);
   if (!d) return null;
   const p = f.properties || {};
   const fm = p.fieldmap && typeof p.fieldmap === "object" ? p.fieldmap : {};
   const common = { id: String(f.id), label: d.label, color: d.color, shared: true, by: typeof p.by === "string" ? p.by : "", updated: typeof p.updated === "string" ? p.updated : "" };
+  // The group it is kept in (the web map's groups; the app keeps none yet).
+  const group = typeof fm.group === "string" ? fm.group.replace(/\s+/g, " ").trim().slice(0, 30) : "";
+  if (group) common.group = group;
   const [first, second] = d.points;
   if (d.kind === "marker") return { kind: "marker", item: { ...common, lng: first[0], lat: first[1] } };
   if (d.kind === "arrow") return { kind: "arrow", item: { ...common, a: ll(first), b: ll(second) } };
@@ -171,6 +183,7 @@ export function itemFromFeature(f) {
 export function featureFromItem(it, kind, by, now = new Date(), ring = null) {
   const label = String(it.label || "").slice(0, 30);
   const fieldmap = { kind: kind === "shape" ? it.type : kind, label, color: it.color, id: it.id, shared: true };
+  if (it.group) fieldmap.group = it.group;
   let geometry;
   if (kind === "marker") geometry = { type: "Point", coordinates: [it.lng, it.lat] };
   else if (kind === "arrow") geometry = { type: "LineString", coordinates: [pos(it.a), pos(it.b)] };
@@ -190,7 +203,7 @@ export function featureFromItem(it, kind, by, now = new Date(), ring = null) {
 }
 
 /** What of an item the server holds: a change to any of it is sent. */
-export const itemKey = (it) => JSON.stringify([it.lng, it.lat, it.a, it.b, it.label, it.color, it.type, it.center, it.radius, it.points, it.routing, it.speedMph]);
+export const itemKey = (it) => JSON.stringify([it.lng, it.lat, it.a, it.b, it.label, it.color, it.type, it.center, it.radius, it.points, it.routing, it.speedMph, it.group]);
 
 /** Whether the server can keep a shape: its outline has at most MAX_AREA_POINTS points. */
 export const shareableShape = (ring) => ring.length <= MAX_AREA_POINTS;

@@ -130,19 +130,21 @@ Open **Map**. Drag to move the map, scroll or pinch to zoom, and right-drag or t
 it. The compass button puts north back at the top. The address in the browser keeps the place and the zoom, so you
 can bookmark it.
 
-The tool bar along the map has **Add Marker**, **Add Arrow**, **New Route**, **Circle**, **Rectangle**,
-**Polygon**, **Terrain Analysis** (when the server has elevation data) and **Set My Location** (while location
-sharing is on). On a phone it shows icons only. While a tool is active, a hint above the map says what to tap next;
-Esc cancels the tool.
-
-The panel beside the map has three tabs:
+The panel beside the map has these tabs:
 
 - **Layers**: **Map Style** (for example a light map for the day or a dark one for the night), the **Shared**
   switches **Device Locations** and **Shared Markers**, and **Map Features**, which switches parts of the map on or
   off (woodland, roads, contour lines, grid lines and so on). **Show All Layers** switches everything back on.
-  Changes apply on screen and on paper.
-- **Markers**: your markers, arrows, routes and shapes (next sections).
+  Changes apply on screen and on paper. **MGRS Grid Lines** draws the grid on the map too: 100 km, 10 km, 1 km or
+  100 m lines as you zoom in, labeled with their numbers and the 100 km square letters, and the grid zones (such
+  as 18T) when zoomed far out.
+  While location sharing is on, **Set My Location** is under the switches.
+- **Markers**: **Add** puts markers, arrows, routes and shapes on the map, and the groups keep them (next sections).
 - **Print**: print sheets and atlases (see [Print a map](#print-a-map)).
+- **Terrain**: viewshed and radio coverage, when the server has elevation data (see
+  [Use the terrain tools](#use-the-terrain-tools)).
+
+While you add something, a hint above the map says what to tap next; **Cancel** or Esc stops.
 
 **ATAK, WinTAK, iTAK and other map apps** can use the server's maps as an online tile source:
 
@@ -156,28 +158,43 @@ The addresses work for devices that reach the server the same way your browser d
 
 ## Markers, arrows and shapes
 
-1. Open the **Markers** tab and pick a color in **Default Color**.
-2. Press a tool and follow the hint:
-   - **Add Marker**: tap the map. Markers are named P1, P2, and so on.
-   - **Add Arrow**: tap the start, then the end.
+1. Open the **Markers** tab. Under **To**, choose the group the new item goes into (or **Ungrouped**).
+2. Press **Add** and choose what to add, then follow the hint above the map:
+   - **Marker**: tap the map. Markers are named P1, P2, and so on.
+   - **Arrow**: tap the start, then the end.
+   - **Route**: see [Routes](#routes).
    - **Circle**: tap the center, then the edge. You can type an exact **Radius** in its row later.
    - **Rectangle**: tap one corner, then the opposite corner.
    - **Polygon**: tap each corner. To finish, tap the first corner, press Enter, or press **Finish Shape**.
 3. Drag an item (or an arrow's end) to move it.
 
-Each item has a row in **Markers & Drawings** with its name, **Show on Map**, a delete button and **Share with All
-Devices**. **Units** switches between feet and miles or meters and kilometers. **Show Measurements** puts lengths
-and areas on the map. **Clear All** clears this browser's items; shared items stay.
+Each item has a row in its group: its color and kind (press it for another color), its name, **Show on Map**, a
+delete button, **Group** (to move it to another group) and **Share with All Devices**. Under **Settings**, **Units**
+switches between feet and miles or meters and kilometers, **Color for New Items** sets the color of what you add
+next, and **Show Measurements** puts lengths and areas on the map. **Clear All** deletes this browser's items in
+every group; shared items stay.
 
-Items you don't share are kept only in this browser. To keep them, or move them to another computer, use **Export
-Drawings** and **Import Drawings**. The file is GeoJSON, which other map software and the Fieldmap app can also
-open. Shared items are kept on the server (see [Location sharing](#location-sharing)).
+### Groups
+
+Groups keep items together for a task, for example **Water Sources**, **Food Sources**, **Egress Routes** or
+**Danger Areas**.
+
+- **New Group** makes one; what you add next goes into it.
+- The switch in a group's heading shows or hides the whole group, on the map and on printed sheets.
+- **▸** / **▾** folds the group's list away or opens it again.
+- **⤓** exports the group to a file, **✎** renames it, and **✕** deletes it with everything in it.
+
+Items you don't share are kept only in this browser. To keep them, or move them to another computer, export them:
+**⤓** for one group, **Export All** for every group. **Import** adds a file's items back in their groups; a GeoJSON
+file from other map software comes in as a group named after the file. The file is GeoJSON, which other map
+software and the Fieldmap app can also open. Shared items are kept on the server and carry their group's name (see
+[Location sharing](#location-sharing)); the Fieldmap app does not show groups yet.
 
 ## Routes
 
 A route is a line through up to 30 points, along roads and trails or straight between the points.
 
-1. Press **New Route** and tap the points of the route in order.
+1. Press **Add**, then **Route**, and tap the points of the route in order.
 2. To finish, tap the last point again, press Enter, or press **Finish Route**. The route is named R1, R2, and so on.
 3. In the route's row, choose the **Route Type** (**Driving**, **Walking** or **Straight Line**) and the **Speed**
    used for the time estimate.
@@ -228,8 +245,8 @@ an internet connection on the server.
 
 ## Use the terrain tools
 
-If the server has elevation data (the elevation layer in the Map Builder), the tool bar has **Terrain Analysis**.
-It opens in the panel; **Close** returns to the tabs, and **Analysis Overlay** shows or hides the result. Everything
+If the server has elevation data (the elevation layer in the Map Builder), the panel has a **Terrain** tab.
+**Analysis Overlay** in it shows or hides the result. Everything
 runs in the browser, with no internet.
 
 1. Under **Analysis**, choose **Viewshed** (what can be seen from a point) or **Radio Coverage** (where a VHF or UHF
@@ -305,13 +322,14 @@ own app or browser.
 1. **On the server:** **Admin** › **Devices**, then **Enable** under **Location Sharing and Messages** (step 2).
    **Active Devices** lists who is sharing now.
 2. **In the app:** **Menu** › **Location Sharing**, enter a **Display Name**, and press **Start Sharing**.
-3. **In a browser:** open **Messages**, enter a **Display Name**, then press **Set My Location** on the map's tool
-   bar and tap where you are (drag the diamond to move it). **Stop Sharing** on the Messages page takes it off.
+3. **In a browser:** open **Messages**, enter a **Display Name**, then press **Set My Location** in the map's
+   **Layers** tab and tap where you are (drag the diamond to move it). **Stop Sharing** on the Messages page takes it off.
 4. **To share an item,** tick **Share with All Devices** in its row (on the map) or its panel (in the app). While
    location sharing is on, new items you draw in the browser are shared straight away. Unticking takes the item
    off all devices and keeps it in your browser; deleting a shared item removes it everywhere.
 
-In **Layers**, the **Device Locations** and **Shared Markers** switches show or hide what others share.
+In **Layers**, the **Device Locations** and **Shared Markers** switches show or hide what others share. They are
+grayed out while location sharing is disabled on the server.
 
 On the local network every device can take part; from the internet, only paired devices with remote connectivity
 enabled. The server does not store locations: a location disappears about two minutes after a device stops

@@ -3,8 +3,9 @@ import * as maplibregl from "maplibre-gl";
 maplibregl.setWorkerUrl(new URL("maplibre-gl-worker.js", document.baseURI).href);
 import { renderSheet, atlasCells } from "./render.js";
 import { layout, footprintMeters, SCALES, PAPERS, ATLAS_GRIDS } from "./layout.js";
-import { zoomForScale, viewportBounds, inverse, destination, fmtDistance, fmtBearing, project, unproject } from "./geo.js";
+import { zoomForScale, viewportBounds, inverse, fmtDistance, fmtBearing, project, unproject } from "./geo.js";
 import { toMGRS } from "./utm.js";
+import { gridFC } from "./grid.js";
 import { arrowInfo as arrowInfoFor } from "./features.js";
 import { PALETTE, swatchRow } from "./palette.js";
 import { toGeoJSON, fromGeoJSON, fileName } from "./drawings.js";
@@ -13,7 +14,7 @@ import { SECTIONS, OWN_CONTROLS, DEFAULTS as LAYER_DEFAULTS, applyLayers, groups
 import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
 import { initWmmNotice } from "./wmm.js";
 import { startLive, conversations, partnerOf, ageText, statusText, cleanText, MAX_NAME, BASE } from "./live.js";
-import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, SPEEDS, MAX_ROUTE_POINTS, shareableShape, chevronImage, CHEVRON } from "./shared.js";
+import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, SPEEDS, MAX_ROUTE_POINTS, shareableShape, chevronImage, CHEVRON, arrowheadImage, ARROWHEAD } from "./shared.js";
 import { createRouter, routesFC, routeStats, durationText, ROAD_CLASSES } from "./routing.js";
 
 // The map at /map/: what the devices share (live.js, shared.js), drawing, terrain analysis, and
@@ -26,6 +27,7 @@ const LS = {
   arrows: "fieldmap.print.arrows",
   shapes: "fieldmap.print.shapes",
   routes: "fieldmap.print.routes",
+  groups: "fieldmap.print.groups",
   settings: "fieldmap.print.settings",
 };
 
@@ -106,6 +108,16 @@ let markers = JSON.parse(localStorage.getItem(LS.markers) || "[]");
 let arrows = JSON.parse(localStorage.getItem(LS.arrows) || "[]");
 let shapes = JSON.parse(localStorage.getItem(LS.shapes) || "[]");
 let routes = JSON.parse(localStorage.getItem(LS.routes) || "[]");
+// The groups the items are kept in ("Water Sources", "Egress Routes"), in the order they were
+// made: [{ name, hidden, closed }]. An item's group is its "group" (none: Ungrouped, name "").
+// A hidden group is off the map and off the printed sheets. Kept in this browser; a shared item
+// carries its group's name to the other devices.
+let groups = JSON.parse(localStorage.getItem(LS.groups) || "[]");
+const KINDS = ["marker", "arrow", "route", "shape"];
+const listOf = (kind) => ({ marker: markers, arrow: arrows, route: routes, shape: shapes }[kind]);
+function setList(kind, list) {
+  if (kind === "marker") markers = list; else if (kind === "arrow") arrows = list; else if (kind === "route") routes = list; else shapes = list;
+}
 let config = {};
 // null | "marker" | "arrow-start" | "arrow-end" | "route" | "circle-center" | "circle-edge" | "rect-start" | "rect-end" | "polygon" | "me"
 let mode = null;
@@ -114,11 +126,10 @@ let pendingRoute = null;    // [{lng,lat}, ...] while a route's points are tappe
 let pendingShape = null;    // {type, center | points} while a shape is being drawn
 let selected = null;        // {kind:"marker"|"arrow"|"route"|"shape", id}
 let paletteOpenFor = null;  // id of the row whose swatches are open
-// The panel's tab: layers | markers | print (or the Terrain Analysis view). The sheet is on the map only on the Print tab.
+// The panel's tab: layers | markers | print | terrain. The sheet is on the map only on the Print tab.
 let tab = qs.has("print") ? "print" : ["layers", "markers", "print"].includes(state.tab) ? state.tab : "layers";
 // The page shows the map, or Messages (the header's Messages page, ?messages) in its place.
 let view = qs.has("messages") ? "messages" : "map";
-let lastTab = tab;          // the tab to go back to when the Terrain Analysis view is closed
 
 fetch("config.json").then((r) => (r.ok ? r.json() : {})).then((c) => (config = c)).catch(() => {});
 
@@ -176,7 +187,7 @@ map.addControl(new maplibregl.ScaleControl({ unit: "imperial" }), "bottom-left")
   } catch { /* the map stays where it is */ }
 })();
 
-/* ---------- the tool bar: what can be added to the map ---------- */
+/* ---------- Add: what can be put on the map ---------- */
 const ICONS = {
   marker: '<circle cx="12" cy="12" r="5.5" fill="currentColor"/>',
   arrow: '<path d="M5 19 19 5M10 5h9v9" fill="none" stroke="currentColor" stroke-width="2.2"/>',
@@ -184,29 +195,22 @@ const ICONS = {
   circle: '<circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2.2"/>',
   rect: '<rect x="4.5" y="6.5" width="15" height="11" fill="none" stroke="currentColor" stroke-width="2.2"/>',
   polygon: '<path d="M12 4 20 10 17 19H7L4 10Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>',
-  terrain: '<path d="M2.5 19 9 8l4 6 2.5-3.5L21.5 19Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>',
-  me: '<path d="M12 3 21 12 12 21 3 12Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 8.5 15.5 12 12 15.5 8.5 12Z" fill="currentColor"/>',
 };
-// Terrain Analysis opens its section of the Layers tab (only when the server has elevation
-// tiles). The last one places this browser's person on the map (shared like a device's
-// location); it is there only while location sharing is enabled on the server. On a wide
-// screen each button has its name beside the icon; on a phone, the icon only.
-const TOOLS = [["marker", "Add Marker"], ["arrow", "Add Arrow"], ["route", "New Route"], ["circle", "Circle"], ["rect", "Rectangle"], ["polygon", "Polygon"],
-  ["terrain", "Terrain Analysis"], ["me", "Set My Location"]];
-map.addControl({
-  onAdd() {
-    const box = document.createElement("div");
-    box.className = "maplibregl-ctrl maplibregl-ctrl-group toolbar";
-    for (const [key, title] of TOOLS) {
-      const b = document.createElement("button");
-      b.type = "button"; b.id = `add-${key}`; b.title = title; b.ariaLabel = title;
-      b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[key]}</svg><span>${title}</span>`;
-      box.appendChild(b);
-    }
-    return box;
-  },
-  onRemove() {},
-}, "top-left");
+const icon = (key) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[key]}</svg>`;
+// The Add menu at the top of the Markers tab: one entry per kind of item.
+const TOOLS = [["marker", "Marker"], ["arrow", "Arrow"], ["route", "Route"], ["circle", "Circle"], ["rect", "Rectangle"], ["polygon", "Polygon"]];
+for (const [key, title] of TOOLS) {
+  const b = document.createElement("button");
+  b.type = "button"; b.id = `add-${key}`; b.setAttribute("role", "menuitem");
+  b.innerHTML = `${icon(key)}<span>${title}</span>`;
+  $("add-menu").appendChild(b);
+}
+function openAddMenu(open) {
+  $("add-menu").hidden = !open;
+  $("add-button").ariaExpanded = String(open);
+}
+$("add-button").onclick = (e) => { e.stopPropagation(); openAddMenu($("add-menu").hidden); };
+document.addEventListener("click", (e) => { if (!e.target.closest(".add-menu")) openAddMenu(false); });
 
 let footprintCenter = null; // {lng,lat}; set on load to the centre of the visible map area
 
@@ -227,6 +231,18 @@ function visibleCenter() {
 }
 
 map.on("load", () => {
+  // The MGRS grid (grid.js), under everything drawn on the map.
+  map.addSource("grid", { type: "geojson", data: emptyFC() });
+  map.addLayer({ id: "grid-line", type: "line", source: "grid", filter: ["!=", ["get", "kind"], "name"],
+    paint: { "line-color": "#1f5fbf", "line-opacity": 0.7, "line-width": ["match", ["get", "kind"], "minor", 0.8, 1.6] } });
+  map.addLayer({ id: "grid-label", type: "symbol", source: "grid", filter: ["all", ["!=", ["get", "kind"], "name"], ["!=", ["get", "label"], ""]],
+    layout: { "symbol-placement": "line", "symbol-spacing": 400, "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 11 },
+    paint: { "text-color": "#1f5fbf", "text-halo-color": "#fff", "text-halo-width": 1.5 } });
+  map.addLayer({ id: "grid-name", type: "symbol", source: "grid", filter: ["==", ["get", "kind"], "name"],
+    layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 13 },
+    paint: { "text-color": "#1f5fbf", "text-halo-color": "#fff", "text-halo-width": 1.5 } });
+  map.on("moveend", drawGrid);
+
   map.addSource("footprint", { type: "geojson", data: emptyFC() });
   map.addLayer({ id: "footprint-fill", type: "fill", source: "footprint", paint: { "fill-color": "#2d8cf0", "fill-opacity": 0.12 } });
   map.addLayer({ id: "footprint-line", type: "line", source: "footprint", paint: { "line-color": "#2d8cf0", "line-width": 2 } });
@@ -260,12 +276,12 @@ map.on("load", () => {
 
   map.addSource("arrows", { type: "geojson", data: arrowsFC() });
   map.addLayer({
-    id: "arrows-line", type: "line", source: "arrows", filter: ["match", ["get", "part"], ["line", "head"], true, false],
+    id: "arrows-line", type: "line", source: "arrows", filter: ["==", ["get", "part"], "line"],
     layout: { "line-cap": "round", "line-join": "round" },
     paint: { "line-color": ["get", "color"], "line-width": 3 },
   });
   map.addLayer({
-    id: "arrows-halo", type: "line", source: "arrows", filter: ["match", ["get", "part"], ["line", "head"], true, false],
+    id: "arrows-halo", type: "line", source: "arrows", filter: ["==", ["get", "part"], "line"],
     layout: { "line-cap": "round", "line-join": "round" },
     paint: { "line-color": "#fff", "line-width": 6, "line-opacity": 0.6 },
   }, "arrows-line");
@@ -282,6 +298,11 @@ map.on("load", () => {
     id: "arrow-ends", type: "circle", source: "arrows", filter: ["==", ["get", "part"], "end"],
     paint: { "circle-radius": 7, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 3 },
   });
+  // The head, over the handle at the tip, so that it shows at any zoom.
+  map.addLayer({ id: "arrows-tip", type: "symbol", source: "arrows", filter: ["==", ["get", "part"], "tip"],
+    layout: { "icon-image": ARROWHEAD, "icon-anchor": "right", "icon-rotate": ["get", "rotate"], "icon-rotation-alignment": "map",
+      "icon-allow-overlap": true, "icon-ignore-placement": true },
+    paint: { "icon-color": ["get", "color"], "icon-halo-color": "#fff", "icon-halo-width": 1.5 } });
 
   map.addSource("routes", { type: "geojson", data: emptyFC() });
   const rpart = (...parts) => ["match", ["get", "part"], parts, true, false];
@@ -319,12 +340,16 @@ map.on("load", () => {
   map.addSource("live", { type: "geojson", data: emptyFC() });
   const part = (...parts) => ["match", ["get", "part"], parts, true, false];
   map.addLayer({ id: "live-area", type: "fill", source: "live", filter: part("area"), paint: { "fill-color": ["get", "color"], "fill-opacity": 0.12 } });
-  map.addLayer({ id: "live-halo", type: "line", source: "live", filter: part("line", "head", "dashed", "area"),
+  map.addLayer({ id: "live-halo", type: "line", source: "live", filter: part("line", "dashed", "area"),
     layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#fff", "line-width": 6, "line-opacity": 0.6 } });
-  map.addLayer({ id: "live-line", type: "line", source: "live", filter: part("line", "head", "area"),
+  map.addLayer({ id: "live-line", type: "line", source: "live", filter: part("line", "area"),
     layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3 } });
   map.addLayer({ id: "live-dashed", type: "line", source: "live", filter: part("dashed"),
     layout: { "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3, "line-dasharray": [2, 1.5] } });
+  map.addLayer({ id: "live-tip", type: "symbol", source: "live", filter: part("tip"),
+    layout: { "icon-image": ARROWHEAD, "icon-anchor": "right", "icon-rotate": ["get", "rotate"], "icon-rotation-alignment": "map",
+      "icon-allow-overlap": true, "icon-ignore-placement": true },
+    paint: { "icon-color": ["get", "color"], "icon-halo-color": "#fff", "icon-halo-width": 1.5 } });
   map.addLayer({ id: "live-vertex", type: "circle", source: "live", filter: part("vertex"),
     paint: { "circle-radius": 4, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
   map.addLayer({ id: "live-point", type: "circle", source: "live", filter: part("point"),
@@ -359,6 +384,7 @@ map.on("load", () => {
 
   footprintCenter = visibleCenter();
   updateFootprint();
+  drawGrid();
   renderLists();
   drawRoutes();
   showSheet();
@@ -478,6 +504,18 @@ function pickFont() {
   return ["Open Sans Regular"];
 }
 function emptyFC() { return { type: "FeatureCollection", features: [] }; }
+
+/** The MGRS grid for the view, when MGRS Grid Lines is on. */
+function drawGrid() {
+  const src = map.getSource("grid");
+  if (!src) return;
+  const on = state.layers.grid !== false;
+  try {
+    for (const id of ["grid-line", "grid-label", "grid-name"]) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+  } catch { /* a new map style is still loading */ }
+  const b = map.getBounds();
+  src.setData(on ? gridFC([[b.getWest(), b.getSouth()], [b.getEast(), b.getNorth()]], map.getZoom()) : emptyFC());
+}
 function lineFC(pts) {
   return { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "LineString", coordinates: pts.map((p) => [p.lng, p.lat]) }, properties: {} }] };
 }
@@ -543,7 +581,10 @@ function arrowLabel(a) {
 // Shared markers, arrows, routes and shapes (shared: true) are in the same lists, but the server
 // keeps them, not this browser; the Shared Markers switch hides them on screen and in print.
 const ownOnly = (list) => list.filter((x) => !x.shared);
-const shown = (list) => (state.layers.shared === false ? ownOnly(list) : list);
+const groupShown = (it) => !(groups.find((g) => g.name === (it.group || "")) || {}).hidden;
+const shown = (list) => (state.layers.shared === false ? ownOnly(list) : list).filter(groupShown);
+/** The group new items go into (the Add menu's To), as an item's properties. */
+const addTo = () => (state.addGroup && groups.some((g) => g.name === state.addGroup) ? { group: state.addGroup } : {});
 function markersFC() {
   return { type: "FeatureCollection", features: shown(markers).map((m) => ({ type: "Feature", geometry: { type: "Point", coordinates: [m.lng, m.lat] }, properties: { id: m.id, label: m.label, color: m.color } })) };
 }
@@ -554,7 +595,7 @@ function saveMarkers() {
   renderLists();
 }
 function addMarker(ll) {
-  const m = { id: uid(), lng: ll.lng, lat: ll.lat, label: `P${markers.length + 1}`, color: state.color, shared: sharingOn() };
+  const m = { id: uid(), lng: ll.lng, lat: ll.lat, label: `P${markers.length + 1}`, color: state.color, shared: sharingOn(), ...addTo() };
   markers.push(m);
   setMode(null);
   saveMarkers();
@@ -566,12 +607,9 @@ function arrowsFC() {
   const feats = [];
   for (const a of shown(arrows)) {
     const inv = inverse(a.a.lat, a.a.lng, a.b.lat, a.b.lng);
-    const head = Math.min(Math.max(inv.distance * 0.08, 15), 400);
-    const back = inv.finalBearing + 180;
-    const l1 = destination(a.b.lat, a.b.lng, back - 25, head), l2 = destination(a.b.lat, a.b.lng, back + 25, head);
     const props = { id: a.id, color: a.color, label: arrowLabel(a) };
     feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: [[a.a.lng, a.a.lat], [a.b.lng, a.b.lat]] }, properties: { ...props, part: "line" } });
-    feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: [[l1.lng, l1.lat], [a.b.lng, a.b.lat], [l2.lng, l2.lat]] }, properties: { ...props, part: "head", label: "" } });
+    feats.push({ type: "Feature", geometry: { type: "Point", coordinates: [a.b.lng, a.b.lat] }, properties: { ...props, part: "tip", label: "", rotate: inv.finalBearing - 90 } });
     // One label at the midpoint, rotated to the on-screen angle of the shaft and kept upright.
     const pa = project(a.a.lng, a.a.lat, 0), pb = project(a.b.lng, a.b.lat, 0);
     let rot = (Math.atan2(pb.y - pa.y, pb.x - pa.x) * 180) / Math.PI;
@@ -590,7 +628,7 @@ function saveArrows() {
   renderLists();
 }
 function addArrow(a, b) {
-  const ar = { id: uid(), a, b, label: `A${arrows.length + 1}`, color: state.color, shared: sharingOn() };
+  const ar = { id: uid(), a, b, label: `A${arrows.length + 1}`, color: state.color, shared: sharingOn(), ...addTo() };
   arrows.push(ar);
   map.getSource("temp").setData(emptyFC());
   saveArrows();
@@ -634,7 +672,7 @@ function saveRoutes() {
 const routeType = (key) => ROUTE_TYPES_LIST.find(([k]) => k === key) || ROUTE_TYPES_LIST[0];
 function addRoute(points) {
   const [key, , , mph] = routeType(state.routeType || "walking");
-  const r = { id: uid(), points, routing: key, speedMph: mph, label: `R${routes.length + 1}`, color: state.color, shared: sharingOn() };
+  const r = { id: uid(), points, routing: key, speedMph: mph, label: `R${routes.length + 1}`, color: state.color, shared: sharingOn(), ...addTo() };
   routes.push(r);
   pendingRoute = null;
   setMode(null);
@@ -711,7 +749,7 @@ function saveShapes() {
 }
 function addShape(s) {
   const n = shapes.filter((x) => x.type === s.type).length + 1;
-  const sh = { id: uid(), label: `${{ circle: "C", rect: "R", polygon: "P" }[s.type]}${n}`, color: state.color, ...s };
+  const sh = { id: uid(), label: `${{ circle: "C", rect: "R", polygon: "P" }[s.type]}${n}`, color: state.color, ...addTo(), ...s };
   sh.shared = sharingOn() && shareableShape(shapeRing(sh));
   if (sh.type === "circle") sh.unit = defaultUnit(sh.radius, state.units);
   shapes.push(sh);
@@ -776,15 +814,113 @@ function select(kind, id, focus = false) {
     if (el) { el.focus(); el.select(); }
   }
 }
+/** The groups and their items: every group an item names is in the list. */
 function renderLists() {
   renderLists.pending = false;
-  renderList($("marker-list"), markers, "marker", "No markers yet.", (m) => `${toMGRS(m.lat, m.lng, 4)}`);
-  renderList($("arrow-list"), arrows, "arrow", "No arrows yet.", (a) => {
-    const i = arrowInfo(a);
+  for (const kind of KINDS) for (const it of listOf(kind)) if (it.group) groupState(it.group);
+  const box = $("group-list");
+  box.replaceChildren();
+  const all = KINDS.flatMap((kind) => listOf(kind).map((it) => [kind, it]));
+  if (!all.length && !groups.some((g) => g.name)) {
+    box.innerHTML = `<div class="hint">Nothing on the map yet. Press Add to put a marker, arrow, route or shape on it. New Group keeps items together for a task, such as "Water Sources".</div>`;
+  }
+  for (const name of ["", ...groups.filter((g) => g.name).map((g) => g.name)]) {
+    const items = all.filter(([, it]) => (it.group || "") === name);
+    if (name || items.length) box.appendChild(groupSection(name, items));
+  }
+  renderAddGroup();
+}
+function groupState(name) {
+  let g = groups.find((x) => x.name === name);
+  if (!g) { g = { name, hidden: false, closed: false }; groups.push(g); saveGroups(); }
+  return g;
+}
+function saveGroups() { localStorage.setItem(LS.groups, JSON.stringify(groups)); }
+/** A group in the list: its name and how many items, show or hide, export, rename, delete; then its items. */
+function groupSection(name, items) {
+  const g = groupState(name);
+  const sec = document.createElement("div");
+  sec.className = "group" + (g.hidden ? " off" : "");
+  const head = document.createElement("div");
+  head.className = "group-head";
+  const label = name || "Ungrouped";
+  head.innerHTML = `<button class="twisty" type="button" aria-expanded="${!g.closed}" title="${g.closed ? "Open" : "Close"} ${escapeHtml(label)}">${g.closed ? "▸" : "▾"}</button>
+    <span class="group-name">${escapeHtml(label)} <span class="hint">${items.length}</span></span>`;
+  const show = toggle("", !g.hidden, (on) => { g.hidden = !on; saveGroups(); sharedChanged(); }, `Show or hide ${label} on the map and in print.`);
+  show.querySelector("input").ariaLabel = `Show ${label}`;
+  head.appendChild(show);
+  const button = (text, title, onclick, cls = "icon") => {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: cls, title, textContent: text, onclick });
+    b.ariaLabel = title;
+    head.appendChild(b);
+  };
+  button("⤓", `Export ${label}`, () => exportItems(items, label));
+  if (name) {
+    button("✎", `Rename ${label}`, () => renameGroup(name));
+    button("✕", `Delete ${label}`, () => deleteGroup(name, items), "icon danger");
+  }
+  head.querySelector(".twisty").onclick = () => { g.closed = !g.closed; saveGroups(); renderLists(); };
+  sec.appendChild(head);
+  if (!g.closed) {
+    for (const [kind, it] of items) sec.appendChild(itemRow(kind, it));
+    if (!items.length) sec.insertAdjacentHTML("beforeend", `<div class="hint group-empty">Empty. Choose ${escapeHtml(label)} under To, then Add.</div>`);
+  }
+  return sec;
+}
+/** The To menu beside Add: the group new items go into. */
+function renderAddGroup() {
+  const sel = $("add-group");
+  sel.replaceChildren(new Option("Ungrouped", ""), ...groups.filter((g) => g.name).map((g) => new Option(g.name, g.name)));
+  sel.value = addTo().group || "";
+}
+$("add-group").onchange = (e) => { state.addGroup = e.target.value; saveSettings(); };
+const MAX_GROUP = 30;
+const cleanGroup = (s) => String(s || "").replace(/\s+/g, " ").trim().slice(0, MAX_GROUP);
+$("new-group").onclick = () => {
+  const name = cleanGroup(prompt("Name of the new group, for example Water Sources:"));
+  if (!name) return;
+  const g = groupState(name);
+  g.hidden = false; g.closed = false;
+  saveGroups();
+  state.addGroup = name; saveSettings();     // what is added next goes into it
+  renderLists();
+};
+function renameGroup(name) {
+  const to = cleanGroup(prompt(`New name for ${name}:`, name));
+  if (!to || to === name) return;
+  if (groups.some((g) => g.name === to)) { alert(`There is already a group named ${to}.`); return; }
+  groupState(name).name = to;
+  saveGroups();
+  if (state.addGroup === name) { state.addGroup = to; saveSettings(); }
+  for (const kind of KINDS) {
+    const moved = listOf(kind).filter((it) => it.group === name);
+    for (const it of moved) it.group = to;
+    if (moved.length) persist(kind);
+  }
+  renderLists();
+}
+function deleteGroup(name, items) {
+  const shared = items.filter(([, it]) => it.shared).length;
+  if (items.length && !confirm(`Delete ${name} and the ${items.length} item${items.length === 1 ? "" : "s"} in it?` +
+    (shared ? `\n\n${shared} of them ${shared === 1 ? "is" : "are"} shared: removed from all devices.` : ""))) return;
+  groups = groups.filter((g) => g.name !== name);
+  saveGroups();
+  for (const kind of KINDS) {
+    const kept = listOf(kind).filter((it) => it.group !== name);
+    if (kept.length !== listOf(kind).length) { setList(kind, kept); persist(kind); }
+  }
+  if (selected && items.some(([, it]) => it.id === selected.id)) selected = null;
+  renderLists();
+}
+/** What the list says under an item's name. */
+function itemDetail(kind, it) {
+  if (kind === "marker") return toMGRS(it.lat, it.lng, 4);
+  if (kind === "arrow") {
+    const i = arrowInfo(it);
     return `${fmtDistance(i.distance)} · ${fmtBearing(i.trueBearing)} T · ${fmtBearing(i.gridBearing)} G · ${fmtBearing(i.magBearing)} M`;
-  });
-  renderList($("route-list"), routes, "route", "No routes yet.", routeDetail);
-  renderList($("shape-list"), shapes, "shape", "No shapes yet.", (s) => `${SHAPE_NAMES[s.type]} · ${shapeSummary(s, state.units)}`);
+  }
+  if (kind === "route") return routeDetail(it);
+  return `${SHAPE_NAMES[it.type]} · ${shapeSummary(it, state.units)}`;
 }
 /** The lists again, but not while a name is being typed in them: after it. */
 function refreshLists() {
@@ -813,51 +949,69 @@ function radiusEditor(s) {
   sel.onchange = () => { s.unit = sel.value; show(); persist("shape"); };
   return row;
 }
-function renderList(list, items, kind, emptyText, detail) {
-  list.innerHTML = "";
-  if (!items.length) { list.innerHTML = `<div class="hint">${emptyText}</div>`; return; }
-  for (const it of items) {
-    const row = document.createElement("div");
-    row.className = "item" + (selected && selected.kind === kind && selected.id === it.id ? " selected" : "");
-    row.dataset.id = it.id;
-    // Shared with the devices, or can be (a shape whose outline is too detailed for the server cannot).
-    const shareable = it.shared || (sharingOn() && (kind !== "shape" || shareableShape(shapeRing(it))));
-    row.innerHTML = `
-      <div class="item-row">
-        <button class="dot" title="Color" style="background:${it.color}"></button>
-        <input type="text" value="${escapeHtml(it.label)}" placeholder="Name" maxlength="30">
-        <button class="icon" title="Show on Map">◎</button>
-        <button class="icon danger" title="${it.shared ? "Delete" : "Remove"}">✕</button>
-      </div>
-      <div class="item-detail">${detail(it)}${it.shared ? ` · ${escapeHtml(sharedBy(it))}` : ""}</div>
-      ${shareable ? `<label class="check share"><input type="checkbox"${it.shared ? " checked" : ""}><span>Share with All Devices</span></label>` : ""}`;
-    const [dot, text, go, del] = row.querySelectorAll("button,input");
-    const share = row.querySelector(".share input");
-    if (share) share.onchange = () => {
-      if (!share.checked && !confirm("Stop sharing?\n\nIt is removed from all devices and kept in this browser.")) { share.checked = true; return; }
-      it.shared = share.checked;
-      persist(kind, true);
-    };
-    dot.onclick = (e) => { e.stopPropagation(); paletteOpenFor = paletteOpenFor === it.id ? null : it.id; renderLists(); };
-    text.oninput = () => { it.label = text.value; persist(kind); };
-    text.onfocus = () => { selected = { kind, id: it.id }; };
-    go.onclick = () => { const c = kind === "marker" ? it : kind === "arrow" ? it.a : kind === "route" ? it.points[0] : shapeCenter(it); map.flyTo({ center: [c.lng, c.lat] }); };
-    del.onclick = () => {
-      if (it.shared && !confirm("Delete Shared Marker?\n\nIt is removed from all devices.")) return;
-      if (kind === "marker") markers = markers.filter((x) => x.id !== it.id);
-      else if (kind === "arrow") arrows = arrows.filter((x) => x.id !== it.id);
-      else if (kind === "route") routes = routes.filter((x) => x.id !== it.id);
-      else shapes = shapes.filter((x) => x.id !== it.id);
-      if (selected && selected.id === it.id) selected = null;
-      persist(kind, true);
-    };
-    if (kind === "shape" && it.type === "circle") row.appendChild(radiusEditor(it));
-    if (kind === "route") row.appendChild(routeEditor(it));
-    if (paletteOpenFor === it.id) {
-      row.appendChild(swatchRow(it.color, (hex) => { it.color = hex; paletteOpenFor = null; persist(kind, true); }));
-    }
-    list.appendChild(row);
+/** An item's row: its kind and color, name, Show on Map and Delete; what it measures; its group
+ *  and, for some kinds, more to set. */
+function itemRow(kind, it) {
+  const row = document.createElement("div");
+  row.className = "item" + (selected && selected.kind === kind && selected.id === it.id ? " selected" : "");
+  row.dataset.id = it.id;
+  // Shared with the devices, or can be (a shape whose outline is too detailed for the server cannot).
+  const shareable = it.shared || (sharingOn() && (kind !== "shape" || shareableShape(shapeRing(it))));
+  const what = kind === "shape" ? SHAPE_NAMES[it.type] : { marker: "Marker", arrow: "Arrow", route: "Route" }[kind];
+  row.innerHTML = `
+    <div class="item-row">
+      <button class="dot${light(it.color) ? " light" : ""}" title="${what}: Color" style="background:${it.color}">${icon(kind === "shape" ? it.type : kind)}</button>
+      <input type="text" value="${escapeHtml(it.label)}" placeholder="Name" maxlength="30" aria-label="${what} Name">
+      <button class="icon" title="Show on Map">◎</button>
+      <button class="icon danger" title="Delete">✕</button>
+    </div>
+    <div class="item-detail">${itemDetail(kind, it)}${it.shared ? ` · ${escapeHtml(sharedBy(it))}` : ""}</div>
+    ${shareable ? `<label class="check share"><input type="checkbox"${it.shared ? " checked" : ""}><span>Share with All Devices</span></label>` : ""}`;
+  const [dot, text, go, del] = row.querySelectorAll(".item-row button, .item-row input");
+  const share = row.querySelector(".share input");
+  if (share) share.onchange = () => {
+    if (!share.checked && !confirm("Stop sharing?\n\nIt is removed from all devices and kept in this browser.")) { share.checked = true; return; }
+    it.shared = share.checked;
+    persist(kind, true);
+  };
+  dot.onclick = (e) => { e.stopPropagation(); paletteOpenFor = paletteOpenFor === it.id ? null : it.id; renderLists(); };
+  text.oninput = () => { it.label = text.value; persist(kind); };
+  text.onfocus = () => { selected = { kind, id: it.id }; };
+  go.onclick = () => { const c = kind === "marker" ? it : kind === "arrow" ? it.a : kind === "route" ? it.points[0] : shapeCenter(it); map.flyTo({ center: [c.lng, c.lat] }); };
+  del.onclick = () => {
+    if (it.shared && !confirm("Delete Shared Marker?\n\nIt is removed from all devices.")) return;
+    setList(kind, listOf(kind).filter((x) => x.id !== it.id));
+    if (selected && selected.id === it.id) selected = null;
+    persist(kind, true);
+  };
+  if (kind === "shape" && it.type === "circle") row.appendChild(radiusEditor(it));
+  if (kind === "route") row.appendChild(routeEditor(it));
+  if (groups.some((g) => g.name)) row.appendChild(groupEditor(kind, it));
+  if (paletteOpenFor === it.id) {
+    row.appendChild(swatchRow(it.color, (hex) => { it.color = hex; paletteOpenFor = null; persist(kind, true); }));
   }
+  return row;
+}
+/** The group an item is in, to move it to another. */
+function groupEditor(kind, it) {
+  const row = document.createElement("label");
+  row.className = "group-row";
+  row.innerHTML = `<span>Group</span><select></select>`;
+  const sel = row.querySelector("select");
+  sel.add(new Option("Ungrouped", ""));
+  for (const g of groups) if (g.name) sel.add(new Option(g.name, g.name));
+  sel.value = it.group || "";
+  sel.onchange = () => {
+    if (sel.value) it.group = sel.value; else delete it.group;
+    groupState(sel.value).hidden = false; saveGroups();
+    persist(kind, true);
+  };
+  return row;
+}
+/** True for a light color, which needs a dark icon on it. */
+function light(hex) {
+  const n = parseInt(String(hex).slice(1), 16);
+  return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114 > 160;
 }
 function persist(kind, rerender = false) {
   if (kind === "marker") { localStorage.setItem(LS.markers, JSON.stringify(ownOnly(markers))); map.getSource("markers").setData(markersFC()); syncSoon(); }
@@ -876,11 +1030,7 @@ function setMode(m) {
   if (m !== "route") pendingRoute = null;
   if (!m || !Object.values(SHAPE_MODES).flat().includes(m)) pendingShape = null;
   if (map.getSource("temp") && !pendingArrow && !pendingShape && !pendingRoute) map.getSource("temp").setData(emptyFC());
-  $("add-marker").classList.toggle("active", m === "marker");
   $("add-me").classList.toggle("active", m === "me");
-  $("add-arrow").classList.toggle("active", m === "arrow-start" || m === "arrow-end");
-  $("add-route").classList.toggle("active", m === "route");
-  for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).classList.toggle("active", modes.includes(m));
   map.getCanvas().style.cursor = m ? "crosshair" : "";
   // Double-click zoom would swallow the taps that place corners.
   if (m) map.doubleClickZoom.disable(); else map.doubleClickZoom.enable();
@@ -901,35 +1051,47 @@ function setMode(m) {
   $("finish-shape").hidden = !((m === "polygon" && corners >= 3) || (m === "route" && stops >= 2));
   $("mode-bar").hidden = !m;
 }
-$("add-marker").onclick = () => setMode(mode === "marker" ? null : "marker");
+/** An entry of the Add menu: its tool, with the map in view (a phone's panel folds away). */
+function startTool(m) {
+  openAddMenu(false);
+  setMode(m);
+  if (window.innerWidth <= 640) document.body.classList.add("panel-collapsed");
+}
+$("add-marker").onclick = () => startTool("marker");
+$("mode-cancel").onclick = () => setMode(null);
 $("add-me").onclick = () => {
   if (mode === "me") { setMode(null); return; }
   if (!cleanText($("display-name").value, MAX_NAME)) { askName(); return; }
   setMode("me");
 };
-$("add-arrow").onclick = () => setMode(mode ? null : "arrow-start");
-$("add-route").onclick = () => setMode(mode === "route" ? null : "route");
-for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).onclick = () => setMode(modes.includes(mode) ? null : modes[0]);
+$("add-arrow").onclick = () => startTool("arrow-start");
+$("add-route").onclick = () => startTool("route");
+for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).onclick = () => startTool(modes[0]);
 $("finish-shape").onclick = () => (mode === "route" ? finishRoute() : finishPolygon());
 // Only what is kept in this browser: shared items stay (each has its own Delete).
 $("clear-all").onclick = () => {
-  if ((ownOnly(markers).length || ownOnly(arrows).length || ownOnly(routes).length || ownOnly(shapes).length) && confirm("Clear all markers, arrows, routes and shapes in this browser?\n\nShared ones stay.")) {
+  if ((ownOnly(markers).length || ownOnly(arrows).length || ownOnly(routes).length || ownOnly(shapes).length) && confirm("Delete all markers, arrows, routes and shapes kept in this browser, in every group?\n\nShared ones stay.")) {
     markers = markers.filter((m) => m.shared); arrows = arrows.filter((a) => a.shared); routes = routes.filter((r) => r.shared); shapes = shapes.filter((x) => x.shared);
     saveMarkers(); saveArrows(); saveRoutes(); saveShapes();
   }
 };
 // Save to a file, and load one: GeoJSON (src/drawings.js).
-$("save-drawings").onclick = () => {
-  if (!markers.length && !arrows.length && !routes.length && !shapes.length) { fileHint("Nothing to export. Add a marker, arrow, route or shape first."); return; }
-  const data = toGeoJSON(markers, arrows, shapes, { title: state.title || "", saved: new Date().toISOString() }, routes);
+// Every item carries its group; a group's file also names the group, so that it comes back as one.
+$("save-drawings").onclick = () => exportItems(KINDS.flatMap((kind) => listOf(kind).map((it) => [kind, it])));
+/** Saves [kind, item] pairs to a file: one group's (group: its name) or all of them. */
+function exportItems(items, group = null) {
+  const of = (kind) => items.filter(([k]) => k === kind).map(([, it]) => it);
+  const [m, a, r, s] = KINDS.map(of);
+  if (!items.length) { fileHint(group ? `Nothing to export: ${group} is empty.` : "Nothing to export. Add a marker, arrow, route or shape first."); return; }
+  const data = toGeoJSON(m, a, s, { title: state.title || "", saved: new Date().toISOString(), ...(group ? { group } : {}) }, r);
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/geo+json" }));
-  const a = Object.assign(document.createElement("a"), { href: url, download: fileName(state.title) });
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  const link = Object.assign(document.createElement("a"), { href: url, download: fileName(group || state.title) });
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  fileHint(`Exported ${countText(markers.length, arrows.length, shapes.length, routes.length)} to ${a.download}.`);
-};
+  fileHint(`Exported ${countText(m.length, a.length, s.length, r.length)} to ${link.download}.`);
+}
 $("load-drawings").onclick = () => $("load-file").click();
 $("load-file").onchange = async (e) => {
   const file = e.target.files[0];
@@ -942,6 +1104,12 @@ $("load-file").onchange = async (e) => {
   } catch (err) { fileHint(err.message, true); return; }
   const total = got.markers.length + got.arrows.length + got.shapes.length + got.routes.length;
   if (!total) { fileHint(`Nothing to import from ${file.name}.${got.skipped ? ` It has ${got.skipped} item${got.skipped === 1 ? "" : "s"} that this page cannot draw.` : ""}`, true); return; }
+  // A file from other software is a group of its own, named after the file; a file of this page's
+  // keeps its items' groups. The groups that get items are shown.
+  const own = (it) => (got.own ? it : { ...it, group: it.group || cleanGroup(file.name.replace(/\.[^.]*$/, "").replace(/[-_ ]?\d{4}-\d{2}-\d{2}$/, "").replace(/[-_]+/g, " ")) });
+  for (const it of [...got.markers, ...got.arrows, ...got.routes, ...got.shapes]) Object.assign(it, own(it));
+  for (const it of [...got.markers, ...got.arrows, ...got.routes, ...got.shapes]) { if (!it.group) delete it.group; groupState(it.group || "").hidden = false; }
+  saveGroups();
   for (const m of got.markers) markers.push({ ...m, id: uid() });
   for (const a of got.arrows) arrows.push({ ...a, id: uid() });
   for (const r of got.routes) routes.push({ ...r, id: uid() });
@@ -977,7 +1145,7 @@ function fileHint(text, error = false) {
 $("units").onchange = (e) => { state.units = e.target.value; saveSettings(); saveShapes(); renderLists(); if (terrain) terrain.refresh(); };
 $("shape-measure").onchange = (e) => { state.shapeMeasure = e.target.checked; saveSettings(); saveShapes(); };
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { setMode(null); if (terrain) terrain.cancelPick(); }
+  if (e.key === "Escape") { setMode(null); openAddMenu(false); if (terrain) terrain.cancelPick(); }
   if (e.key === "Enter" && (mode === "polygon" || mode === "route") && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) $("finish-shape").onclick();
 });
 
@@ -991,7 +1159,7 @@ renderNewColor();
 
 scaleSel.onchange = () => { state.scale = +scaleSel.value; saveSettings(); updateFootprint(); };
 // Switch the map style in place: the sheet outline, markers and arrows are carried over.
-const OWN_SOURCES = ["footprint", "shapes", "arrows", "routes", "markers", "live", "people", "me", "temp", ...TERRAIN_SOURCES];
+const OWN_SOURCES = ["grid", "footprint", "shapes", "arrows", "routes", "markers", "live", "people", "me", "temp", ...TERRAIN_SOURCES];
 function redraw(diff = true) {
   map.setStyle(drawnStyle(), {
     diff,
@@ -1059,11 +1227,11 @@ function renderLayerPanel() {
     }
   }
   const h = document.createElement("h3"); h.textContent = "Grid"; box.appendChild(h);
-  box.appendChild(toggle("MGRS Grid Lines", state.layers.grid !== false, (on) => { state.layers.grid = on; saveSettings(); }, "The grid numbers at the edges always print."));
+  box.appendChild(toggle("MGRS Grid Lines", state.layers.grid !== false, (on) => { state.layers.grid = on; saveSettings(); drawGrid(); }, "On screen and in print. The grid numbers at the edges always print."));
   const hidden = state.layers.off.filter((g) => have.has(g)).length;
   $("layers-summary").textContent = hidden ? `${hidden} hidden` : "";
 }
-$("layers-reset").onclick = () => { state.layers = { ...LAYER_DEFAULTS }; saveSettings(); redraw(); renderLayerPanel(); renderLiveSwitches(); renderTerrainSwitch(); drawLive(); if (terrain) terrain.refresh(); };
+$("layers-reset").onclick = () => { state.layers = { ...LAYER_DEFAULTS }; saveSettings(); redraw(); renderLayerPanel(); renderLiveSwitches(); renderTerrainSwitch(); drawLive(); drawGrid(); if (terrain) terrain.refresh(); };
 /** The Analysis Overlay switch, at the top of the Terrain Analysis view. */
 function renderTerrainSwitch() {
   if (!terrain || !terrain.available) return;
@@ -1083,23 +1251,19 @@ $("bring").onclick = () => { footprintCenter = visibleCenter(); updateFootprint(
 $("fit").onclick = () => { const { bounds } = footprintPolygon(); map.fitBounds(bounds, { padding: panelPadding(), duration: 400 }); };
 $("panel-toggle").onclick = () => document.body.classList.toggle("panel-collapsed");
 
-// Terrain Analysis is a tool: the tool bar opens its view in the panel (in place of the tabs'
-// contents), Close or a tab goes back. There only when the server has elevation data.
-$("add-terrain").hidden = true;
-terrainReady.then((t) => { $("add-terrain").hidden = !t.available; });
-$("add-terrain").onclick = () => { setMode(null); showTab(tab === "terrain" ? lastTab : "terrain"); };
-$("terrain-close").onclick = () => showTab(lastTab);
+// The Terrain tab is there only when the server has elevation data.
+const terrainTab = document.querySelector('.tabs [data-tab="terrain"]');
+terrainReady.then((t) => { terrainTab.hidden = !t.available; });
 
 /* ---------- the tabs ---------- */
 const TABS = [...document.querySelectorAll(".tabs [data-tab]")];
 function showTab(name) {
   const was = tab;
   tab = name;
-  // The Terrain Analysis view is not a tab: the page opens again on the tab it came from.
-  if (name !== "terrain") { lastTab = name; state.tab = name; saveSettings(); }
+  // The page opens again on the tab it was on; on Terrain only once that tab is there.
+  if (name !== "terrain") { state.tab = name; saveSettings(); }
   for (const b of TABS) b.ariaSelected = String(b.dataset.tab === name);
   for (const key of ["layers", "markers", "print", "terrain"]) $(`tab-${key}`).hidden = key !== name;
-  $("add-terrain").classList.toggle("active", name === "terrain");
   document.body.classList.remove("panel-collapsed");
   showSheet(was !== "print" && name === "print");
   if (name === "terrain" && terrain) terrain.onShow();
@@ -1122,7 +1286,7 @@ function showSheet(opening = false) {
 const people = new Map();            // uid -> name, from locations and messages
 let live = null;
 let livePopup = null;
-const SHARED_LAYERS = ["live-area", "live-halo", "live-line", "live-dashed", "live-vertex", "live-point", "live-label"];
+const SHARED_LAYERS = ["live-area", "live-halo", "live-line", "live-dashed", "live-tip", "live-vertex", "live-point", "live-label"];
 const PEOPLE_LAYERS = ["people-symbol", "people-name"];
 
 // The devices' symbols, made again whenever a style change has dropped them.
@@ -1131,6 +1295,7 @@ map.on("styleimagemissing", (e) => {
   const ratio = Math.max(1, Math.round(window.devicePixelRatio || 1));
   if (fill && !map.hasImage(e.id)) map.addImage(e.id, personImage(fill, ratio), { pixelRatio: ratio });
   if (e.id === CHEVRON && !map.hasImage(e.id)) map.addImage(e.id, chevronImage(ratio), { pixelRatio: ratio, sdf: true });
+  if (e.id === ARROWHEAD && !map.hasImage(e.id)) map.addImage(e.id, arrowheadImage(ratio), { pixelRatio: ratio, sdf: true });
 });
 
 /** The live layers as they are now; also every few seconds, so that locations age between answers.
@@ -1158,6 +1323,11 @@ function renderLiveSwitches() {
       state.layers.shared = on; saveSettings(); drawLive(); sharedChanged();
     }, "Markers, arrows, routes and shapes shared with all devices, on screen and in print."),
   );
+  liveSwitchesUsable();
+}
+/** The Shared switches do nothing while sharing is off on the server: grayed out until it is on. */
+function liveSwitchesUsable() {
+  for (const box of $("live-switches").querySelectorAll("input")) box.disabled = !sharingOn();
 }
 
 const when = (iso) => {
@@ -1221,11 +1391,6 @@ function showShared(id) {
 const sentAs = new Map();   // id -> itemKey as the server has it (or as it was last sent)
 const holds = new Map();    // id -> the rev the server's state must reach before its copy counts again (Infinity: on its way)
 const sharingOn = () => !!(live && live.status === "on");
-const KINDS = ["marker", "arrow", "route", "shape"];
-const listOf = (kind) => ({ marker: markers, arrow: arrows, route: routes, shape: shapes }[kind]);
-function setList(kind, list) {
-  if (kind === "marker") markers = list; else if (kind === "arrow") arrows = list; else if (kind === "route") routes = list; else shapes = list;
-}
 let syncTimer = null, syncing = false, syncAgain = false;
 function syncSoon(ms = 700) { clearTimeout(syncTimer); syncTimer = setTimeout(syncOut, ms); }
 
@@ -1301,7 +1466,7 @@ function syncIn(st) {
     sentAs.set(id, key);
     if (i >= 0 && itemKey(list[i]) === key && list[i].updated === got.item.updated) continue;
     // Changed in place: a list row being typed in keeps the same item.
-    if (i >= 0) { for (const k of ["lng", "lat", "a", "b", "type", "center", "radius", "points"]) delete list[i][k]; Object.assign(list[i], got.item); } else list.push(got.item);
+    if (i >= 0) { for (const k of ["lng", "lat", "a", "b", "type", "center", "radius", "points", "group"]) delete list[i][k]; Object.assign(list[i], got.item); } else list.push(got.item);
     changed = true;
   }
   // Removed on the server: gone here too (one not sent yet, or on its way, stays).
@@ -1462,7 +1627,7 @@ function drawMe() {
     } catch { /* a new map style is still loading */ }
   }
   $("my-location").hidden = !sharingOn();
-  $("my-location-text").textContent = m ? `My Location: ${toMGRS(m.lat, m.lng, 5)}` : "My Location: Not Shared. Set it with the tool bar on the map.";
+  $("my-location-text").textContent = m ? `My Location: ${toMGRS(m.lat, m.lng, 5)}` : "My Location: Not Shared. Set it with Set My Location in the map's Layers tab.";
   $("my-location-stop").hidden = !m;
 }
 $("my-location-stop").onclick = stopMe;
@@ -1488,6 +1653,7 @@ function onLive(l) {
   const there = l.status !== "absent" && l.status !== "starting";
   $("live-layers").hidden = !there;
   $("live-status").textContent = l.status === "on" ? "" : l.text;
+  liveSwitchesUsable();
   if (st) { syncIn(st); syncSoon(); }
   else if (l.status === "disabled" || l.status === "absent") dropShared();
   // Sharing came or went: the lists offer Share with All Devices only while it is on.
@@ -1514,8 +1680,10 @@ if (state.myLocation && cleanText(state.displayName, MAX_NAME)) live.setLocation
 // see-through. (The same addresses as on TileServer GL's own front page.)
 async function fillTileUrls() {
   const get = async (url) => { try { const r = await fetch(url, { cache: "no-store" }); return r.ok ? await r.json() : null; } catch { return null; } };
-  const [rendered, data] = await Promise.all([get(`${TILES}/rendered.json`), get(`${TILES}/data.json`)]);
-  const rows = await Promise.all((rendered || []).map(async (t) => {
+  // styles.json, not rendered.json: TileServer GL's rendered.json has no style ids. The print
+  // scale bands are left out: they are for printing only.
+  const [styles, data] = await Promise.all([get(`${TILES}/styles.json`), get(`${TILES}/data.json`)]);
+  const rows = await Promise.all((styles || []).filter((t) => t.id && !BAND.test(t.id)).map(async (t) => {
     const st = await get(styleUrlFor(t.id));
     const jpeg = !!(st && st.layers && st.layers[0] && st.layers[0].type === "background");
     return [t.name || t.id, t.id, `${TILES}/styles/${t.id}/{z}/{x}/{y}.${jpeg ? "jpg" : "png"}`];
@@ -1563,7 +1731,7 @@ async function makePdf(kind) {
     const c = currentCenter();
     const { pdf, pages } = await renderSheet({
       styleUrl: await printStyle(), center: c, scale: state.scale, paper: state.paper, orientation: state.orientation,
-      dpi: effectiveDpi(), title: state.title.trim(), markers: shown(markers), arrows: shown(arrows), shapes, units: state.units, shapeMeasure: state.shapeMeasure !== false, listPage: state.listPage, config,
+      dpi: effectiveDpi(), title: state.title.trim(), markers: shown(markers), arrows: shown(arrows), shapes: shown(shapes), units: state.units, shapeMeasure: state.shapeMeasure !== false, listPage: state.listPage, config,
       atlas: +state.atlas || 1, binder: state.binder, gridLines: state.layers.grid !== false, ink: state.layers.ink, signal: aborter.signal,
       terrain: terrain && terrain.printData(),
       onStatus: (t) => (status.textContent = t),

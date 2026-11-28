@@ -1,4 +1,4 @@
-// The Terrain Analysis view of the panel (opened from the tool bar): viewshed and radio coverage from a point (area), or
+// The Terrain Analysis view of the panel (its own tab): viewshed and radio coverage from a point (area), or
 // a profile between two points (line). Owns its map markers and overlay, runs the worker
 // and keeps the last result for printing. Hidden when the tile server has no elevation.
 import * as maplibregl from "maplibre-gl";

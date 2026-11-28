@@ -2,6 +2,31 @@
 
 ## Since v1.0.0
 
+- **Map: Add and groups in the Markers tab.** The tool bar that floated on the map is gone. **Add** at the top of
+  the Markers tab puts a marker, arrow, route, circle, rectangle or polygon on the map, into the group chosen under
+  **To**. **New Group** makes a group ("Water Sources", "Egress Routes"); each group's heading shows or hides it on
+  the map and in print, folds its list, and exports (⤓), renames (✎) or deletes (✕) it. Each item can be moved to
+  another group. **Export All** and **Import** keep the groups; a file from other map software comes in as a
+  group named after the file. A shared item carries its group's name (the app does not show groups yet). Terrain
+  Analysis is now a **Terrain** tab, and **Set My Location** is in Layers under the Shared switches. While
+  something is added, the hint above the map has **Cancel**.
+
+- **Map: arrow heads at every zoom.** An arrow's head is drawn the same size on screen at any zoom, over the handle
+  at its tip; before, it was a few meters long on the ground and hidden under the handle when zoomed out.
+
+- **Map: MGRS grid on screen.** **MGRS Grid Lines** (Layers > Map Features) now draws the grid on the map as well as
+  on printed sheets: 100 km, 10 km, 1 km or 100 m lines as you zoom in, labeled with their numbers and the 100 km
+  square letters, and the grid zones when zoomed far out. Each UTM zone in view gets its own lines.
+
+- **Tile URLs: the right addresses again, JPEG at quality 50.** **Tile URLs** on the map page showed
+  `styles/undefined/...png` for every style; it now shows each style's own address, `.jpg` for the maps that fill
+  the whole picture and `.png` for the transparent overlay. The print scale styles are no longer listed. JPEG tiles
+  are now made at quality 50 (was 60): smaller tiles for devices and weak connections. Restart the tile server to
+  use it.
+
+- **Map: Shared switches grayed out while sharing is off.** In **Layers**, **Device Locations** and **Shared
+  Markers** are grayed out while location sharing is disabled on the server, as the note under them says.
+
 - **More RAM for Pi builds.** Pi mode now lets a build use 3.0 GB (`BUILD_MEMORY` default 3072m, was 2560m),
   which leaves 1 GB for the system on a 4 GB Pi. The Map Builder now builds a base map from up to about 3.0 GB of
   map data (was 2.3 GB). Set `BUILD_MEMORY=2560m` in `.env` to keep the old cap.

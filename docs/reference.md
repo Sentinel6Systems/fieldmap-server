@@ -689,11 +689,11 @@ Replace `topo-light` with `osm` or `topo-dark` for the other styles. For higher 
 `.../{z}/{x}/{y}@2x.jpg`. `overlay` is see-through and needs PNG, which JPEG cannot do: `.../overlay/{z}/{x}/{y}.png`.
 
 Every style answers both endings, so map sources that already use `.png` keep working. JPEG is the one to use for
-the maps that fill the whole picture: at the quality set in `config.json` (`formatOptions.jpeg.quality`, 60 here;
-TileServer GL's own default is 80) a tile is about a fifth of the size of the same tile as PNG, which matters for
-the storage of the devices that keep them and on a weak connection. At 60 soft color areas show faint squares when
-a tile is enlarged past its own zoom level; raise the number for cleaner tiles (70 is about 20% larger, 80 about
-50% larger), then restart the tile server. If a map source file names the tile type, it must match the ending.
+the maps that fill the whole picture: at the quality set in `config.json` (`formatOptions.jpeg.quality`, 50 here;
+TileServer GL's own default is 80) a tile is a fifth of the size of the same tile as PNG or less, which matters for
+the storage of the devices that keep them and on a weak connection. At 50 soft color areas show faint squares when
+a tile is enlarged past its own zoom level; raise the number for cleaner tiles (60, 70 or 80 give larger tiles),
+then restart the tile server. If a map source file names the tile type, it must match the ending.
 The Maps page lists these addresses ready to copy, for the address you opened it at: press **Tile URLs**.
 For higher resolution screens, use `.../{z}/{x}/{y}@2x.png`.
 

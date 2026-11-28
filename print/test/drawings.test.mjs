@@ -93,3 +93,24 @@ test("an outline with many sides gets no side lengths, a hand-drawn polygon does
   assert.equal(shapeLegs({ type: "polygon", points: ring(5) }).length, 5);
   assert.equal(shapeLegs({ type: "polygon", points: ring(MAX_LEGS + 1) }).length, 0);
 });
+
+test("groups go out with each item and come back in", () => {
+  const m = { lng: 10, lat: 45, label: "W1", color: "#2a9d3f", group: "Water Sources" };
+  const a = { a: { lng: 10, lat: 45 }, b: { lng: 10.1, lat: 45.1 }, label: "A1", color: "#d32f2f" };
+  const got = fromGeoJSON(JSON.stringify(toGeoJSON([m], [a], [])), "#000000");
+  assert.equal(got.own, true);
+  assert.equal(got.markers[0].group, "Water Sources");
+  assert.equal(got.arrows[0].group, undefined, "no group: Ungrouped");
+});
+
+test("a group's file names the group for items that do not", () => {
+  const data = toGeoJSON([{ lng: 1, lat: 2, label: "F1", color: "#d32f2f" }], [], [], { group: "Food Sources" });
+  delete data.features[0].properties.fieldmap.group;
+  assert.equal(fromGeoJSON(data, "#000000").markers[0].group, "Food Sources");
+});
+
+test("a file from other software has no group and is not this page's", () => {
+  const got = fromGeoJSON({ type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: [1, 2] }, properties: { name: "x" } }] }, "#000000");
+  assert.equal(got.own, false);
+  assert.equal(got.markers[0].group, undefined);
+});

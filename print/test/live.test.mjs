@@ -87,7 +87,7 @@ test("shared items: marker, arrow, route and area, as the app and the server kee
 
   const parts = (f) => sharedFC([f]).features.map((x) => x.properties.part);
   assert.deepEqual(parts(point("marker-0001", 10, 45)), ["point"]);
-  assert.deepEqual(parts(arrow), ["line", "head", "label"]);
+  assert.deepEqual(parts(arrow), ["line", "tip", "label"]);
   assert.deepEqual(parts(route), ["dashed", "vertex", "vertex", "vertex", "label"], "a road route is drawn with straight dashed legs");
   assert.deepEqual(parts(area), ["area", "label"]);
   const straight = { ...route, properties: { fieldmap: { ...route.properties.fieldmap, routing: "straight" } } };
@@ -256,4 +256,14 @@ test("routes: a line the router ends on the road short of its point gets a dashe
   assert.deepEqual([!!close.tail, close.offRoad], [true, false], "40 m short: a dashed piece, not off the road");
   assert.equal(ends({ line: [[10, 45], [10.08001, 45.009]], meters: 1 }, a, b).tail, null, "a meter short: none");
   assert.equal(ends({ line: [[10, 45], [10.08, 45.2]], meters: 1 }, a, { lng: 10.08, lat: 45.4 }), null, "more than 15 km off: no way");
+});
+
+test("a shared item carries its group both ways, and a new group is a change to send", () => {
+  const it = { id: "marker-0009", lng: 10, lat: 45, label: "W1", color: "#2a9d3f", group: "Water Sources" };
+  const f = featureFromItem(it, "marker", ME);
+  assert.equal(f.properties.fieldmap.group, "Water Sources");
+  assert.equal(itemFromFeature(f).item.group, "Water Sources");
+  assert.notEqual(itemKey(it), itemKey({ ...it, group: "Food Sources" }));
+  delete f.properties.fieldmap.group;
+  assert.equal("group" in itemFromFeature(f).item, false);
 });

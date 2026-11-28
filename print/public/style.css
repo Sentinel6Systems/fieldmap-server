@@ -26,23 +26,31 @@ html, body { height: 100%; overflow: hidden; }
 .tabs button:hover:not(:disabled) { color: var(--sig); }
 .badge { margin-left: 5px; min-width: 18px; padding: 0 4px; background: var(--sig); color: var(--on-sig); font: 600 11px/18px var(--sans); letter-spacing: 0; }
 
-/* The tool bar on the map (a MapLibre control under the zoom buttons). */
-.toolbar button { display: flex; align-items: center; justify-content: center; }
-.toolbar button svg { width: 18px; height: 18px; flex: none; }
-.toolbar button span { display: none; }
-.maplibregl-ctrl-group.toolbar button[hidden] { display: none; }
-/* A wide screen has room for each tool's name beside its icon. */
-@media (min-width: 641px) {
-  /* One column of equal rows: every button as wide as the widest, so the lines between them
-     run the full width; the icons in a column of their own, the names lined up after them. */
-  .maplibregl-ctrl-group.toolbar { display: flex; flex-direction: column; }
-  .maplibregl-ctrl-group.toolbar button { width: 100%; height: 34px; justify-content: flex-start; gap: 10px; padding: 0 16px 0 10px; }
-  .maplibregl-ctrl-group.toolbar button + button { border-top-color: #e6e6e1; }
-  .toolbar button span { display: inline; font-size: 13px; font-weight: 500; white-space: nowrap; }
-}
-.toolbar button.active { background: var(--sig); color: var(--on-sig); outline: none; }
-.maplibregl-ctrl-group.toolbar button { color: #1a1e1a; }
-.maplibregl-ctrl-group.toolbar button.active { background: #4f6b1f; color: #fff; }
+/* Markers tab: Add and the group it adds to, then the groups. */
+.add-row { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; }
+.add-row label.inline { margin-top: 0; }
+.add-menu { position: relative; }
+#add-button { padding: 0 16px; }
+.menu { position: absolute; z-index: 6; top: calc(100% + 4px); left: 0; min-width: 180px; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+.menu[hidden] { display: none; }
+.menu button { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 14px 0 10px; border: 0; background: none; color: var(--ink); text-align: left; font-weight: 500; }
+.menu button + button { border-top: 1px solid var(--line); }
+.menu button:hover, .menu button:focus-visible { background: var(--panel2); color: var(--sig); }
+.menu svg, .dot svg { width: 18px; height: 18px; flex: none; }
+.group { border-top: 1px solid var(--line); }
+.group:last-child { border-bottom: 1px solid var(--line); }
+.group-head { display: grid; grid-template-columns: 24px 1fr auto auto auto auto; gap: 4px; align-items: center; min-height: 40px; }
+.group-head .twisty { width: 24px; min-width: 24px; height: 30px; min-height: 30px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 13px; }
+.group-name { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.group-name .hint { font-weight: 400; margin-left: 4px; }
+.group-head label.switch { min-height: 30px; margin-right: 4px; }
+.group-head button.icon { height: 30px; min-height: 30px; width: 30px; min-width: 30px; font-size: 14px; }
+.group.off .group-name, .group.off .item { opacity: .55; }
+.group .item { padding-left: 4px; }
+.group-empty { margin: 0 0 8px 28px; }
+.group-row { display: grid; grid-template-columns: auto 1fr; flex-direction: row; gap: 8px; align-items: center; margin: 6px 0 2px 40px; font-size: 12px; color: var(--muted); }
+.group-row select { height: 32px; min-height: 32px; padding: 0 8px; font-size: 14px; min-width: 0; }
 /* What to do next while a tool is in use, over the top of the map. */
 .mode-bar {
   position: absolute; z-index: 5; top: calc(var(--bar-h) + 12px); left: 50%; transform: translateX(-50%);
@@ -160,7 +168,9 @@ label.inline select { flex: 1; }
 .item-row { display: grid; grid-template-columns: 32px 1fr 36px 36px; gap: 8px; align-items: center; }
 .item.selected input[type=text] { border-color: var(--sig); }
 .item-detail { font-size: 11px; color: var(--muted); margin: 3px 0 0 40px; font-variant-numeric: tabular-nums; }
-.dot { width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--ink) 25%, transparent); }
+.dot { width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--ink) 25%, transparent);
+  display: flex; align-items: center; justify-content: center; color: #fff; }
+.dot.light { color: #1a1e1a; }
 .swatches { display: grid; grid-template-columns: repeat(12, 1fr); gap: 5px; margin-top: 4px; }
 .swatch { height: 26px; min-height: 26px; padding: 0; border: 2px solid rgba(0,0,0,.4); }
 .swatch.selected { outline: 3px solid var(--sig); outline-offset: 1px; }
@@ -184,6 +194,9 @@ label.switch input { appearance: none; -webkit-appearance: none; width: 40px; he
 label.switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; background: var(--ink); transition: left .12s; }
 label.switch input:checked { background: var(--sig); }
 label.switch input:checked::after { left: 21px; background: var(--on-sig); }
+label.switch:has(input:disabled) { color: var(--muted); opacity: .5; }
+label.switch input:disabled { cursor: not-allowed; background: var(--edge); }
+label.switch input:disabled::after { left: 3px; background: var(--muted); }
 #layers-reset { width: 100%; margin-bottom: 4px; }
 
 /* Terrain analysis */

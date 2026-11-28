@@ -111,7 +111,7 @@ const store = { get: () => { try { return localStorage.getItem(KEY); } catch { r
 
 /* ---------- the tile addresses ---------- */
 // A style that starts with a background fills every pixel, so its tiles can be JPEG: about
-// a third of the size of PNG (a fifth at the quality config.json sets). A style without one
+// a third of the size of PNG (a fifth or less at the quality config.json sets). A style without one
 // is an overlay and needs PNG, which can be see-through.
 const filled = (el) => el.dataset.ground === "background";
 const tiles = (id, jpeg, size = "") => `${location.origin}${root}styles/${id}/${size}{z}/{x}/{y}.${jpeg ? "jpg" : "png"}`;

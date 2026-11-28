@@ -145,18 +145,19 @@
         down to tilt.</td></tr>
       <tr><td>North up again</td><td colspan="2">Press the compass button under <b>+</b> and <b>−</b>.</td></tr>
     </table>
-    <p>The <b>tool bar</b> along the map has <b>Add Marker</b>, <b>Add Arrow</b>, <b>New Route</b>, <b>Circle</b>,
-      <b>Rectangle</b>, <b>Polygon</b>, <b>Terrain Analysis</b> (when the server has elevation data) and <b>Set My
-      Location</b> (while location sharing is on). On a phone it shows icons only. While a tool is active, a hint
-      above the map says what to tap next. Esc cancels the tool.</p>
-    <p>The panel beside the map has three tabs. Press <b>▾</b> at the top of the panel to fold it away.</p>
+    <p>The panel beside the map has these tabs. Press <b>▾</b> at the top of the panel to fold it away.</p>
     <ul>
       <li><b>Layers</b>: <b>Map Style</b> (for example a light map for the day and a dark one for the night), the
-        <b>Device Locations</b> and <b>Shared Markers</b> switches, and <b>Map Features</b>, which shows or hides
+        <b>Device Locations</b> and <b>Shared Markers</b> switches (grayed out while location sharing is disabled on
+        the server), and <b>Map Features</b>, which shows or hides
         parts of the map such as contour lines or buildings. <b>Show All Layers</b> shows everything again.</li>
-      <li><b>Markers</b>: your markers, arrows, routes and shapes.</li>
+        While location sharing is on, <b>Set My Location</b> is under the switches.</li>
+      <li><b>Markers</b>: <b>Add</b> puts markers, arrows, routes and shapes on the map, and the groups keep
+        them.</li>
       <li><b>Print</b>: print sheets and atlases.</li>
+      <li><b>Terrain</b>: viewshed and radio coverage, when the server has elevation data.</li>
     </ul>
+    <p>While you add something, a hint above the map says what to tap next. <b>Cancel</b> or Esc stops.</p>
     <p>The address in the address bar keeps the place and zoom, so you can bookmark a place.</p>
     <div class="note"><b>Note</b>The map only covers the regions this server has. Elsewhere it is empty, or shows
       only large features of the world.</div>
@@ -166,19 +167,25 @@
   <section class="card" id="drawings">
     <h2>4. Markers, arrows and shapes</h2>
     <ol>
-      <li>Open the <b>Markers</b> tab and pick a color in <b>Default Color</b>.</li>
-      <li>Press <b>Add Marker</b>, <b>Add Arrow</b>, <b>Circle</b>, <b>Rectangle</b> or <b>Polygon</b>.</li>
+      <li>Open the <b>Markers</b> tab. Under <b>To</b>, choose the group the new item goes into.</li>
+      <li>Press <b>Add</b> and choose <b>Marker</b>, <b>Arrow</b>, <b>Route</b>, <b>Circle</b>, <b>Rectangle</b>
+        or <b>Polygon</b>.</li>
       <li>Follow the hint. A marker is one tap; an arrow is its start, then its end; a circle is its center, then its
         edge; a rectangle is two opposite corners. For a polygon, tap each corner, then tap the first corner again,
         press Enter, or press <b>Finish Shape</b>.</li>
     </ol>
-    <p>Drag an item to move it. Each item has a row in <b>Markers &amp; Drawings</b> with its name, <b>Show on
-      Map</b>, a delete button and <b>Share with All Devices</b>. <b>Units</b> switches between feet and miles or
-      meters and kilometers. <b>Show Measurements</b> puts lengths and areas on the map. <b>Clear All</b> clears
-      this browser's items; shared items stay.</p>
-    <div class="caution"><b>Caution</b>Items you don't share are kept only in this browser. Use <b>Export
-      Drawings</b> to save them to a file, and <b>Import Drawings</b> to open the file again, here or on another
-      computer.</div>
+    <p>Drag an item to move it. Each item has a row in its group with its color, name, <b>Show on Map</b>, a
+      delete button, <b>Group</b> (to move it) and <b>Share with All Devices</b>. Under <b>Settings</b>,
+      <b>Units</b> switches between feet and miles or meters and kilometers, and <b>Show Measurements</b> puts
+      lengths and areas on the map. <b>Clear All</b> deletes this browser's items; shared items stay.</p>
+    <h3>Groups</h3>
+    <p>Groups keep items together for a task, for example <b>Water Sources</b>, <b>Egress Routes</b> or <b>Danger
+      Areas</b>. <b>New Group</b> makes one, and what you add next goes into it. In a group's heading, the switch
+      shows or hides the group on the map and in print, <b>▸</b> folds it, <b>⤓</b> exports it to a file,
+      <b>✎</b> renames it and <b>✕</b> deletes it with everything in it.</p>
+    <div class="caution"><b>Caution</b>Items you don't share are kept only in this browser. Export a group with
+      <b>⤓</b>, or every group with <b>Export All</b>, and use <b>Import</b> to open the file again, here or on
+      another computer. A file from other map software comes in as a group of its own.</div>
   </section>
 
   <!-- ------------------------------------------------------------------ -->
@@ -186,7 +193,7 @@
     <h2>5. Routes</h2>
     <p>A route is a line through up to 30 points, along roads and trails or straight between the points.</p>
     <ol>
-      <li>Press <b>New Route</b> and tap the points of the route in order.</li>
+      <li>Press <b>Add</b>, then <b>Route</b>, and tap the points of the route in order.</li>
       <li>To finish, tap the last point again, press Enter, or press <b>Finish Route</b>.</li>
       <li>In the route's row, choose the <b>Route Type</b> (<b>Driving</b>, <b>Walking</b> or <b>Straight
         Line</b>) and the <b>Speed</b> for the time estimate.</li>
@@ -235,8 +242,8 @@
   <!-- ------------------------------------------------------------------ -->
   <section class="card" id="terrain">
     <h2>7. Terrain tools</h2>
-    <p>If the server has elevation data, the tool bar has <b>Terrain Analysis</b>. It opens in the panel; <b>Close</b>
-      goes back, and <b>Analysis Overlay</b> shows or hides the result.</p>
+    <p>If the server has elevation data, the panel has a <b>Terrain</b> tab. <b>Analysis Overlay</b> in it shows or
+      hides the result.</p>
     <ol>
       <li>Under <b>Analysis</b>, choose <b>Viewshed</b> (what can be seen from a point) or <b>Radio Coverage</b>
         (where a VHF or UHF radio can probably reach).</li>
@@ -308,7 +315,7 @@
         <b>Done</b>. The same <a href="#routes">tip</a> applies: more points, closer together.</li>
       <li><b>Menu</b>, <b>Track Recording</b> records the path you travel. Tracks are listed with the markers and
         can be exported as GPX files.</li>
-      <li><b>Menu</b>, <b>Markers</b>, <b>Export</b> saves markers to a file, which <b>Import Drawings</b> on the
+      <li><b>Menu</b>, <b>Markers</b>, <b>Export</b> saves markers to a file, which <b>Import</b> on the
         map can open. <b>Import</b> reads a file.</li>
     </ul>
 
@@ -486,8 +493,8 @@
     </ol>
     <p>Sharing continues in the background and with the screen off. Press <b>Stop Sharing</b>, or <b>Menu</b>,
       <b>Exit</b>, to stop.</p>
-    <p>In a browser: open <b>Messages</b> and enter a <b>Display Name</b>. Then press <b>Set My Location</b> on the
-      map's tool bar and tap where you are. Drag the diamond to move it. <b>Stop Sharing</b> on the Messages page
+    <p>In a browser: open <b>Messages</b> and enter a <b>Display Name</b>. Then press <b>Set My Location</b> in the
+      map's <b>Layers</b> tab and tap where you are. Drag the diamond to move it. <b>Stop Sharing</b> on the Messages page
       takes it off.</p>
 
     <h3>Share a marker, arrow, route or shape</h3>
