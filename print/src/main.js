@@ -324,6 +324,11 @@ map.on("load", () => {
     paint: { "icon-color": ["get", "color"], "icon-halo-color": "#fff", "icon-halo-width": 1.5 } });
   map.addLayer({ id: "routes-vertex", type: "circle", source: "routes", filter: rpart("vertex"),
     paint: { "circle-radius": 5, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2.5 } });
+  // Edit Route: a dot in the middle of each leg (drag or tap it for a new point), and the chosen point.
+  map.addLayer({ id: "routes-mid", type: "circle", source: "routes", filter: rpart("mid"),
+    paint: { "circle-radius": 4.5, "circle-color": "#fff", "circle-opacity": 0.85, "circle-stroke-color": ["get", "color"], "circle-stroke-width": 1.5 } });
+  map.addLayer({ id: "routes-chosen", type: "circle", source: "routes", filter: rpart("chosen"),
+    paint: { "circle-radius": 8, "circle-color": ["get", "color"], "circle-stroke-color": "#fff", "circle-stroke-width": 3 } });
   map.addLayer({ id: "routes-label", type: "symbol", source: "routes", filter: rpart("label"),
     layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 13, "text-offset": [0, -1.1], "text-allow-overlap": true },
     paint: { "text-color": "#111", "text-halo-color": "#fff", "text-halo-width": 1.5 } });
@@ -418,6 +423,7 @@ map.on("click", (e) => {
   if (mode === "arrow-start") { pendingArrow = { a: { lng: e.lngLat.lng, lat: e.lngLat.lat } }; setMode("arrow-end"); return; }
   if (mode === "arrow-end") { addArrow(pendingArrow.a, { lng: e.lngLat.lng, lat: e.lngLat.lat }); pendingArrow = null; setMode(null); return; }
   if (mode === "route") { routeClick({ lng: e.lngLat.lng, lat: e.lngLat.lat }); return; }
+  if (mode === "route-edit") { editClick(e); return; }
   if (mode && shapeClick(e)) return;
   // One item under the tap: its row; several on top of each other: a list to choose from.
   const hits = itemsAt(e.point);
@@ -435,6 +441,15 @@ let dragging = null, justDragged = false;
 // Terrain points are draggable DOM markers; their presses must not also drag the sheet.
 const onPin = (e) => !!(e.originalEvent && e.originalEvent.target && e.originalEvent.target.closest && e.originalEvent.target.closest(".terrain-pin"));
 function onDown(e) {
+  if (mode === "route-edit" && editing) {
+    const r = editedRoute();
+    const box = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
+    const mine = (layer) => (r ? map.queryRenderedFeatures(box, { layers: [layer] }).filter((f) => f.properties.id === r.id) : []);
+    const point = mine("routes-vertex")[0], mid = mine("routes-mid")[0];
+    if (point) { editStep(); editing.chosen = point.properties.index; dragging = { kind: "route-point", id: r.id, index: point.properties.index, moved: false }; return begin(e); }
+    if (mid && editInsert(mid.properties.index, e.lngLat)) { dragging = { kind: "route-point", id: r.id, index: mid.properties.index, moved: false }; drawRoutes(); return begin(e); }
+    return;
+  }
   if (mode || (terrain && terrain.picking) || onPin(e)) return;
   const pt = e.point;
   // The item chosen last (in the list or from items on top of each other) moves first.
@@ -483,7 +498,7 @@ function onMove(e) {
     if (a) { a[dragging.end] = { lng: e.lngLat.lng, lat: e.lngLat.lat }; map.getSource("arrows").setData(arrowsFC()); }
   } else if (dragging.kind === "route-point") {
     const r = routes.find((x) => x.id === dragging.id);
-    if (r && r.points[dragging.index]) { r.points[dragging.index] = { lng: e.lngLat.lng, lat: e.lngLat.lat }; drawRoutes(); }
+    if (r && r.points[dragging.index]) { r.points[dragging.index] = { lng: e.lngLat.lng, lat: e.lngLat.lat }; dragging.moved = true; drawRoutes(); }
   } else if (dragging.kind === "sheet") {
     const dx = e.point.x - dragging.startPt.x, dy = e.point.y - dragging.startPt.y;
     const ll = map.unproject([dragging.startCenterPx.x + dx, dragging.startCenterPx.y + dy]);
@@ -499,6 +514,12 @@ function onUp() {
   if (d.kind === "me") placeMe(state.myLocation);
   if (d.kind === "marker") { saveMarkers(); select("marker", d.id); }
   if (d.kind === "arrow-end") { saveArrows(); select("arrow", d.id); }
+  if (d.kind === "route-point" && editing) {
+    // A press on a point that did not move it only chose it: nothing for Undo.
+    if (!d.moved && editing.history.length && JSON.stringify(editing.history[editing.history.length - 1]) === JSON.stringify(copyPoints(editedRoute().points))) editing.history.pop();
+    editChanged();
+    return;
+  }
   if (d.kind === "route-point") { saveRoutes(); select("route", d.id); }
 }
 
@@ -692,7 +713,79 @@ function drawRoutes() {
   const list = shown(routes);
   router.want(list);
   routeStatus();
-  try { if (map.getSource("routes")) map.getSource("routes").setData(routesFC(list, router)); } catch { /* a new map style is still loading */ }
+  const fc = routesFC(list, router);
+  const r = editing && routes.find((x) => x.id === editing.id);
+  if (r) {
+    const base = { id: r.id, color: r.color };
+    r.points.forEach((p, i) => {
+      if (i) fc.features.push({ type: "Feature", geometry: { type: "Point", coordinates: [(r.points[i - 1].lng + p.lng) / 2, (r.points[i - 1].lat + p.lat) / 2] }, properties: { ...base, part: "mid", index: i } });
+    });
+    const c = r.points[editing.chosen];
+    if (c) fc.features.push({ type: "Feature", geometry: { type: "Point", coordinates: [c.lng, c.lat] }, properties: { ...base, part: "chosen", index: editing.chosen } });
+  }
+  try { if (map.getSource("routes")) map.getSource("routes").setData(fc); } catch { /* a new map style is still loading */ }
+}
+
+/* ---------- Edit Route ---------- */
+// As in the app (RouteEditor.kt): drag a point to move it; drag or tap the dot in the middle of a
+// leg to add a point there; tap the map to add one at the end; tap a point to choose it, for
+// Remove Point. Undo takes back the last change, Done keeps the route, Cancel puts it back as it was.
+let editing = null;          // { id, chosen: index | null, before: points, history: [points] }
+const copyPoints = (pts) => pts.map((p) => ({ lng: p.lng, lat: p.lat }));
+function editRoute(id) {
+  const r = routes.find((x) => x.id === id);
+  if (!r) return;
+  setMode(null);
+  editing = { id, chosen: null, before: copyPoints(r.points), history: [] };
+  setMode("route-edit");
+  const b = r.points.reduce((x, p) => [Math.min(x[0], p.lng), Math.min(x[1], p.lat), Math.max(x[2], p.lng), Math.max(x[3], p.lat)], [180, 90, -180, -90]);
+  if (!map.getBounds().contains([b[0], b[1]]) || !map.getBounds().contains([b[2], b[3]])) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: panelPadding(), maxZoom: 15 });
+  drawRoutes();
+}
+const editedRoute = () => (editing ? routes.find((x) => x.id === editing.id) : null);
+/** Before a change: what Undo goes back to. */
+function editStep() { const r = editedRoute(); if (r) editing.history.push(copyPoints(r.points)); }
+function editChanged() { saveRoutes(); setMode("route-edit"); drawRoutes(); }
+function editInsert(index, ll) {
+  const r = editedRoute();
+  if (!r || r.points.length >= MAX_ROUTE_POINTS) return false;
+  editStep();
+  r.points.splice(index, 0, { lng: ll.lng, lat: ll.lat });
+  editing.chosen = index;
+  return true;
+}
+function editRemove() {
+  const r = editedRoute();
+  if (!r || editing.chosen === null || r.points.length <= 2) return;
+  editStep();
+  r.points.splice(editing.chosen, 1);
+  editing.chosen = null;
+  editChanged();
+}
+function editUndo() {
+  const r = editedRoute();
+  if (!r || !editing.history.length) return;
+  r.points = editing.history.pop();
+  editing.chosen = null;
+  editChanged();
+}
+function editEnd(keep) {
+  const r = editedRoute();
+  if (r && !keep) { r.points = editing.before; saveRoutes(); }
+  editing = null;
+  setMode(null);
+  drawRoutes();
+}
+/** A tap while a route is edited: a point (choose it), a dot (a point there), else the map (a point at the end). */
+function editClick(e) {
+  const r = editedRoute();
+  if (!r) { editEnd(true); return; }
+  const box = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
+  const mine = (layer) => map.queryRenderedFeatures(box, { layers: [layer] }).filter((f) => f.properties.id === r.id);
+  const point = mine("routes-vertex")[0], mid = mine("routes-mid")[0];
+  if (point) { editing.chosen = point.properties.index; setMode("route-edit"); drawRoutes(); return; }
+  if (mid) { if (editInsert(mid.properties.index, e.lngLat)) editChanged(); return; }
+  if (editInsert(r.points.length, e.lngLat)) editChanged();
 }
 function saveRoutes() {
   localStorage.setItem(LS.routes, JSON.stringify(ownOnly(routes)));
@@ -1125,7 +1218,15 @@ function itemRow(kind, it) {
     persist(kind, true);
   };
   if (kind === "shape" && it.type === "circle") row.appendChild(radiusEditor(it));
-  if (kind === "route") { row.appendChild(routeEditor(it)); const o = routeOptionsEditor(it); if (o) row.appendChild(o); }
+  if (kind === "route") {
+    row.appendChild(routeEditor(it));
+    const o = routeOptionsEditor(it);
+    if (o) row.appendChild(o);
+    const edit = Object.assign(document.createElement("button"), { type: "button", className: "secondary compact edit-route", textContent: editing && editing.id === it.id ? "Editing…" : "Edit Route" });
+    edit.disabled = !!(editing && editing.id === it.id);
+    edit.onclick = () => editRoute(it.id);
+    row.appendChild(edit);
+  }
   if (groups.some((g) => g.name)) row.appendChild(groupEditor(kind, it));
   if (paletteOpenFor === it.id) {
     row.appendChild(swatchRow(it.color, (hex) => { it.color = hex; paletteOpenFor = null; persist(kind, true); }));
@@ -1170,6 +1271,7 @@ function setMode(m) {
   if (m !== "arrow-end") pendingArrow = null;
   if (m !== "route") pendingRoute = null;
   if (!m || !Object.values(SHAPE_MODES).flat().includes(m)) pendingShape = null;
+  if (m !== "route-edit" && editing) { editing = null; drawRoutes(); }
   if (map.getSource("temp") && !pendingArrow && !pendingShape && !pendingRoute) map.getSource("temp").setData(emptyFC());
   $("add-me").classList.toggle("active", m === "me");
   map.getCanvas().style.cursor = m ? "crosshair" : "";
@@ -1187,10 +1289,25 @@ function setMode(m) {
     m === "circle-edge" ? "Tap the edge to set the radius. You can type an exact radius later." :
     m === "rect-start" ? "Tap one corner of the rectangle." :
     m === "rect-end" ? "Tap the opposite corner." :
-    m === "polygon" ? (corners < 3 ? `Tap the corners of the polygon. Corners so far: ${corners}.` : `${corners} corners. To finish the shape, tap the first corner, press Enter or press Finish Shape.`) : "";
-  $("finish-shape").textContent = m === "route" ? "Finish Route" : "Finish Shape";
-  $("finish-shape").hidden = !((m === "polygon" && corners >= 3) || (m === "route" && stops >= 2));
+    m === "polygon" ? (corners < 3 ? `Tap the corners of the polygon. Corners so far: ${corners}.` : `${corners} corners. To finish the shape, tap the first corner, press Enter or press Finish Shape.`) :
+    m === "route-edit" ? editHint() : "";
+  $("finish-shape").textContent = m === "route" ? "Finish Route" : m === "route-edit" ? "Done" : "Finish Shape";
+  $("finish-shape").hidden = !((m === "polygon" && corners >= 3) || (m === "route" && stops >= 2) || m === "route-edit");
+  const er = m === "route-edit" ? editedRoute() : null;
+  $("route-remove").hidden = !er;
+  $("route-remove").disabled = !er || editing.chosen === null || er.points.length <= 2;
+  $("route-undo").hidden = !er;
+  $("route-undo").disabled = !er || !editing.history.length;
+  // While a route is edited, the map pans and the points move with the pointer, not crosshairs.
+  if (m === "route-edit") map.getCanvas().style.cursor = "";
   $("mode-bar").hidden = !m;
+}
+function editHint() {
+  const r = editedRoute();
+  if (!r) return "";
+  const n = r.points.length;
+  return `Editing ${r.label || "the route"}: drag a point to move it. Drag or tap the dot between two points to add one there; tap the map to add one at the end. ` +
+    `Tap a point to choose it. ${n} of ${MAX_ROUTE_POINTS} points.`;
 }
 /** An entry of the Add menu: its tool, with the map in view (a phone's panel folds away). */
 function startTool(m) {
@@ -1199,7 +1316,9 @@ function startTool(m) {
   if (window.innerWidth <= 640) document.body.classList.add("panel-collapsed");
 }
 $("add-marker").onclick = () => startTool("marker");
-$("mode-cancel").onclick = () => setMode(null);
+$("mode-cancel").onclick = () => (mode === "route-edit" ? editEnd(false) : setMode(null));
+$("route-remove").onclick = editRemove;
+$("route-undo").onclick = editUndo;
 $("add-me").onclick = () => {
   if (mode === "me") { setMode(null); return; }
   if (!cleanText($("display-name").value, MAX_NAME)) { askName(); return; }
@@ -1208,7 +1327,7 @@ $("add-me").onclick = () => {
 $("add-arrow").onclick = () => startTool("arrow-start");
 $("add-route").onclick = () => startTool("route");
 for (const [type, modes] of Object.entries(SHAPE_MODES)) $(`add-${type}`).onclick = () => startTool(modes[0]);
-$("finish-shape").onclick = () => (mode === "route" ? finishRoute() : finishPolygon());
+$("finish-shape").onclick = () => (mode === "route" ? finishRoute() : mode === "route-edit" ? editEnd(true) : finishPolygon());
 // Only what is kept in this browser: shared items stay (each has its own Delete).
 // Everything in every group; the warning says how many are shared (those go from all devices too).
 $("clear-all").onclick = () => {
@@ -1292,8 +1411,11 @@ function fileHint(text, error = false) {
 $("units").onchange = (e) => { state.units = e.target.value; saveSettings(); saveShapes(); renderLists(); if (terrain) terrain.refresh(); };
 $("shape-measure").onchange = (e) => { state.shapeMeasure = e.target.checked; saveSettings(); saveShapes(); };
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { setMode(null); openAddMenu(false); if (terrain) terrain.cancelPick(); }
-  if (e.key === "Enter" && (mode === "polygon" || mode === "route") && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) $("finish-shape").onclick();
+  const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName);
+  if (e.key === "Escape") { if (mode === "route-edit") editEnd(false); else setMode(null); openAddMenu(false); if (terrain) terrain.cancelPick(); }
+  if (e.key === "Enter" && (mode === "polygon" || mode === "route" || mode === "route-edit") && !typing) $("finish-shape").onclick();
+  if (mode === "route-edit" && !typing && (e.key === "Delete" || e.key === "Backspace")) { e.preventDefault(); editRemove(); }
+  if (mode === "route-edit" && !typing && e.key === "z" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); editUndo(); }
 });
 
 // New-item colour swatches

@@ -144,7 +144,11 @@ export const ROUTE_TYPES_LIST = [["driving", "Driving", "car-vario", 25], ["walk
 export const ROUTE_OPTIONS = {
   driving: [["avoid-highways", "Avoid Highways", { avoid_motorways: "1" }], ["dirt-tracks", "Allow Dirt Tracks", { use_offroad: "1" }],
     ["avoid-towns", "Avoid Big Towns", { consider_town: "1" }], ["fuel-saver", "Fuel Saver", { vmax: "70" }]],
-  walking: [["avoid-steps", "Avoid Steps", { allow_steps: "0" }], ["avoid-wet", "Avoid Wet Ground", { iswet: "1" }]],
+  walking: [["avoid-steps", "Avoid Steps", { allow_steps: "0" }], ["avoid-wet", "Avoid Wet Ground", { iswet: "1" }],
+    // The shortest way on any road, track or trail open on foot (BRouter's shortest_way): busy roads
+    // too. It leaves out the profile's preferences, so Trail Difficulty, Avoid Steps and Avoid Wet
+    // Ground do not apply with it.
+    ["any-road", "Use Any Road or Trail", { shortest_way: "1" }]],
 };
 /** Trail Difficulty of a Walking route (the hardest trails it may use): Moderate is the profile's own. */
 export const DIFFICULTY = [["easy", "Easy", { SAC_scale_limit: "1" }], ["", "Moderate", {}], ["hard", "Hard", { SAC_scale_limit: "5" }]];

@@ -2,6 +2,15 @@
 
 ## Since v1.0.0
 
+- **Walking: Use Any Road or Trail.** A new Walking option: the shortest way on any road, track or trail open on
+  foot, busy roads too (BRouter's shortest_way). Trail Difficulty, Avoid Steps and Avoid Wet Ground do not apply
+  with it. The web server lets profile:shortest_way=1 through; the app has the same option (mesh bit 256).
+
+- **Map: Edit Route.** A route's row has **Edit Route**, as in the app: drag a point to move it, drag or tap the
+  dot in the middle of a leg to add a point there, tap the map to add one at the end, choose a point and press
+  **Remove Point**, **Undo**, **Done** or **Cancel** (which puts the route back as it was). Delete, Ctrl+Z, Enter
+  and Esc do the same.
+
 - **Route cache.** The web server keeps every route leg the route service works out (nginx proxy_cache, up to
   300 MB, an entry goes after 60 days unused), for every browser: a reload or another browser gets the same leg
   at once, and a leg asked twice at the same time is worked out once. Each request carries the routing data's

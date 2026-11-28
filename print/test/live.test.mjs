@@ -307,6 +307,8 @@ test("route options, avoid areas and the way go into the router's request, and i
   const walk = routeAsk({ ...route, routing: "walking", options: ["avoid-steps", "hard", "easy"] });
   assert.match(walk.extra, /profile:allow_steps=0/);
   assert.match(walk.extra, /profile:SAC_scale_limit=1/, "easy wins over hard");
+  assert.match(routeAsk({ ...route, routing: "walking", options: ["any-road"] }).extra, /profile:shortest_way=1/);
+  assert.match(routeAsk({ ...route, routing: "driving", options: ["any-road"] }).extra, /^$|^&nogos|^&alternativeidx/, "not a Driving option");
 });
 
 test("a shared route keeps its options, avoid group and way; unknown ones are dropped", () => {

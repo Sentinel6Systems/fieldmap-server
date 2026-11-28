@@ -264,6 +264,11 @@ A route is a line through up to 30 points, along roads and trails or straight be
 3. In the route's row, choose the **Route Type** (**Driving**, **Walking**, **Bicycle** or **Straight Line**) and
    the **Speed** used for the time estimate. **Route Options** has more choices (see [Route options](#route-options)).
 
+**Edit a route:** press **Edit Route** in its row. Drag a point to move it. Drag or tap the dot in the middle of a
+leg to add a point there, or tap the map to add one at the end. Tap a point to choose it, then press **Remove
+Point** (or Delete). **Undo** (Ctrl+Z) takes back the last change, **Done** (Enter) keeps the route, and
+**Cancel** (Esc) puts it back as it was. Outside Edit Route you can still drag a point to move it.
+
 While the server works out the legs, a note at the top of the map says how many are left, and the route's row
 shows a spinner; a long leg can take a few minutes. The server keeps every leg it has worked out, for every
 browser: when you open the map again, or someone else opens the same route, the legs come back at once. New
@@ -275,12 +280,12 @@ line along the road to the nearest place, then a dashed straight line to the poi
 Routes along roads and trails need the **Routing Data** layer (see [Build maps](#build-maps)). The server works
 out one leg at a time, from one point to the next.
 
-> **Tip: use more points, closer together.** Each leg between two points is worked out on its own, with a time
-> limit (5 minutes on the server; `ROUTE_TIMEOUT` in `.env`). A short leg is quick to find and follows the road you mean. A very long leg has far
-> more roads to search: it can run out of time and come out as a dashed straight line, or take a different road
-> than you intended. Put a point at each turn you care about and every few miles along the way, rather than a few
-> points far apart. The route is then quicker to work out, easier to fix by moving one point, and comes out the
-> same when another device recreates it from the shared points.
+> **Tip: place the points to fit the area.** Each leg between two points is worked out on its own, so the
+> route takes the way it finds best between them. In a dense area, with many roads or trails close together (a
+> town, a city, a network of paths), put the points closer together, at each turn you care about, to keep the
+> route on the course you intend. In a sparse area (open country, a long road with few turns), the points can be
+> far apart. If a leg takes a road you don't want, add a point on the road you do want. The route is then easy to
+> fix by moving or adding one point, and every device draws the same route from the shared points.
 
 ### Route options
 
@@ -295,6 +300,7 @@ Under a route's row, **Route Options** changes which roads and trails the route 
 | Walking | **Trail Difficulty** | **Easy**: plain paths only. **Moderate**: normal hiking trails. **Hard**: also rough mountain paths. |
 | Walking | **Avoid Steps** | Never uses stairs: for carts, stretchers and wheelchairs. |
 | Walking | **Avoid Wet Ground** | Avoids muddy and wet paths, for example after a flood or heavy rain. |
+| Walking | **Use Any Road or Trail** | Takes the shortest way on any road, track or trail open on foot, busy roads too. The other Walking options then do not apply. |
 | Driving, Walking, Bicycle | **Avoid Areas In** | Goes around everything in a group: its circles, rectangles and polygons, 100 m around its markers, and the roads its arrows cross. |
 | Driving, Walking, Bicycle | **Way** | **Best Way**, or the second, third or fourth way. Each one avoids the roads of the ways before it. |
 

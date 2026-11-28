@@ -252,6 +252,10 @@
         <b>Straight Line</b>) and the <b>Speed</b> for the time estimate. <b>Route Options</b> has more choices (see
         <a href="#route-options">Route options</a>).</li>
     </ol>
+    <p><b>Edit a route:</b> press <b>Edit Route</b> in its row. Drag a point to move it. Drag or tap the dot in the
+      middle of a leg to add a point there, or tap the map to add one at the end. Tap a point to choose it, then press
+      <b>Remove Point</b>. <b>Undo</b> takes back the last change, <b>Done</b> keeps the route, and <b>Cancel</b>
+      puts it back as it was.</p>
     <p>While the server works out the legs, a note at the top of the map says how many are left, and the route's row
       shows a spinner. A long leg can take a few minutes. The server keeps every leg it has worked out, so the same
       route opens at once the next time, in any browser.</p>
@@ -259,12 +263,13 @@
       with no way found is straight and dashed. A point away from the road gets a line along the road to the nearest
       place, then a dashed straight line to the point. Routes along roads need the <b>Routing Data</b> layer on the
       server.</p>
-    <div class="note"><b>Tip: use more points, closer together</b>Each leg between two points is worked out on its
-      own, with a time limit. A short leg is found quickly and follows the road you mean. A very long leg has far
-      more roads to search: it can run out of time and come out dashed and straight, or take a road you did not
-      intend. Put a point at each turn you care about and every few miles along the way, not a few points far apart.
-      The route is then quicker to work out, easier to fix by moving one point, and comes out the same when another
-      device recreates it from the shared points.</div>
+    <div class="note"><b>Tip: place the points to fit the area</b>Each leg between two points is worked out on its
+      own, so the route takes the way it finds best between them. In a dense area, with many roads or trails close
+      together (a town, a city, a network of paths), put the points closer together, at each turn you care about,
+      to keep the route on the course you intend. In a sparse area (open country, a long road with few turns), the
+      points can be far apart. If a leg takes a road you don't want, add a point on the road you do want. The route
+      is then easy to fix by moving or adding one point, and every device draws the same route from the shared
+      points.</div>
     <h3 id="route-options">Route options</h3>
     <p>Under a route's row, <b>Route Options</b> changes which roads and trails the route takes. They are off at
       first.</p>
@@ -281,6 +286,8 @@
         wheelchairs.</td></tr>
       <tr><td>Walking</td><td><b>Avoid Wet Ground</b></td><td>Avoids muddy and wet paths, for example after a flood or
         heavy rain.</td></tr>
+      <tr><td>Walking</td><td><b>Use Any Road or Trail</b></td><td>Takes the shortest way on any road, track or trail
+        open on foot, busy roads too. The other Walking options then do not apply.</td></tr>
       <tr><td>Driving, Walking, Bicycle</td><td><b>Avoid Areas In</b></td><td>Goes around everything in a group: its
         circles, rectangles and polygons, 100 m around its markers, and the roads its arrows cross.</td></tr>
       <tr><td>Driving, Walking, Bicycle</td><td><b>Way</b></td><td><b>Best Way</b>, or the second, third or fourth
@@ -400,7 +407,7 @@
         location. Keep holding and drag to draw an arrow instead.</li>
       <li>Tap an item to change its <b>Name</b> and <b>Color</b>, move it, or <b>Delete</b> it.</li>
       <li>For a route, press <b>Menu</b>, <b>Markers</b>, <b>New Route</b>, tap the points, and press
-        <b>Done</b>. The same <a href="#routes">tip</a> applies: more points, closer together.</li>
+        <b>Done</b>. The same <a href="#routes">tip</a> applies: place the points to fit the area.</li>
       <li><b>Menu</b>, <b>Track Recording</b> records the path you travel. Tracks are listed with the markers and
         can be exported as GPX files.</li>
       <li><b>Menu</b>, <b>Markers</b>, <b>Export</b> saves markers to a file, which <b>Import</b> on the
