@@ -6,10 +6,11 @@
   foot, busy roads too (BRouter's shortest_way). Trail Difficulty, Avoid Steps and Avoid Wet Ground do not apply
   with it. The web server lets profile:shortest_way=1 through; the app has the same option (mesh bit 256).
 
-- **Map: Edit Route.** A route's row has **Edit Route**, as in the app: drag a point to move it, drag or tap the
-  dot in the middle of a leg to add a point there, tap the map to add one at the end, choose a point and press
-  **Remove Point**, **Undo**, **Done** or **Cancel** (which puts the route back as it was). Delete, Ctrl+Z, Enter
-  and Esc do the same.
+- **Map: Edit Route.** A route's row has **Edit Route**: drag a point to move it, or the small dot halfway along a
+  leg (on the line as drawn) for a new point there; a dashed line follows the pointer and the legs are worked out
+  only when it is let go. **Add Points at Start** / **at End**, then tap the map; **Remove Points**, then tap the
+  points. **Undo**, **Done**, **Cancel** (puts the route back as it was; Ctrl+Z, Enter, Esc). A tap on the map does
+  nothing otherwise, and a route's points no longer drag outside Edit Route.
 
 - **Route cache.** The web server keeps every route leg the route service works out (nginx proxy_cache, up to
   300 MB, an entry goes after 60 days unused), for every browser: a reload or another browser gets the same leg

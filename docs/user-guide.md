@@ -264,10 +264,18 @@ A route is a line through up to 30 points, along roads and trails or straight be
 3. In the route's row, choose the **Route Type** (**Driving**, **Walking**, **Bicycle** or **Straight Line**) and
    the **Speed** used for the time estimate. **Route Options** has more choices (see [Route options](#route-options)).
 
-**Edit a route:** press **Edit Route** in its row. Drag a point to move it. Drag or tap the dot in the middle of a
-leg to add a point there, or tap the map to add one at the end. Tap a point to choose it, then press **Remove
-Point** (or Delete). **Undo** (Ctrl+Z) takes back the last change, **Done** (Enter) keeps the route, and
-**Cancel** (Esc) puts it back as it was. Outside Edit Route you can still drag a point to move it.
+**Edit a route:** press **Edit Route** in its row.
+
+- **Move a point:** drag it. A dashed line follows the pointer; the route is worked out again when you let go.
+- **Add a point between two:** each leg has a small dot halfway along it. Drag the dot to where the new point
+  goes, and let go.
+- **Add points at the start or the end:** press **Add Points at Start** or **Add Points at End**, then tap the map
+  for each point. Press the button again to stop.
+- **Remove points:** press **Remove Points**, then tap each point to remove. A route keeps at least two.
+- **Undo** (Ctrl+Z) takes back the last change, **Done** (Enter) keeps the route, and **Cancel** (Esc) puts it back
+  as it was.
+
+A tap on the map does nothing while you edit, unless you pressed Add Points first.
 
 While the server works out the legs, a note at the top of the map says how many are left, and the route's row
 shows a spinner; a long leg can take a few minutes. The server keeps every leg it has worked out, for every

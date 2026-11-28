@@ -15,7 +15,7 @@ import { initTerrain, TERRAIN_SOURCES } from "./terrain/panel.js";
 import { initWmmNotice } from "./wmm.js";
 import { startLive, conversations, partnerOf, ageText, statusText, cleanText, MAX_NAME, BASE } from "./live.js";
 import { sharedFC, peopleFC, describe, kindText, personImage, PERSON_COLORS, itemFromFeature, featureFromItem, itemKey, ROUTE_TYPES_LIST, ROUTE_OPTIONS, DIFFICULTY, ALTERNATIVES, cleanOptions, SPEEDS, MAX_ROUTE_POINTS, shareableShape, chevronImage, CHEVRON, arrowHead } from "./shared.js";
-import { createRouter, routesFC, routeStats, durationText, ROAD_CLASSES } from "./routing.js";
+import { createRouter, routesFC, routeLegs, routeStats, durationText, ROAD_CLASSES } from "./routing.js";
 
 // The map at /map/: what the devices share (live.js, shared.js), drawing, terrain analysis, and
 // printing (the Print tab: the sheet on the map, render.js). Opened with ?print (the print
@@ -324,11 +324,9 @@ map.on("load", () => {
     paint: { "icon-color": ["get", "color"], "icon-halo-color": "#fff", "icon-halo-width": 1.5 } });
   map.addLayer({ id: "routes-vertex", type: "circle", source: "routes", filter: rpart("vertex"),
     paint: { "circle-radius": 5, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2.5 } });
-  // Edit Route: a dot in the middle of each leg (drag or tap it for a new point), and the chosen point.
+  // Edit Route: a small dot halfway along each leg; drag it for a new point there.
   map.addLayer({ id: "routes-mid", type: "circle", source: "routes", filter: rpart("mid"),
-    paint: { "circle-radius": 4.5, "circle-color": "#fff", "circle-opacity": 0.85, "circle-stroke-color": ["get", "color"], "circle-stroke-width": 1.5 } });
-  map.addLayer({ id: "routes-chosen", type: "circle", source: "routes", filter: rpart("chosen"),
-    paint: { "circle-radius": 8, "circle-color": ["get", "color"], "circle-stroke-color": "#fff", "circle-stroke-width": 3 } });
+    paint: { "circle-radius": 3.5, "circle-color": "#fff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 1.5 } });
   map.addLayer({ id: "routes-label", type: "symbol", source: "routes", filter: rpart("label"),
     layout: { "text-field": ["get", "label"], "text-font": pickFont(), "text-size": 13, "text-offset": [0, -1.1], "text-allow-overlap": true },
     paint: { "text-color": "#111", "text-halo-color": "#fff", "text-halo-width": 1.5 } });
@@ -442,12 +440,9 @@ let dragging = null, justDragged = false;
 const onPin = (e) => !!(e.originalEvent && e.originalEvent.target && e.originalEvent.target.closest && e.originalEvent.target.closest(".terrain-pin"));
 function onDown(e) {
   if (mode === "route-edit" && editing) {
-    const r = editedRoute();
-    const box = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
-    const mine = (layer) => (r ? map.queryRenderedFeatures(box, { layers: [layer] }).filter((f) => f.properties.id === r.id) : []);
-    const point = mine("routes-vertex")[0], mid = mine("routes-mid")[0];
-    if (point) { editStep(); editing.chosen = point.properties.index; dragging = { kind: "route-point", id: r.id, index: point.properties.index, moved: false }; return begin(e); }
-    if (mid && editInsert(mid.properties.index, e.lngLat)) { dragging = { kind: "route-point", id: r.id, index: mid.properties.index, moved: false }; drawRoutes(); return begin(e); }
+    if (editing.tool) return;            // adding or removing: taps, not drags
+    const hit = editHit(e.point);
+    if (hit) { dragging = { kind: hit.kind === "point" ? "edit-move" : "edit-insert", index: hit.index, ll: null }; return begin(e); }
     return;
   }
   if (mode || (terrain && terrain.picking) || onPin(e)) return;
@@ -455,7 +450,7 @@ function onDown(e) {
   // The item chosen last (in the list or from items on top of each other) moves first.
   if (selected) {
     const mine = (layer) => map.queryRenderedFeatures(pt, { layers: [layer] }).filter((f) => f.properties.id === selected.id);
-    const h = selected.kind === "marker" ? mine("markers-circle") : selected.kind === "arrow" ? mine("arrow-ends") : selected.kind === "route" ? mine("routes-vertex") : [];
+    const h = selected.kind === "marker" ? mine("markers-circle") : selected.kind === "arrow" ? mine("arrow-ends") : [];
     if (h.length) {
       const p = h[0].properties;
       dragging = selected.kind === "marker" ? { kind: "marker", id: p.id } : selected.kind === "arrow" ? { kind: "arrow-end", id: p.id, end: p.end } : { kind: "route-point", id: p.id, index: p.index };
@@ -468,8 +463,6 @@ function onDown(e) {
   if (hit.length) { dragging = { kind: "marker", id: hit[0].properties.id }; return begin(e); }
   hit = map.queryRenderedFeatures(pt, { layers: ["arrow-ends"] });
   if (hit.length) { dragging = { kind: "arrow-end", id: hit[0].properties.id, end: hit[0].properties.end }; return begin(e); }
-  hit = map.queryRenderedFeatures(pt, { layers: ["routes-vertex"] });
-  if (hit.length) { dragging = { kind: "route-point", id: hit[0].properties.id, index: hit[0].properties.index }; return begin(e); }
   hit = tab === "print" ? map.queryRenderedFeatures(pt, { layers: ["footprint-fill"] }) : [];
   if (hit.length) {
     const c = currentCenter();
@@ -487,6 +480,7 @@ function onMove(e) {
   if (pendingShape) { previewShape({ lng: e.lngLat.lng, lat: e.lngLat.lat }); return; }
   if (pendingRoute) { previewRoute({ lng: e.lngLat.lng, lat: e.lngLat.lat }); return; }
   if (!dragging) return;
+  if (dragging.kind === "edit-move" || dragging.kind === "edit-insert") { dragging.ll = { lng: e.lngLat.lng, lat: e.lngLat.lat }; editPreview(dragging); return; }
   if (dragging.kind === "me") {
     state.myLocation = { lng: e.lngLat.lng, lat: e.lngLat.lat };
     drawMe();
@@ -514,12 +508,7 @@ function onUp() {
   if (d.kind === "me") placeMe(state.myLocation);
   if (d.kind === "marker") { saveMarkers(); select("marker", d.id); }
   if (d.kind === "arrow-end") { saveArrows(); select("arrow", d.id); }
-  if (d.kind === "route-point" && editing) {
-    // A press on a point that did not move it only chose it: nothing for Undo.
-    if (!d.moved && editing.history.length && JSON.stringify(editing.history[editing.history.length - 1]) === JSON.stringify(copyPoints(editedRoute().points))) editing.history.pop();
-    editChanged();
-    return;
-  }
+  if (d.kind === "edit-move" || d.kind === "edit-insert") { editDrop(d); return; }
   if (d.kind === "route-point") { saveRoutes(); select("route", d.id); }
 }
 
@@ -716,76 +705,114 @@ function drawRoutes() {
   const fc = routesFC(list, router);
   const r = editing && routes.find((x) => x.id === editing.id);
   if (r) {
+    // A dot halfway along each leg as it is drawn (along the roads once worked out).
     const base = { id: r.id, color: r.color };
-    r.points.forEach((p, i) => {
-      if (i) fc.features.push({ type: "Feature", geometry: { type: "Point", coordinates: [(r.points[i - 1].lng + p.lng) / 2, (r.points[i - 1].lat + p.lat) / 2] }, properties: { ...base, part: "mid", index: i } });
+    routeLegs(r, router).forEach((leg, i) => {
+      const line = [...(leg.head ? [leg.head[0]] : []), ...leg.line, ...(leg.tail ? [leg.tail[1]] : [])];
+      fc.features.push({ type: "Feature", geometry: { type: "Point", coordinates: halfway(line) }, properties: { ...base, part: "mid", index: i + 1 } });
     });
-    const c = r.points[editing.chosen];
-    if (c) fc.features.push({ type: "Feature", geometry: { type: "Point", coordinates: [c.lng, c.lat] }, properties: { ...base, part: "chosen", index: editing.chosen } });
   }
   try { if (map.getSource("routes")) map.getSource("routes").setData(fc); } catch { /* a new map style is still loading */ }
 }
 
 /* ---------- Edit Route ---------- */
-// As in the app (RouteEditor.kt): drag a point to move it; drag or tap the dot in the middle of a
-// leg to add a point there; tap the map to add one at the end; tap a point to choose it, for
-// Remove Point. Undo takes back the last change, Done keeps the route, Cancel puts it back as it was.
-let editing = null;          // { id, chosen: index | null, before: points, history: [points] }
+// Drag a point to move it, or the dot halfway along a leg for a new point there: a dashed line
+// follows the pointer, and the legs are worked out only when it is let go. Add Points at Start or
+// at End, then tap the map; Remove Points, then tap the points. Undo takes back the last change,
+// Done keeps the route, Cancel puts it back as it was.
+let editing = null;          // { id, tool: null | "start" | "end" | "remove", before: points, history: [points] }
 const copyPoints = (pts) => pts.map((p) => ({ lng: p.lng, lat: p.lat }));
+/** The point [lon, lat] halfway along a line of [lon, lat] points (by ground length). */
+function halfway(line) {
+  const d = (a, b) => Math.hypot((b[0] - a[0]) * Math.cos((a[1] * Math.PI) / 180), b[1] - a[1]);
+  const total = line.reduce((t, c, i) => (i ? t + d(line[i - 1], c) : 0), 0);
+  let left = total / 2;
+  for (let i = 1; i < line.length; i++) {
+    const seg = d(line[i - 1], line[i]);
+    if (seg >= left && seg > 0) { const t = left / seg; return [line[i - 1][0] + t * (line[i][0] - line[i - 1][0]), line[i - 1][1] + t * (line[i][1] - line[i - 1][1])]; }
+    left -= seg;
+  }
+  return line[line.length - 1];
+}
 function editRoute(id) {
   const r = routes.find((x) => x.id === id);
   if (!r) return;
   setMode(null);
-  editing = { id, chosen: null, before: copyPoints(r.points), history: [] };
+  editing = { id, tool: null, before: copyPoints(r.points), history: [] };
   setMode("route-edit");
+  renderLists();
   const b = r.points.reduce((x, p) => [Math.min(x[0], p.lng), Math.min(x[1], p.lat), Math.max(x[2], p.lng), Math.max(x[3], p.lat)], [180, 90, -180, -90]);
   if (!map.getBounds().contains([b[0], b[1]]) || !map.getBounds().contains([b[2], b[3]])) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: panelPadding(), maxZoom: 15 });
   drawRoutes();
 }
 const editedRoute = () => (editing ? routes.find((x) => x.id === editing.id) : null);
-/** Before a change: what Undo goes back to. */
-function editStep() { const r = editedRoute(); if (r) editing.history.push(copyPoints(r.points)); }
-function editChanged() { saveRoutes(); setMode("route-edit"); drawRoutes(); }
-function editInsert(index, ll) {
+/** The edited route's point or dot under a screen point: { kind: "point" | "mid", index }, or null. */
+function editHit(pt) {
   const r = editedRoute();
-  if (!r || r.points.length >= MAX_ROUTE_POINTS) return false;
-  editStep();
-  r.points.splice(index, 0, { lng: ll.lng, lat: ll.lat });
-  editing.chosen = index;
-  return true;
+  if (!r) return null;
+  const box = [[pt.x - 7, pt.y - 7], [pt.x + 7, pt.y + 7]];
+  const mine = (layer) => map.queryRenderedFeatures(box, { layers: [layer] }).filter((f) => f.properties.id === r.id);
+  const point = mine("routes-vertex")[0], mid = mine("routes-mid")[0];
+  return point ? { kind: "point", index: point.properties.index } : mid ? { kind: "mid", index: mid.properties.index } : null;
 }
-function editRemove() {
+/** While a point or a dot is dragged: dashed lines from the points before and after it. */
+function editPreview(d) {
   const r = editedRoute();
-  if (!r || editing.chosen === null || r.points.length <= 2) return;
-  editStep();
-  r.points.splice(editing.chosen, 1);
-  editing.chosen = null;
+  if (!r || !d.ll) return;
+  const before = r.points[d.index - 1], after = d.kind === "edit-move" ? r.points[d.index + 1] : r.points[d.index];
+  map.getSource("temp").setData({ type: "FeatureCollection", features: [
+    ...[before, after].filter(Boolean).map((p) => lineFC([p, d.ll]).features[0]),
+    { type: "Feature", geometry: { type: "Point", coordinates: [d.ll.lng, d.ll.lat] }, properties: {} },
+  ] });
+}
+/** A dragged point or dot let go: the change is made, and its legs worked out. */
+function editDrop(d) {
+  map.getSource("temp").setData(emptyFC());
+  const r = editedRoute();
+  if (!r || !d.ll) return;                       // only pressed, not moved: nothing changes
+  if (d.kind === "edit-insert" && r.points.length >= MAX_ROUTE_POINTS) { editChanged(); return; }
+  editing.history.push(copyPoints(r.points));
+  if (d.kind === "edit-move") r.points[d.index] = d.ll; else r.points.splice(d.index, 0, d.ll);
   editChanged();
+}
+function editChanged() { saveRoutes(); setMode("route-edit"); drawRoutes(); }
+function editTool(tool) {
+  if (!editing) return;
+  editing.tool = editing.tool === tool ? null : tool;
+  setMode("route-edit");
 }
 function editUndo() {
   const r = editedRoute();
   if (!r || !editing.history.length) return;
   r.points = editing.history.pop();
-  editing.chosen = null;
   editChanged();
 }
 function editEnd(keep) {
   const r = editedRoute();
-  if (r && !keep) { r.points = editing.before; saveRoutes(); }
-  editing = null;
+  const before = editing && editing.before;
+  editing = null;                                // first: the lists then show Edit Route again
+  if (r && !keep) r.points = before;
   setMode(null);
-  drawRoutes();
+  saveRoutes();
 }
-/** A tap while a route is edited: a point (choose it), a dot (a point there), else the map (a point at the end). */
+/** A tap while a route is edited: with Add Points, a point at the start or end; with Remove
+ *  Points, the point tapped goes (a route keeps two). Otherwise a tap does nothing. */
 function editClick(e) {
   const r = editedRoute();
   if (!r) { editEnd(true); return; }
-  const box = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
-  const mine = (layer) => map.queryRenderedFeatures(box, { layers: [layer] }).filter((f) => f.properties.id === r.id);
-  const point = mine("routes-vertex")[0], mid = mine("routes-mid")[0];
-  if (point) { editing.chosen = point.properties.index; setMode("route-edit"); drawRoutes(); return; }
-  if (mid) { if (editInsert(mid.properties.index, e.lngLat)) editChanged(); return; }
-  if (editInsert(r.points.length, e.lngLat)) editChanged();
+  const tool = editing.tool;
+  if (tool === "remove") {
+    const hit = editHit(e.point);
+    if (!hit || hit.kind !== "point" || r.points.length <= 2) return;
+    editing.history.push(copyPoints(r.points));
+    r.points.splice(hit.index, 1);
+    editChanged();
+  } else if ((tool === "start" || tool === "end") && r.points.length < MAX_ROUTE_POINTS) {
+    editing.history.push(copyPoints(r.points));
+    const p = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+    if (tool === "start") r.points.unshift(p); else r.points.push(p);
+    editChanged();
+  }
 }
 function saveRoutes() {
   localStorage.setItem(LS.routes, JSON.stringify(ownOnly(routes)));
@@ -1271,7 +1298,7 @@ function setMode(m) {
   if (m !== "arrow-end") pendingArrow = null;
   if (m !== "route") pendingRoute = null;
   if (!m || !Object.values(SHAPE_MODES).flat().includes(m)) pendingShape = null;
-  if (m !== "route-edit" && editing) { editing = null; drawRoutes(); }
+  if (m !== "route-edit" && editing) { editing = null; drawRoutes(); renderLists(); }   // another tool: the edit is kept
   if (map.getSource("temp") && !pendingArrow && !pendingShape && !pendingRoute) map.getSource("temp").setData(emptyFC());
   $("add-me").classList.toggle("active", m === "me");
   map.getCanvas().style.cursor = m ? "crosshair" : "";
@@ -1294,20 +1321,26 @@ function setMode(m) {
   $("finish-shape").textContent = m === "route" ? "Finish Route" : m === "route-edit" ? "Done" : "Finish Shape";
   $("finish-shape").hidden = !((m === "polygon" && corners >= 3) || (m === "route" && stops >= 2) || m === "route-edit");
   const er = m === "route-edit" ? editedRoute() : null;
-  $("route-remove").hidden = !er;
-  $("route-remove").disabled = !er || editing.chosen === null || er.points.length <= 2;
+  for (const [id, tool] of [["route-add-start", "start"], ["route-add-end", "end"], ["route-remove", "remove"]]) {
+    $(id).hidden = !er;
+    $(id).classList.toggle("active", !!er && editing.tool === tool);
+  }
   $("route-undo").hidden = !er;
   $("route-undo").disabled = !er || !editing.history.length;
-  // While a route is edited, the map pans and the points move with the pointer, not crosshairs.
-  if (m === "route-edit") map.getCanvas().style.cursor = "";
+  // While a route is edited the map pans as usual; crosshairs only while adding points.
+  if (m === "route-edit") map.getCanvas().style.cursor = editing && (editing.tool === "start" || editing.tool === "end") ? "crosshair" : "";
   $("mode-bar").hidden = !m;
 }
 function editHint() {
   const r = editedRoute();
   if (!r) return "";
   const n = r.points.length;
-  return `Editing ${r.label || "the route"}: drag a point to move it. Drag or tap the dot between two points to add one there; tap the map to add one at the end. ` +
-    `Tap a point to choose it. ${n} of ${MAX_ROUTE_POINTS} points.`;
+  const full = n >= MAX_ROUTE_POINTS ? " The route is full." : "";
+  const tool = editing.tool;
+  return tool === "start" ? `Tap the map to add points before the start of ${r.label || "the route"}. ${n} of ${MAX_ROUTE_POINTS} points.${full}` :
+    tool === "end" ? `Tap the map to add points after the end of ${r.label || "the route"}. ${n} of ${MAX_ROUTE_POINTS} points.${full}` :
+    tool === "remove" ? `Tap the points to remove (a route keeps two). ${n} of ${MAX_ROUTE_POINTS} points.` :
+    `Editing ${r.label || "the route"}: drag a point to move it, or drag the small dot on a leg to add a point there. ${n} of ${MAX_ROUTE_POINTS} points.${full}`;
 }
 /** An entry of the Add menu: its tool, with the map in view (a phone's panel folds away). */
 function startTool(m) {
@@ -1317,7 +1350,9 @@ function startTool(m) {
 }
 $("add-marker").onclick = () => startTool("marker");
 $("mode-cancel").onclick = () => (mode === "route-edit" ? editEnd(false) : setMode(null));
-$("route-remove").onclick = editRemove;
+$("route-add-start").onclick = () => editTool("start");
+$("route-add-end").onclick = () => editTool("end");
+$("route-remove").onclick = () => editTool("remove");
 $("route-undo").onclick = editUndo;
 $("add-me").onclick = () => {
   if (mode === "me") { setMode(null); return; }
@@ -1414,7 +1449,6 @@ document.addEventListener("keydown", (e) => {
   const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName);
   if (e.key === "Escape") { if (mode === "route-edit") editEnd(false); else setMode(null); openAddMenu(false); if (terrain) terrain.cancelPick(); }
   if (e.key === "Enter" && (mode === "polygon" || mode === "route" || mode === "route-edit") && !typing) $("finish-shape").onclick();
-  if (mode === "route-edit" && !typing && (e.key === "Delete" || e.key === "Backspace")) { e.preventDefault(); editRemove(); }
   if (mode === "route-edit" && !typing && e.key === "z" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); editUndo(); }
 });
 
